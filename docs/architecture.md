@@ -1,0 +1,96 @@
+# Architecture
+
+Describes intended behavior. Stack, per-OS details and code layout are in [platform.md](platform.md); the README lists what is implemented so far.
+
+## Process model
+
+- Each running tunnel is one child process of the system binary (`ssh`, `cloudflared`, `ngrok`) or of the user's command, spawned and supervised by the app. SSH tunnels never use `-f`; the app owns the lifecycle.
+- The command preview in the editor is generated from the same argv the app spawns, so preview and execution cannot diverge.
+- Ready detection: SSH runs with `-o ExitOnForwardFailure=yes` and is ready once every local listen port (`-L`, `-D`) accepts connections; `-R` relies on the process staying alive. Cloudflared, ngrok and Command tunnels are ready when a log line matches their pattern (e.g. the public URL).
+- stdout/stderr go to a per-tunnel in-memory log ring buffer shown in the detail panel.
+- Unexpected exit with auto-reconnect on → restart with backoff (starting at 5 s). Stop ends the whole process tree: SIGTERM to the process group, then SIGKILL after a timeout on Unix; `TerminateJobObject` on Windows. Quit stops all tunnels.
+- Each started process is recorded with PID and start time in the state file. A record that still matches on the next launch is an orphan from a crash, and the app offers to stop it.
+
+## SSH integration
+
+- Tunnels built from a config host pass the alias to `ssh`, so `Include`, `Match`, `ProxyJump`, `IdentityFile` and the agent behave exactly as in a terminal.
+- Host list and resolved values (HostName, User, Port, IdentityFile, ProxyJump) come from `ssh -G <alias>` rather than a custom parser, which keeps `Match`/`Include` semantics correct.
+- A profile's SSH config file is passed with `-F`; note that `-F` replaces the default config instead of adding to it.
+- Supervised tunnels pass `-o ControlMaster=no -o ControlPath=none` so that the forward belongs to the process the app supervises.
+- All SSH prompts go through the `devt-tunnel-askpass` helper (`SSH_ASKPASS` with `SSH_ASKPASS_REQUIRE=force`), which forwards them to the app over a local socket with a per-spawn token. Passphrase prompts are answered from the Vault when the tunnel names a secret; every other prompt (host key, password, OTP) goes to the user. The passphrase never appears in argv or env.
+
+## Secrets
+
+- Stored only in the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). Definition files hold secret names, never values. There is no plaintext fallback: without a keychain, tunnels that need a secret show `Keyring unavailable`.
+- Injected at spawn as environment variables (`NGROK_AUTHTOKEN`, `TUNNEL_TOKEN`, or a custom name); never logged, never shown in the command preview.
+- Revealing a value requires OS authentication. Where the desktop offers no suitable prompt (Linux for now), values can be replaced but not revealed. Deleting a secret that a tunnel uses puts that tunnel in `Needs token`.
+
+## Storage
+
+- Definitions: `tunnels.toml` (tunnels, profiles) in `~/.config/devt-tunnel/` on macOS, `$XDG_CONFIG_HOME/devt-tunnel/` on Linux and `%APPDATA%\devt-tunnel\` on Windows. Kept free of runtime state so it stays diffable and shareable.
+- Runtime state (active profile, running processes, window state) lives in a separate state file under the OS state directory (see [platform.md](platform.md)).
+
+```toml
+[[profile]]
+id = "work"
+name = "Work"
+ssh_config = "~/.ssh/config"
+on_activate = "start_autostart"   # or "filter"
+stop_non_members = false
+autostart = ["prod-db"]
+
+[[tunnel]]
+id = "srv1"
+name = "SSH Server 1"
+type = "ssh"                      # ssh | cloudflared | ngrok | command
+profiles = ["work", "home"]       # membership lives on the tunnel
+favorite = true
+start_on_launch = false
+reconnect = true
+
+[tunnel.ssh]
+host = "server1"                  # config alias; manual tunnels set user/hostname/port/identity instead
+flags = ["-N", "-C"]
+options = { ServerAliveInterval = "30", ExitOnForwardFailure = "yes" }
+extra_args = ""
+
+[[tunnel.forward]]
+kind = "L"                        # L | R | D
+bind = "127.0.0.1:4053"
+target = "192.168.0.24:8000"      # omitted for D
+
+[[tunnel]]
+id = "web"
+name = "Ngrok"
+type = "ngrok"
+profiles = ["home"]
+
+[tunnel.ngrok]
+proto = "http"
+addr = "127.0.0.1:5555"
+domain = "example.com"
+secret = "ngrok-personal"
+```
+
+## Paste-command import
+
+Parses `ssh`, `ngrok` and `cloudflared` argv into the model. Recognized flags and `-o` options map to fields; anything unrecognized goes to `extra_args` so a round trip never drops arguments.
+
+## Decisions
+
+- **System binaries over an embedded SSH library:** full `~/.ssh/config` and agent compatibility at the cost of depending on installed versions.
+- **No `-f`:** background mode hides the PID and exit status the supervisor needs.
+- **Keychain-only secrets:** the definitions file can be committed or shared safely.
+- **`listen → target` for all forward kinds:** one reading direction; the badge carries the side.
+- **Many-to-many profiles, single active profile:** keeps filtering predictable while letting a tunnel serve several contexts.
+- **No quick-phrase aliases:** quick launch search over name, host and port covers the use case with less to maintain.
+- **Wails v3 with a Go core:** first-party tray and global shortcuts, and the core stays free of GUI dependencies. See [platform.md](platform.md).
+- **One process, no daemon:** tunnels stop on quit by product definition.
+- **Askpass forwards prompts:** `SSH_ASKPASS_REQUIRE=force` routes every prompt to the helper, so it must not answer them all with a stored passphrase.
+- **No sandboxed distribution:** Mac App Store, Flatpak and strict Snap conflict with spawning host binaries.
+
+## Open questions
+
+- Whether the Windows and Linux desktop behavior passes the validation checks in [platform.md](platform.md).
+- Whether several profiles may be active at once.
+- Import/export format for sharing tunnel definitions.

@@ -1,0 +1,42 @@
+// devt-tunnel: define, find and run tunnels from one place.
+package main
+
+import (
+	"embed"
+	"io/fs"
+	"log"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"github.com/trieu04/devt-tunnel/internal/host"
+)
+
+//go:embed all:frontend/dist
+var assets embed.FS
+
+func main() {
+	dist, err := fs.Sub(assets, "frontend/dist")
+	if err != nil {
+		log.Fatal(err)
+	}
+	svc, err := host.NewService()
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := application.New(application.Options{
+		Name:        "devt-tunnel",
+		Description: "Run SSH, cloudflared, ngrok and custom-command tunnels from one place",
+		Services:    []application.Service{application.NewService(svc)},
+		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(dist)},
+		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID:               "io.github.trieu04.devt-tunnel",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) { svc.ShowMain() },
+		},
+		OnShutdown: svc.Shutdown,
+	})
+	host.Attach(app, svc)
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
+	}
+}

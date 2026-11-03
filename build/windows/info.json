@@ -1,0 +1,17 @@
+{
+	"fixed": {
+		"file_version": "0.1.0",
+		"product_version": "0.1.0"
+	},
+	"info": {
+		"0409": {
+			"FileVersion": "0.1.0",
+			"ProductVersion": "0.1.0",
+			"CompanyName": "trieu04",
+			"FileDescription": "Run SSH, cloudflared, ngrok and custom-command tunnels from one place",
+			"LegalCopyright": "(c) 2026 trieu04",
+			"ProductName": "devt-tunnel",
+			"Comments": "This is a comment"
+		}
+	}
+}
