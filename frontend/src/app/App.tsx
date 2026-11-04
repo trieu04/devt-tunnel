@@ -33,8 +33,9 @@ export function App() {
         .then(setUpdate)
         .catch(() => undefined);
     };
+    const off = onSettingsChanged(check);
     check();
-    return onSettingsChanged(check);
+    return off;
   }, []);
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {

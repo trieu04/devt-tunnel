@@ -46,36 +46,38 @@ type daemonClient interface {
 type connector func(context.Context) (daemonClient, error)
 
 type Service struct {
-	auth            platform.UserAuth
-	keychain        secret.Store
-	host            *desktop
-	mu              sync.Mutex
-	connectMu       sync.Mutex
-	client          daemonClient
-	connectionErr   error
-	overview        api.Overview
-	settings        api.SettingsResult
-	settingsLoaded  bool
-	shortcut        string
-	shortcutErr     string
-	logWatchCancel  context.CancelFunc
-	updateChecked   time.Time
-	updateInfo      UpdateInfo
-	updateClient    httpDoer
-	connect         connector
-	shutdownConnect connector
-	shutdownLimit   time.Duration
-	ctx             context.Context
-	cancel          context.CancelFunc
-	wg              sync.WaitGroup
-	shutdown        sync.Once
-	eventSink       func(api.Event)
-	logSink         func(api.LogAppend)
-	ready           bool
-	startRequested  bool
-	startPending    bool
-	startInFlight   bool
-	stopping        bool
+	auth             platform.UserAuth
+	keychain         secret.Store
+	host             *desktop
+	mu               sync.Mutex
+	connectMu        sync.Mutex
+	client           daemonClient
+	clientGeneration uint64
+	connectionErr    error
+	overview         api.Overview
+	settings         api.SettingsResult
+	settingsLoaded   bool
+	shortcut         string
+	shortcutErr      string
+	logWatchCancel   context.CancelFunc
+	updateChecked    time.Time
+	updateInfo       UpdateInfo
+	updateClient     httpDoer
+	connect          connector
+	shutdownConnect  connector
+	shutdownLimit    time.Duration
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	shutdown         sync.Once
+	eventSink        func(api.Event)
+	logSink          func(api.LogAppend)
+	settingsSink     func()
+	ready            bool
+	startRequested   bool
+	startPending     bool
+	startInFlight    bool
+	stopping         bool
 }
 
 func NewService() (*Service, error) {
@@ -150,6 +152,7 @@ func (s *Service) connectClient(ctx context.Context) (daemonClient, error) {
 		return nil, context.Canceled
 	}
 	s.client = c
+	s.clientGeneration++
 	s.connectionErr = nil
 	s.overview = overview
 	s.settings = settings
@@ -160,11 +163,11 @@ func (s *Service) connectClient(ctx context.Context) (daemonClient, error) {
 	s.connectMu.Unlock()
 	if desktop != nil {
 		desktop.app.Event.Emit(eventTunnels)
-		desktop.app.Event.Emit(eventSettings)
 		if ready {
 			desktop.registerShortcut()
 		}
 	}
+	s.emitSettingsChanged()
 	s.flushStartMarked()
 	return c, nil
 }
@@ -338,13 +341,21 @@ func (s *Service) Shutdown() {
 				log.Printf("connect for daemon shutdown: %v", err)
 			}
 		}
+		usedInstalled := c != nil && c == installed
 		if c != nil {
 			var result api.Empty
 			err := c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{}, &result)
-			if err != nil {
+			_ = c.Close()
+			if err != nil && usedInstalled && client.TransportError(err) && ctx.Err() == nil && s.shutdownConnect != nil {
+				c, err = s.shutdownConnect(ctx)
+				if err == nil {
+					err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{}, &result)
+					_ = c.Close()
+				}
+			}
+			if err != nil && ctx.Err() == nil {
 				log.Printf("daemon shutdown: %v", err)
 			}
-			_ = c.Close()
 		}
 		if installed != nil && installed != c {
 			_ = installed.Close()
@@ -582,11 +593,12 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 	if id == "" {
 		return []supervisor.LogLine{}
 	}
-	result, err := call[api.LogsResult](s, "logs.since", api.LogsParams{ID: id})
+	result, generation, err := s.logsSince(ctx, id, 0)
 	if err != nil {
 		log.Printf("watch logs for %s: %v", id, err)
 	}
 	seq := result.Sequence
+	usedGeneration := generation
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
@@ -595,15 +607,26 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				next, err := callContext[api.LogsResult](ctx, s, "logs.since", api.LogsParams{ID: id, Sequence: seq})
+				s.mu.Lock()
+				currentGeneration := s.clientGeneration
+				s.mu.Unlock()
+				after := seq
+				generationReset := usedGeneration != 0 && currentGeneration != usedGeneration
+				if usedGeneration == 0 || generationReset {
+					after = 0
+				}
+				next, nextGeneration, err := s.logsSince(ctx, id, after)
 				if err != nil {
 					continue
 				}
-				reset := next.Sequence < seq
+				generationReset = usedGeneration != 0 && nextGeneration != usedGeneration
+				reset := generationReset || next.Sequence < seq
 				if reset {
-					next, err = callContext[api.LogsResult](ctx, s, "logs.since", api.LogsParams{ID: id})
-					if err != nil {
-						continue
+					if after != 0 {
+						next, nextGeneration, err = s.logsSince(ctx, id, 0)
+						if err != nil {
+							continue
+						}
 					}
 				}
 				if ctx.Err() != nil {
@@ -619,6 +642,7 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 					next.Lines = lines
 				}
 				seq = next.Sequence
+				usedGeneration = nextGeneration
 				if len(next.Lines) > 0 {
 					s.emitLogAppend(api.LogAppend{ID: id, Lines: next.Lines})
 				}
@@ -631,6 +655,38 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 	return result.Lines
 }
 
+var errConnectionChanged = errors.New("daemon connection changed during call")
+
+func (s *Service) logsSince(ctx context.Context, id string, sequence uint64) (api.LogsResult, uint64, error) {
+	s.mu.Lock()
+	c := s.client
+	generation := s.clientGeneration
+	err := s.connectionErr
+	s.mu.Unlock()
+	if c == nil {
+		if err == nil {
+			err = errors.New("connection is not ready")
+		}
+		return api.LogsResult{}, generation, fmt.Errorf("Cannot reach the tunnel service: %w", err)
+	}
+	var result api.LogsResult
+	if err = c.Call(ctx, "logs.since", api.LogsParams{ID: id, Sequence: sequence}, &result); err != nil {
+		select {
+		case <-c.Done():
+			s.markDisconnected(c, err)
+		default:
+		}
+		return api.LogsResult{}, generation, err
+	}
+	s.mu.Lock()
+	changed := s.client != c || s.clientGeneration != generation
+	s.mu.Unlock()
+	if changed {
+		return api.LogsResult{}, generation, errConnectionChanged
+	}
+	return result, generation, nil
+}
+
 func (s *Service) emitLogAppend(append api.LogAppend) {
 	s.mu.Lock()
 	desktop := s.host
@@ -641,6 +697,19 @@ func (s *Service) emitLogAppend(append api.LogAppend) {
 	}
 	if desktop != nil {
 		desktop.app.Event.Emit("logs:appended", append)
+	}
+}
+
+func (s *Service) emitSettingsChanged() {
+	s.mu.Lock()
+	desktop := s.host
+	sink := s.settingsSink
+	s.mu.Unlock()
+	if sink != nil {
+		sink()
+	}
+	if desktop != nil {
+		desktop.app.Event.Emit(eventSettings)
 	}
 }
 

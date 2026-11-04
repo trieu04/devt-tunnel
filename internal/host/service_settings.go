@@ -35,6 +35,7 @@ func (s *Service) SetShortcut(accel string) error {
 	s.mu.Lock()
 	s.settings.Shortcut = accel
 	s.mu.Unlock()
+	s.emitSettingsChanged()
 	return nil
 }
 
@@ -46,6 +47,7 @@ func (s *Service) SetUpdateChecks(enabled bool) error {
 	s.settings.UpdateChecks = enabled
 	s.settingsLoaded = true
 	s.mu.Unlock()
+	s.emitSettingsChanged()
 	return nil
 }
 

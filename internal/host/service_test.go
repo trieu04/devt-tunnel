@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -46,6 +47,19 @@ type fakeDaemon struct {
 	lastLogs api.LogsResult
 }
 
+type failingShutdownClient struct {
+	*fakeDaemon
+	fail error
+}
+
+func (c *failingShutdownClient) Call(ctx context.Context, method string, params, result any) error {
+	if method == api.DaemonShutdown {
+		c.Close()
+		return c.fail
+	}
+	return c.fakeDaemon.Call(ctx, method, params, result)
+}
+
 func newFakeDaemon(path string) *fakeDaemon {
 	return &fakeDaemon{done: make(chan struct{}), overview: api.Overview{ConfigPath: path}, settings: api.SettingsResult{Shortcut: "Alt+Space", UpdateChecks: true}}
 }
@@ -60,7 +74,7 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, rpcCall{method: method, params: params})
 	switch method {
-	case api.EventsSubscribe, api.DaemonShutdown, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch":
+	case api.EventsSubscribe, api.DaemonShutdown, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks":
 		if out, ok := result.(*api.Empty); ok {
 			*out = api.Empty{}
 		}
@@ -253,6 +267,36 @@ func TestShutdownUsesManagementConnectionDuringReconnect(t *testing.T) {
 	}
 }
 
+func TestShutdownRetriesTransportFailureOnManagementConnection(t *testing.T) {
+	installed := &failingShutdownClient{fakeDaemon: newFakeDaemon("installed.toml"), fail: io.EOF}
+	management := newFakeDaemon("management.toml")
+	var managementConnections atomic.Int32
+	s := newServiceWithConnectors(func(context.Context) (daemonClient, error) { return installed, nil }, func(context.Context) (daemonClient, error) {
+		managementConnections.Add(1)
+		return management, nil
+	}, fakeAuth{}, &secret.Memory{})
+	s.Shutdown()
+	if got := managementConnections.Load(); got != 1 {
+		t.Fatalf("management connections = %d, want 1", got)
+	}
+	if calls := management.recorded(api.DaemonShutdown); len(calls) != 1 {
+		t.Fatalf("management shutdown calls = %d, want 1", len(calls))
+	}
+}
+
+func TestShutdownDoesNotRetryRPCFailure(t *testing.T) {
+	installed := &failingShutdownClient{fakeDaemon: newFakeDaemon("installed.toml"), fail: api.NewError(api.Conflict, "active")}
+	var managementConnections atomic.Int32
+	s := newServiceWithConnectors(func(context.Context) (daemonClient, error) { return installed, nil }, func(context.Context) (daemonClient, error) {
+		managementConnections.Add(1)
+		return newFakeDaemon("management.toml"), nil
+	}, fakeAuth{}, &secret.Memory{})
+	s.Shutdown()
+	if got := managementConnections.Load(); got != 0 {
+		t.Fatalf("management connections = %d, want 0", got)
+	}
+}
+
 func TestAutomaticUpdateCheckWaitsForSettings(t *testing.T) {
 	daemon := newFakeDaemon("settings.toml")
 	daemon.settings.UpdateChecks = false
@@ -270,6 +314,8 @@ func TestAutomaticUpdateCheckWaitsForSettings(t *testing.T) {
 	httpClient := &countingHTTPClient{}
 	s.mu.Lock()
 	s.updateClient = httpClient
+	settingsChanged := make(chan struct{}, 1)
+	s.settingsSink = func() { settingsChanged <- struct{}{} }
 	s.mu.Unlock()
 	if _, err := s.CheckForUpdate(false); err != nil {
 		t.Fatal(err)
@@ -284,6 +330,11 @@ func TestAutomaticUpdateCheckWaitsForSettings(t *testing.T) {
 		t.Fatalf("forced HTTP calls = %d, want 1", got)
 	}
 	available.Store(true)
+	select {
+	case <-settingsChanged:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reconnect did not emit settings changed")
+	}
 	eventually(t, 3*time.Second, func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -306,6 +357,29 @@ func TestConfirmedDefaultEnablesUpdateChecks(t *testing.T) {
 	t.Cleanup(s.Shutdown)
 	if !s.UpdateChecksEnabled() {
 		t.Fatal("confirmed default update preference is disabled")
+	}
+}
+
+func TestSettingsMutationEmitsChanged(t *testing.T) {
+	daemon := newFakeDaemon("settings.toml")
+	s := newService(func(context.Context) (daemonClient, error) { return daemon, nil }, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	changed := make(chan struct{}, 1)
+	s.mu.Lock()
+	s.settingsSink = func() { changed <- struct{}{} }
+	s.mu.Unlock()
+	if err := s.SetUpdateChecks(false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	case <-time.After(time.Second):
+		t.Fatal("settings mutation did not emit changed")
+	}
+	select {
+	case <-changed:
+		t.Fatal("settings mutation emitted changed more than once")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -378,6 +452,52 @@ func TestWatchLogsRefetchesAfterSequenceReset(t *testing.T) {
 		if got := calls[i].params.(api.LogsParams).Sequence; got != want {
 			t.Fatalf("logs.since call %d sequence = %d, want %d", i, got, want)
 		}
+	}
+	select {
+	case duplicate := <-appended:
+		t.Fatalf("duplicate logs emitted: %#v", duplicate)
+	case <-time.After(250 * time.Millisecond):
+	}
+}
+
+func TestWatchLogsRefetchesAfterGenerationChangeWithHigherSequence(t *testing.T) {
+	first := newFakeDaemon("first.toml")
+	first.logs = []api.LogsResult{{Sequence: 5, Lines: []supervisor.LogLine{{Seq: 5, Line: "old"}}}}
+	second := newFakeDaemon("second.toml")
+	newLines := make([]supervisor.LogLine, 7)
+	for i := range newLines {
+		newLines[i] = supervisor.LogLine{Seq: uint64(i + 1), Line: fmt.Sprintf("new-%d", i+1)}
+	}
+	second.logs = []api.LogsResult{{Sequence: 7, Lines: newLines}}
+	var attempts atomic.Int32
+	var reconnect atomic.Bool
+	s := newService(func(context.Context) (daemonClient, error) {
+		if attempts.Add(1) == 1 {
+			return first, nil
+		}
+		if !reconnect.Load() {
+			return nil, errors.New("daemon unavailable")
+		}
+		return second, nil
+	}, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	appended := make(chan api.LogAppend, 2)
+	s.mu.Lock()
+	s.logSink = func(lines api.LogAppend) { appended <- lines }
+	s.mu.Unlock()
+	initial := s.WatchLogs("db")
+	if len(initial) != 1 || initial[0].Seq != 5 {
+		t.Fatalf("initial logs = %#v", initial)
+	}
+	first.Close()
+	reconnect.Store(true)
+	select {
+	case got := <-appended:
+		if len(got.Lines) != 7 || got.Lines[0].Seq != 1 || got.Lines[6].Seq != 7 {
+			t.Fatalf("new daemon logs = %#v", got.Lines)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("new daemon logs were not refetched")
 	}
 	select {
 	case duplicate := <-appended:

@@ -78,13 +78,11 @@ function General({ overview }: { overview: Overview }) {
   useEffect(() => {
     const load = () => {
       Service.UpdateChecksEnabled().then(setChecksEnabled);
-      Service.CheckForUpdate(false)
-        .then(setUpdate)
-        .catch(() => undefined);
     };
+    const off = onSettingsChanged(load);
     Service.AppVersion().then(setVersion);
     load();
-    return onSettingsChanged(load);
+    return off;
   }, []);
   const toggleChecks = (enabled: boolean) => {
     setChecksEnabled(enabled);

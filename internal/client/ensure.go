@@ -96,14 +96,14 @@ func Ensure(ctx context.Context, opts EnsureOptions) (*Client, error) {
 			}
 			c.Close()
 			var rpc *api.Error
-			if err != nil && !retryable(err) && !(errors.As(err, &rpc) && (rpc.Data.Kind == api.Conflict || rpc.Data.Kind == api.Stopped)) {
+			if err != nil && !TransportError(err) && !(errors.As(err, &rpc) && (rpc.Data.Kind == api.Conflict || rpc.Data.Kind == api.Stopped)) {
 				return nil, err
 			}
 		} else {
 			if opts.NoStart {
 				return nil, err
 			}
-			if !retryable(err) {
+			if !TransportError(err) {
 				return nil, err
 			}
 			if started {
@@ -143,6 +143,7 @@ func Ensure(ctx context.Context, opts EnsureOptions) (*Client, error) {
 	}
 }
 
-func retryable(err error) bool {
+// TransportError reports connection failures that can succeed on a fresh daemon connection.
+func TransportError(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed)
 }
