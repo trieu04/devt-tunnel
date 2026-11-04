@@ -1,31 +1,23 @@
-package host
+package engine
 
 import (
-	"context"
 	"errors"
 	"regexp"
 	"sort"
 	"time"
 
+	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
 )
 
-type SecretView struct {
-	Name     string      `json:"name"`
-	Kind     secret.Kind `json:"kind"`
-	State    string      `json:"state"`
-	UsedBy   []string    `json:"usedBy"`
-	LastUsed string      `json:"lastUsed"`
-}
-
 var secretName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-func (s *Service) ListSecrets() []SecretView {
-	byName := map[string]*SecretView{}
+func (s *Engine) ListSecrets() []api.SecretView {
+	byName := map[string]*api.SecretView{}
 	lastUsed := map[string]time.Time{}
 	for _, entry := range s.secretIndex.List() {
-		view := &SecretView{Name: entry.Name, Kind: entry.Kind, State: "missing"}
+		view := &api.SecretView{Name: entry.Name, Kind: entry.Kind, State: "missing"}
 		byName[entry.Name] = view
 		lastUsed[entry.Name] = entry.LastUsed
 	}
@@ -33,13 +25,13 @@ func (s *Service) ListSecrets() []SecretView {
 		for _, name := range tunnel.Secrets() {
 			view := byName[name]
 			if view == nil {
-				view = &SecretView{Name: name, Kind: inferKind(tunnel, name), State: "missing"}
+				view = &api.SecretView{Name: name, Kind: inferKind(tunnel, name), State: "missing"}
 				byName[name] = view
 			}
 			view.UsedBy = append(view.UsedBy, tunnel.Name)
 		}
 	}
-	out := make([]SecretView, 0, len(byName))
+	out := make([]api.SecretView, 0, len(byName))
 	for name, view := range byName {
 		if _, err := secret.Has(s.secrets, name); err == nil {
 			view.State = "present"
@@ -69,7 +61,7 @@ func inferKind(t model.Tunnel, name string) secret.Kind {
 	}
 }
 
-func (s *Service) DeleteSecret(name string) error {
+func (s *Engine) DeleteSecret(name string) error {
 	if err := s.secrets.Delete(name); err != nil {
 		return err
 	}
@@ -80,7 +72,7 @@ func (s *Service) DeleteSecret(name string) error {
 	return nil
 }
 
-func (s *Service) RenameSecret(from, to string) error {
+func (s *Engine) RenameSecret(from, to string) error {
 	if !secretName.MatchString(to) {
 		return errors.New("invalid secret name")
 	}
@@ -127,17 +119,3 @@ func replaceSecretRefs(t *model.Tunnel, from, to string) {
 		}
 	}
 }
-
-func (s *Service) RevealSecret(name string) (string, error) {
-	if !s.auth.Available() {
-		return "", errors.New("revealing secrets is unavailable without OS user authentication")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	if err := s.auth.Confirm(ctx, "Reveal secret "+name); err != nil {
-		return "", err
-	}
-	return s.secrets.Inner.Get(name)
-}
-
-func (s *Service) UserAuthAvailable() bool { return s.auth.Available() }

@@ -17,6 +17,7 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Main window, editor, quick launch, profiles, Vault and Settings | Implemented; frontend tests cover only filtering, shortcuts and quick-launch results, and native visual acceptance remains |
 | SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
 | Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
+| Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; GUI still runs the engine in-process; native-window regression check pending |
 | Daemon, `dtt` CLI and MCP server for agents | Design accepted; not implemented |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.

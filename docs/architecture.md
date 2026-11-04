@@ -4,7 +4,7 @@ Describes intended behavior. Stack, per-OS details and code layout are in [platf
 
 ## Control plane
 
-Accepted, not yet implemented: until [phases 14–17](plans/README.md#phases) ship, the code runs everything in the app process, and "the app" below means that process. Afterward, an on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
+Phase 14 has extracted the shared `internal/api` types and GUI-independent `internal/engine`; the host forwards to that engine in-process. Until [phases 15–17](plans/README.md#phases) ship, "the app" below still means the desktop process. Afterward, an on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
 
 ## Process model
 

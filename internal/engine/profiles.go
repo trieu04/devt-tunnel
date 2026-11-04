@@ -1,4 +1,4 @@
-package host
+package engine
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
-func (s *Service) ActivateProfile(id string) error {
+func (s *Engine) ActivateProfile(id string) error {
 	cfg := s.manager.Config()
 	var selected *model.Profile
 	if id != "" {
@@ -45,7 +45,7 @@ func (s *Service) ActivateProfile(id string) error {
 	return nil
 }
 
-func (s *Service) SaveProfile(profile model.Profile, members []string) (string, error) {
+func (s *Engine) SaveProfile(profile model.Profile, members []string) (string, error) {
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		if profile.ID == "" {
 			taken := map[string]bool{}
@@ -95,7 +95,7 @@ func (s *Service) SaveProfile(profile model.Profile, members []string) (string, 
 	return profile.ID, err
 }
 
-func (s *Service) DeleteProfile(id string) error {
+func (s *Engine) DeleteProfile(id string) error {
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error { profiles.Remove(cfg, id); return nil })
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ func (s *Service) DeleteProfile(id string) error {
 	return nil
 }
 
-func (s *Service) DuplicateProfile(id string) (string, error) {
+func (s *Engine) DuplicateProfile(id string) (string, error) {
 	var duplicate model.Profile
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		duplicate = profiles.Duplicate(cfg, id)
@@ -122,7 +122,7 @@ func (s *Service) DuplicateProfile(id string) (string, error) {
 	return duplicate.ID, err
 }
 
-func (s *Service) SetProfileAutostart(id, tunnelID string, on bool) error {
+func (s *Engine) SetProfileAutostart(id, tunnelID string, on bool) error {
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		for n := range cfg.Profiles {
 			if cfg.Profiles[n].ID == id {
@@ -141,7 +141,7 @@ func (s *Service) SetProfileAutostart(id, tunnelID string, on bool) error {
 	return err
 }
 
-func (s *Service) StartProfile(id string) error {
+func (s *Engine) StartProfile(id string) error {
 	var failures []string
 	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
 		if err := s.manager.Start(tunnel.ID); err != nil {
@@ -154,7 +154,7 @@ func (s *Service) StartProfile(id string) error {
 	return nil
 }
 
-func (s *Service) StopProfile(id string) {
+func (s *Engine) StopProfile(id string) {
 	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
 		s.manager.Stop(tunnel.ID)
 	}

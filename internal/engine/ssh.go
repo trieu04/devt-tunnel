@@ -1,4 +1,4 @@
-package host
+package engine
 
 import (
 	"context"
@@ -9,24 +9,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/sshconfig"
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
-
-type SSHHostList struct {
-	ConfigPath string           `json:"configPath"`
-	Hosts      []sshconfig.Host `json:"hosts"`
-	Warnings   []string         `json:"warnings"`
-}
-
-type ToolInfo struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Version string `json:"version"`
-	Source  string `json:"source"`
-	Error   string `json:"error"`
-}
 
 type osFS struct{}
 
@@ -34,16 +21,16 @@ func (osFS) ReadFile(name string) ([]byte, error) { return os.ReadFile(name) }
 
 func (osFS) Glob(pattern string) ([]string, error) { return filepath.Glob(pattern) }
 
-func (s *Service) SSHHosts(profileID string) SSHHostList {
+func (s *Engine) SSHHosts(profileID string) api.SSHHostList {
 	path := s.sshConfigPath(profileID)
 	hosts, warnings, err := sshconfig.Scan(path, osFS{})
 	if err != nil {
 		warnings = append(warnings, err.Error())
 	}
-	return SSHHostList{ConfigPath: path, Hosts: hosts, Warnings: warnings}
+	return api.SSHHostList{ConfigPath: path, Hosts: hosts, Warnings: warnings}
 }
 
-func (s *Service) sshConfigPath(profileID string) string {
+func (s *Engine) sshConfigPath(profileID string) string {
 	for _, profile := range s.manager.Config().Profiles {
 		if profile.ID == profileID && profile.SSHConfig != "" {
 			return expandPath(profile.SSHConfig)
@@ -62,7 +49,7 @@ func expandPath(path string) string {
 	return path
 }
 
-func (s *Service) ResolveSSHHost(alias, profileID string) (sshconfig.Resolved, error) {
+func (s *Engine) ResolveSSHHost(alias, profileID string) (sshconfig.Resolved, error) {
 	path, err := s.tools.Resolve("ssh")
 	if err != nil {
 		return sshconfig.Resolved{}, err
@@ -79,13 +66,13 @@ func (s *Service) ResolveSSHHost(alias, profileID string) (sshconfig.Resolved, e
 	return sshconfig.ParseG(out), nil
 }
 
-func (s *Service) ReloadSSHHosts() { s.notify() }
+func (s *Engine) ReloadSSHHosts() { s.notify() }
 
-func (s *Service) Tools() []ToolInfo {
+func (s *Engine) Tools() []api.ToolInfo {
 	commands := map[string][]string{"ssh": {"-V"}, "ngrok": {"version"}, "cloudflared": {"--version"}}
-	out := make([]ToolInfo, 0, len(commands))
+	out := make([]api.ToolInfo, 0, len(commands))
 	for _, name := range []string{"ssh", "ngrok", "cloudflared"} {
-		info := ToolInfo{Name: name}
+		info := api.ToolInfo{Name: name}
 		path, source, err := s.tools.Locate(name)
 		if err != nil {
 			info.Error = err.Error()
@@ -103,7 +90,7 @@ func (s *Service) Tools() []ToolInfo {
 	return out
 }
 
-func (s *Service) SetToolPath(tool, path string) ([]ToolInfo, error) {
+func (s *Engine) SetToolPath(tool, path string) ([]api.ToolInfo, error) {
 	if tool != "ssh" && tool != "ngrok" && tool != "cloudflared" {
 		return nil, fmt.Errorf("unsupported tool %q", tool)
 	}
@@ -125,12 +112,12 @@ func (s *Service) SetToolPath(tool, path string) ([]ToolInfo, error) {
 	} else {
 		s.settings.Tools[tool] = path
 	}
-	current := s.settings
-	s.mu.Unlock()
-	if err := settings.Save(s.settingsPath, current); err != nil {
+	if err := settings.Save(s.settingsPath, s.settings); err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
-	s.tools.SetOverrides(current.Tools)
+	s.tools.SetOverrides(s.settings.Tools)
+	s.mu.Unlock()
 	s.notify()
 	return s.Tools(), nil
 }

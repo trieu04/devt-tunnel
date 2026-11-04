@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Service, TunnelView } from "./api";
-import type { PendingPrompt } from "../bindings/github.com/trieu04/devt-tunnel/internal/host";
+import type { PendingPrompt } from "../bindings/github.com/trieu04/devt-tunnel/internal/api";
 
 /** Shows ssh's own question. Host-key prompts stay visible as typed; everything else is hidden input. */
 export function PromptDialog({ prompts, tunnels }: { prompts: PendingPrompt[]; tunnels: TunnelView[] }) {

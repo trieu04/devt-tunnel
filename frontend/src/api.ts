@@ -1,7 +1,7 @@
 // The only module that talks to the Go side. Types come from generated bindings.
 import { Browser, Events } from "@wailsio/runtime";
 import * as Service from "../bindings/github.com/trieu04/devt-tunnel/internal/host/service";
-import type { Overview, TunnelView } from "../bindings/github.com/trieu04/devt-tunnel/internal/host";
+import type { Overview, TunnelView } from "../bindings/github.com/trieu04/devt-tunnel/internal/api";
 
 export type { Overview, TunnelView };
 export { Service };

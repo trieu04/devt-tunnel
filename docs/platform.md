@@ -67,6 +67,8 @@ Rejected without detailed comparison:
 │  frontend/ React UI: main, quick launch, editor, vault        │
 │        ▲ generated typed bindings + events                    │
 │  internal/host: Wails services, tray, shortcut, windows       │
+│        ▼ internal/api shared types                           │
+│  internal/engine: registry, prompts, settings, core wiring    │
 │        ▼                                                      │
 │  internal/core: model · config · argv builder · importer      │
 │                 supervisor · readiness · checks · profiles    │
@@ -81,6 +83,8 @@ Rejected without detailed comparison:
 ```text
 main.go                   Wails entry point; embeds frontend/dist (Wails build tasks expect it at the root)
 cmd/devt-tunnel-askpass/    helper; no GUI dependency
+internal/api/             shared client types and events; no Wails
+internal/engine/           registry, prompts, settings and core wiring; no Wails
 internal/core/            model, config, command, checks, supervisor; no Wails, no OS-specific code
 internal/askpass/         prompt protocol shared by the app and the helper
 internal/platform/        process, env, paths, secrets; *_unix.go, *_windows.go, *_darwin.go, *_linux.go
@@ -91,9 +95,9 @@ build/                    Wails build tasks and per-OS assets
 
 Rules:
 
-- **`internal/core` must not import Wails.** Its tests run with `CGO_ENABLED=0` and no GTK, and this boundary keeps the exit cost low if the spike or v3 disappoints.
+- **`internal/core`, `internal/api`, `internal/engine` and `cmd/dtt` must not depend on Wails.** The headless dependency test checks core, API, engine and every existing command; CI runs them with `CGO_ENABLED=0` and no GTK. Only the host and app entry point import Wails.
 - **Business logic does not go in React.** The UI renders state and sends intents; argv and checks come from the core, which keeps the preview-equals-execution guarantee in [architecture.md](architecture.md).
-- **Daemon accepted, not yet built.** The diagram and layout above show today's code. [design/control-plane.md](design/control-plane.md) has the target, where `internal/engine` and a local API sit between the clients and the core. `dtt` must build with `CGO_ENABLED=0` and no Wails. Tunnels still stop when the app quits, by product definition.
+- **Daemon accepted, not yet built.** The diagram and layout above show today's code. [design/control-plane.md](design/control-plane.md) has the target local API. Phase 14 has extracted the in-process engine and shared types; host subscriptions translate engine events into the existing Wails events. `dtt` must build with `CGO_ENABLED=0` and no Wails. Tunnels still stop when the app quits, by product definition.
 
 ```go
 type Process interface {

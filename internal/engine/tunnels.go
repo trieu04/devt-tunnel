@@ -1,34 +1,22 @@
-package host
+package engine
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
 	"github.com/trieu04/devt-tunnel/internal/core/config"
 	"github.com/trieu04/devt-tunnel/internal/core/importer"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/state"
-	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
 
-type DraftResult struct {
-	Preview    string           `json:"preview"`
-	BuildError string           `json:"buildError"`
-	Findings   []checks.Finding `json:"findings"`
-}
-
-type LogAppend struct {
-	ID    string               `json:"id"`
-	Lines []supervisor.LogLine `json:"lines"`
-}
-
-func (s *Service) EvaluateDraft(t model.Tunnel) DraftResult {
+func (s *Engine) EvaluateDraft(t model.Tunnel) api.DraftResult {
 	preview, err := s.manager.PreviewDraft(t)
-	result := DraftResult{Preview: preview}
+	result := api.DraftResult{Preview: preview}
 	if err != nil {
 		result.BuildError = err.Error()
 	}
@@ -40,7 +28,7 @@ func (s *Service) EvaluateDraft(t model.Tunnel) DraftResult {
 	return result
 }
 
-func (s *Service) checkDeps(profileID string) checks.Deps {
+func (s *Engine) checkDeps(profileID string) checks.Deps {
 	return checks.Deps{
 		Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), ProfileID: profileID,
 		Hosts: func(id string) ([]string, error) {
@@ -61,7 +49,7 @@ func firstProfile(t model.Tunnel) string {
 	return ""
 }
 
-func (s *Service) NewDraft(kind model.TunnelType) model.Tunnel {
+func (s *Engine) NewDraft(kind model.TunnelType) model.Tunnel {
 	t := model.Tunnel{Type: kind, Reconnect: true}
 	switch kind {
 	case model.TypeSSH:
@@ -76,7 +64,7 @@ func (s *Service) NewDraft(kind model.TunnelType) model.Tunnel {
 	return t
 }
 
-func (s *Service) ImportCommand(line string) (importer.Result, error) {
+func (s *Engine) ImportCommand(line string) (importer.Result, error) {
 	profileID := s.stateStore.Get().ActiveProfile
 	hostList := s.SSHHosts(profileID)
 	hosts := make([]string, 0, len(hostList.Hosts))
@@ -86,7 +74,7 @@ func (s *Service) ImportCommand(line string) (importer.Result, error) {
 	return importer.Parse(line, platform.Dialect(), hosts)
 }
 
-func (s *Service) DuplicateDraft(id string) (model.Tunnel, error) {
+func (s *Engine) DuplicateDraft(id string) (model.Tunnel, error) {
 	cfg := s.manager.Config()
 	taken := map[string]bool{}
 	for _, tunnel := range cfg.Tunnels {
@@ -101,7 +89,7 @@ func (s *Service) DuplicateDraft(id string) (model.Tunnel, error) {
 	return model.Tunnel{}, fmt.Errorf("unknown tunnel %q", id)
 }
 
-func (s *Service) SaveTunnel(t model.Tunnel, start bool) (string, error) {
+func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 	wasNew := t.ID == ""
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		if wasNew {
@@ -137,7 +125,7 @@ func (s *Service) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 	return t.ID, nil
 }
 
-func (s *Service) DeleteTunnel(id string) error {
+func (s *Engine) DeleteTunnel(id string) error {
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		out := cfg.Tunnels[:0]
 		found := false
@@ -164,7 +152,7 @@ func (s *Service) DeleteTunnel(id string) error {
 	})
 }
 
-func (s *Service) SetFavorite(id string, favorite bool) error {
+func (s *Engine) SetFavorite(id string, favorite bool) error {
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		for n := range cfg.Tunnels {
 			if cfg.Tunnels[n].ID == id {
@@ -180,67 +168,9 @@ func (s *Service) SetFavorite(id string, favorite bool) error {
 	return err
 }
 
-func (s *Service) Restart(id string) error { return s.manager.Restart(id) }
+func (s *Engine) Restart(id string) error { return s.manager.Restart(id) }
 
-func (s *Service) WatchLogs(id string) []supervisor.LogLine {
-	s.mu.Lock()
-	if s.logWatchCancel != nil {
-		s.logWatchCancel()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s.logWatchCancel = cancel
-	s.mu.Unlock()
-	if id == "" || s.host == nil {
-		return []supervisor.LogLine{}
-	}
-	_, initial := s.manager.LogsSince(id, 0)
-	var seq uint64
-	if len(initial) > 0 {
-		seq = initial[len(initial)-1].Seq
-	}
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				next, lines := s.manager.LogsSince(id, seq)
-				seq = next
-				if len(lines) > 0 && s.host != nil {
-					s.host.app.Event.Emit("logs:appended", LogAppend{ID: id, Lines: lines})
-				}
-			}
-		}
-	}()
-	return initial
-}
-
-func (s *Service) OpenIn(screen, param string) {
-	if s.host != nil {
-		s.host.app.Event.Emit("nav:open", map[string]string{"screen": screen, "param": param})
-		s.ShowMain()
-	}
-}
-
-func (s *Service) StartAndCopy(id string) error {
-	if err := s.manager.Start(id); err != nil {
-		return err
-	}
-	s.recordUsed(id)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		status, err := s.manager.WaitReady(ctx, id)
-		if err == nil && status.Address != "" && s.host != nil {
-			_ = s.host.app.Clipboard.SetText(status.Address)
-		}
-	}()
-	return nil
-}
-
-func (s *Service) recordUsed(id string) {
+func (s *Engine) recordUsed(id string) {
 	_ = s.stateStore.Update(func(st *state.State) {
 		if st.LastUsed == nil {
 			st.LastUsed = map[string]time.Time{}

@@ -3,7 +3,6 @@ package host
 import (
 	"log"
 	"runtime"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -47,20 +46,13 @@ func Attach(app *application.App, svc *Service) {
 	svc.mu.Lock()
 	svc.host = d
 	svc.mu.Unlock()
-	app.Event.OnApplicationEvent(events.Common.SystemDidWake, func(*application.ApplicationEvent) { svc.manager.Wake() })
-	go monitorClockJump(svc.manager.Wake)
+	app.Event.OnApplicationEvent(events.Common.SystemDidWake, func(*application.ApplicationEvent) { svc.engine.Wake() })
 
 	// Registered after startup so that a conflict comes back here rather than to the global error handler.
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		log.Printf("application ready")
 		d.registerShortcut()
-		for _, t := range svc.manager.Config().Tunnels {
-			if t.StartOnLaunch {
-				if err := svc.manager.Start(t.ID); err != nil {
-					log.Printf("start %s: %v", t.ID, err)
-				}
-			}
-		}
+		svc.engine.StartOnLaunch()
 	})
 }
 
@@ -85,10 +77,7 @@ func (d *desktop) createWindows() {
 		d.app.Quit()
 	})
 	d.main.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
-		d.svc.secrets.Forget()
-		if changed, err := d.svc.configStore.Changed(); err == nil && changed {
-			d.svc.loadConfig()
-		}
+		d.svc.engine.Focus()
 	})
 
 	d.quick = d.app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -143,23 +132,6 @@ func (d *desktop) createWindows() {
 	}
 }
 
-func monitorClockJump(wake func()) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	previous := time.Now().Round(0)
-	for now := range ticker.C {
-		wall := now.Round(0)
-		if clockJumped(previous, wall, 30*time.Second) {
-			wake()
-		}
-		previous = wall
-	}
-}
-
-func clockJumped(previous, current time.Time, interval time.Duration) bool {
-	return current.Sub(previous) > interval+60*time.Second
-}
-
 func (d *desktop) showMain() {
 	if d.popup != nil {
 		d.popup.Hide()
@@ -195,14 +167,14 @@ func defaultShortcut() string {
 }
 
 func (d *desktop) registerShortcut() {
-	accel := d.svc.settings.Shortcut
+	accel := d.svc.engine.Shortcut()
 	if accel == "" {
 		accel = defaultShortcut()
 	}
 	err := d.setShortcut(accel)
 	if err != nil {
 		log.Printf("global shortcut: %v", err)
-		d.svc.notify()
+		d.app.Event.Emit(eventTunnels)
 	}
 }
 

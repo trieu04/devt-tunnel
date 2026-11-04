@@ -1,6 +1,6 @@
 # Central tunnel management
 
-Status: **accepted 2026-11-04, not implemented.** Written against commit `956c869` and rechecked against `6e0028f`. No part of this exists in the code yet; [phases 14–21](../plans/README.md#phases) deliver it.
+Status: **accepted 2026-11-04; phase 14 engine extraction implemented.** The GUI still hosts the engine in-process; the daemon, local API, CLI and MCP remain planned. The target design was written against commit `956c869` and rechecked against `6e0028f`; [phases 14–21](../plans/README.md#phases) deliver it.
 
 Companion contracts: [cli.md](cli.md) (`dtt` command line and its documentation) and [mcp.md](mcp.md) (tools for agents).
 
@@ -51,7 +51,7 @@ Move the core out of the desktop process into a small per-user daemon. The GUI, 
 
 ## Why a daemon
 
-Today every tunnel is a child of the GUI process, `internal/host/service.go` owns the wiring, and the Wails `SingleInstance` option blocks a second process. [platform.md](../platform.md) anticipated this: "If a CLI or background mode is wanted later, the core can move behind a local API then".
+Today every tunnel is a child of the GUI process, `internal/engine` owns the wiring, and the Wails `SingleInstance` option blocks a second process. [platform.md](../platform.md) anticipated this: "If a CLI or background mode is wanted later, the core can move behind a local API then".
 
 | Option | Headless server | Survives GUI quit | Code paths | Verdict |
 |---|---|---|---|---|
@@ -83,7 +83,7 @@ Option C costs the most at first, because the GUI must move to the API at once. 
 | `RevealSecret` runs after OS auth in-process | A secret value would cross the API | Reveal stays in the GUI: authenticate, then read the keychain directly. The API has no method that returns a value |
 | `Manager.Start` with a missing secret returns `nil` and sets `stopped`; `WaitReady` then returns an empty error | The CLI and MCP cannot tell what happened | Keep `Start` as it is, because the Vault retry flow relies on it. `WaitReady` returns typed `ErrNeedsSecret` and `ErrStopped` |
 | `settings.toml` is rewritten whole from one in-memory copy | Two writers would overwrite each other's fields | All writes go through the daemon, including the GUI's shortcut and update-check settings |
-| `host` types (`TunnelView`, `Overview`, ...) sit in the Wails package | The CLI and daemon must not link Wails | Move them to `internal/api`. Generated bindings move too, so frontend type imports change |
+| Shared types and engine were coupled to `host` | The CLI and daemon must not link Wails | Phase 14 moved them to `internal/api` and `internal/engine`; bindings now import the shared types, and the host forwards in-process |
 | `checks.Deps.Listening` is never set outside tests | "Port already in use" never fires, and allocation needs it | Wire it in the engine |
 | `Status.Address` holds one address | Tunnels may have many forwards | Add `Endpoints`, see [API](#local-api) |
 | `SSH.Flags`, `SSH.Options` and `SSH.ExtraArgs` have no check for command execution | `ProxyCommand` and `LocalCommand` run programs. Acceptable from the owner; not from an agent | New `checks.AgentSafe`, see [Policy](#policy) |

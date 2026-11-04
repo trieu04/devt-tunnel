@@ -1,0 +1,436 @@
+// Package engine owns tunnel state and orchestration without a GUI dependency.
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/askpass"
+	"github.com/trieu04/devt-tunnel/internal/core/checks"
+	"github.com/trieu04/devt-tunnel/internal/core/command"
+	"github.com/trieu04/devt-tunnel/internal/core/config"
+	"github.com/trieu04/devt-tunnel/internal/core/secret"
+	"github.com/trieu04/devt-tunnel/internal/core/settings"
+	corestate "github.com/trieu04/devt-tunnel/internal/core/state"
+	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
+	"github.com/trieu04/devt-tunnel/internal/platform"
+)
+
+const notifyDelay = 50 * time.Millisecond
+
+type Options struct {
+	Version       string
+	ConfigPath    string
+	SettingsPath  string
+	StateDir      string
+	Secrets       secret.Store
+	Runner        supervisor.Runner
+	AskpassHelper string
+}
+
+type Engine struct {
+	configPath   string
+	settingsPath string
+	secrets      *secret.Cached
+	secretIndex  *secret.Index
+	configStore  *config.Store
+	stateStore   *corestate.Store
+	settings     settings.Settings
+	tools        *platform.Tools
+	records      *supervisor.FileRecords
+	manager      *supervisor.Manager
+	broker       *askpass.Broker
+	shell        []string
+
+	mu             sync.Mutex
+	configError    string
+	orphans        []supervisor.Record
+	prompts        map[string]*waitingPrompt
+	nextPrompt     int
+	notifyTimer    *time.Timer
+	subscribers    map[uint64]func(api.Event)
+	nextSubscriber uint64
+	done           chan struct{}
+	shutdown       sync.Once
+	closed         bool
+}
+
+type waitingPrompt struct {
+	view   api.PendingPrompt
+	answer chan promptAnswer
+}
+
+type promptAnswer struct {
+	value     string
+	cancelled bool
+}
+
+func New(opts Options) (*Engine, error) {
+	var err error
+	if opts.ConfigPath == "" {
+		opts.ConfigPath, err = platform.ConfigFile()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if opts.SettingsPath == "" {
+		opts.SettingsPath, err = platform.SettingsFile()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if opts.StateDir == "" {
+		opts.StateDir, err = platform.StateDir()
+		if err != nil {
+			return nil, err
+		}
+	}
+	appSettings, err := settings.Load(opts.SettingsPath)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Secrets == nil {
+		opts.Secrets = platform.Keychain{}
+	}
+	if opts.Runner == nil {
+		opts.Runner = platform.Runner{}
+	}
+	if opts.AskpassHelper == "" {
+		opts.AskpassHelper = askpassHelperPath()
+	}
+	index := &secret.Index{Path: filepath.Join(opts.StateDir, "vault.json")}
+	s := &Engine{
+		configPath:   opts.ConfigPath,
+		settingsPath: opts.SettingsPath,
+		secrets:      &secret.Cached{Inner: opts.Secrets, Used: index.MarkUsed},
+		secretIndex:  index,
+		configStore:  config.NewStore(opts.ConfigPath),
+		stateStore:   corestate.NewStore(filepath.Join(opts.StateDir, "state.json")),
+		settings:     appSettings,
+		tools:        &platform.Tools{},
+		records:      &supervisor.FileRecords{Path: filepath.Join(opts.StateDir, "processes.json")},
+		shell:        platform.ShellFor(appSettings.Shell),
+		prompts:      map[string]*waitingPrompt{},
+		subscribers:  map[uint64]func(api.Event){},
+		done:         make(chan struct{}),
+	}
+	s.tools.SetOverrides(appSettings.Tools)
+	s.broker, err = askpass.NewBroker(opts.AskpassHelper, s.secrets, s.askUser)
+	if err != nil {
+		return nil, fmt.Errorf("askpass: %w", err)
+	}
+	s.manager = supervisor.New(supervisor.Deps{
+		Runner: opts.Runner, Secrets: s.secrets, Resolve: s.tools.Resolve, Environ: s.tools.Environ,
+		Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), Askpass: s.broker,
+		Records: s.records, OnChange: s.notify,
+	})
+	s.manager.SetActiveProfile(s.stateStore.Get().ActiveProfile)
+	s.findOrphans()
+	s.loadConfig()
+	go s.monitorClockJump()
+	return s, nil
+}
+
+func askpassHelperPath() string {
+	name := "devt-tunnel-askpass"
+	if filepath.Separator == '\\' {
+		name += ".exe"
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return name
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Join(filepath.Dir(exe), name)
+}
+
+func (s *Engine) loadConfig() {
+	cfg, err := s.configStore.Load()
+	s.mu.Lock()
+	if err != nil {
+		s.configError = err.Error()
+	} else {
+		s.configError = ""
+	}
+	s.mu.Unlock()
+	if err != nil {
+		log.Printf("config: %v", err) // keep the last good definitions
+		s.notify()
+		return
+	}
+	s.manager.SetConfig(cfg)
+	active := s.stateStore.Get().ActiveProfile
+	if active != "" {
+		found := false
+		for _, profile := range cfg.Profiles {
+			found = found || profile.ID == active
+		}
+		if !found {
+			_ = s.stateStore.Update(func(st *corestate.State) { st.ActiveProfile = "" })
+			active = ""
+		}
+	}
+	s.manager.SetActiveProfile(active)
+}
+
+func (s *Engine) findOrphans() {
+	recs, err := s.records.List()
+	if err != nil {
+		log.Printf("process records: %v", err)
+		return
+	}
+	orphans := supervisor.FindOrphans(recs, platform.ProcessIdentity)
+	alive := map[int]bool{}
+	for _, o := range orphans {
+		alive[o.PID] = true
+	}
+	for _, r := range recs {
+		if !alive[r.PID] {
+			s.records.Remove(r.PID)
+		}
+	}
+	s.mu.Lock()
+	s.orphans = orphans
+	s.mu.Unlock()
+}
+
+func (s *Engine) Overview() api.Overview {
+	s.mu.Lock()
+	o := api.Overview{
+		ConfigPath:  s.configPath,
+		ConfigError: s.configError,
+		Orphans:     append([]supervisor.Record{}, s.orphans...),
+		Prompts:     []api.PendingPrompt{},
+	}
+	for _, p := range s.prompts {
+		o.Prompts = append(o.Prompts, p.view)
+	}
+	sort.Slice(o.Prompts, func(i, j int) bool { return o.Prompts[i].ID < o.Prompts[j].ID })
+	s.mu.Unlock()
+	state := s.stateStore.Get()
+	o.ActiveProfile = state.ActiveProfile
+	o.LastUsed = state.LastUsed
+	if o.LastUsed == nil {
+		o.LastUsed = map[string]time.Time{}
+	}
+	o.KeychainName = keychainName()
+	_, keychainErr := secret.Has(s.secrets, "__devt_tunnel_availability_probe__")
+	o.KeychainAvailable = keychainErr == nil || errors.Is(keychainErr, secret.ErrNotFound)
+	o.Profiles = s.manager.Config().Profiles
+	o.Tunnels = s.views()
+	return o
+}
+
+func (s *Engine) views() []api.TunnelView {
+	statuses := s.manager.Statuses()
+	tunnels := s.manager.Config().Tunnels
+	views := make([]api.TunnelView, 0, len(tunnels))
+	for i, t := range tunnels {
+		if i >= len(statuses) {
+			break // config replaced between the two reads; the next notification corrects it
+		}
+		preview, err := s.manager.Preview(t.ID)
+		if err != nil {
+			preview = err.Error()
+		}
+		missing := []string{}
+		for _, name := range t.Secrets() {
+			if _, err := secret.Has(s.secrets, name); err != nil {
+				missing = append(missing, name)
+			}
+		}
+		spec, _ := command.Build(t, command.Options{Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect()})
+		toolPath, _ := s.tools.Resolve(spec.Tool)
+		views = append(views, api.TunnelView{Tunnel: t, Status: statuses[i], Preview: preview, MissingSecrets: missing, ToolPath: toolPath})
+	}
+	return views
+}
+
+func keychainName() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "macOS Keychain"
+	case "windows":
+		return "Windows Credential Manager"
+	default:
+		return "Secret Service"
+	}
+}
+
+func (s *Engine) Start(id string) error { return s.manager.Start(id) }
+
+func (s *Engine) Stop(id string) { s.manager.Stop(id) }
+
+func (s *Engine) Toggle(id string) error {
+	for _, st := range s.manager.Statuses() {
+		if st.ID != id {
+			continue
+		}
+		switch st.State {
+		case supervisor.StateStarting, supervisor.StateRunning, supervisor.StateReconnecting:
+			s.manager.Stop(id)
+			return nil
+		}
+		return s.manager.Start(id)
+	}
+	return fmt.Errorf("unknown tunnel %q", id)
+}
+
+func (s *Engine) Logs(id string) []string {
+	if logs := s.manager.Logs(id); logs != nil {
+		return logs
+	}
+	return []string{}
+}
+
+func (s *Engine) Findings(id string) []checks.Finding {
+	cfg := s.manager.Config()
+	for _, t := range cfg.Tunnels {
+		if t.ID == id {
+			found := checks.Run(t, cfg, checks.Deps{Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell})
+			if found == nil {
+				return []checks.Finding{}
+			}
+			return found
+		}
+	}
+	return []checks.Finding{}
+}
+
+func (s *Engine) Reload() { s.loadConfig() }
+
+func (s *Engine) SetSecret(name, value string, kind secret.Kind) error {
+	if !secretName.MatchString(name) {
+		return errors.New("secret name may contain only letters, numbers, dot, underscore and hyphen")
+	}
+	if value == "" {
+		return errors.New("secret value is required")
+	}
+	if len(value) > 2560 {
+		return errors.New("secret is too large for the OS credential store")
+	}
+	if err := s.secrets.Set(name, value); err != nil {
+		return err
+	}
+	_ = s.secretIndex.Upsert(name, kind)
+	s.manager.SecretsChanged()
+	s.notify()
+	return nil
+}
+
+func (s *Engine) StopOrphan(pid int) error {
+	s.mu.Lock()
+	var found bool
+	var identity string
+	var kept []supervisor.Record
+	for _, o := range s.orphans {
+		if o.PID == pid {
+			found = true
+			identity = o.Identity
+		} else {
+			kept = append(kept, o)
+		}
+	}
+	if !found {
+		s.mu.Unlock()
+		return fmt.Errorf("process %d is not a known orphan", pid)
+	}
+	s.mu.Unlock()
+	if err := platform.StopOrphan(pid, identity, 5*time.Second); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.orphans = kept
+	s.mu.Unlock()
+	s.records.Remove(pid)
+	s.notify()
+	return nil
+}
+
+func (s *Engine) AnswerPrompt(id, value string, cancelled bool) {
+	s.mu.Lock()
+	p, ok := s.prompts[id]
+	delete(s.prompts, id)
+	s.mu.Unlock()
+	if ok {
+		p.answer <- promptAnswer{value: value, cancelled: cancelled}
+	}
+	s.notify()
+}
+
+func (s *Engine) askUser(ctx context.Context, prompt askpass.Prompt) (string, error) {
+	s.mu.Lock()
+	s.nextPrompt++
+	id := fmt.Sprintf("prompt-%d", s.nextPrompt)
+	p := &waitingPrompt{view: api.PendingPrompt{ID: id, Prompt: prompt}, answer: make(chan promptAnswer, 1)}
+	s.prompts[id] = p
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.prompts, id)
+		s.mu.Unlock()
+		s.notify()
+	}()
+	s.emit(api.Event{Type: api.EventPromptAdded, Prompt: &p.view})
+	s.notify()
+	select {
+	case <-ctx.Done():
+		return "", errors.New("no answer")
+	case <-s.done:
+		return "", errors.New("engine shut down")
+	case a := <-p.answer:
+		if a.cancelled {
+			return "", errors.New("cancelled by user")
+		}
+		return a.value, nil
+	}
+}
+
+func (s *Engine) EnsureConfigFile() (string, error) {
+	if _, err := os.Stat(s.configPath); errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(s.configPath, []byte(configTemplate), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return s.configPath, nil
+}
+
+const configTemplate = `# devt-tunnel tunnel definitions. See docs/architecture.md for all fields.
+# After editing, press Reload in the app.
+
+# [[profile]]
+# id = "work"
+# name = "Work"
+
+# [[tunnel]]
+# id = "db"
+# name = "Production DB"
+# type = "ssh"
+# profiles = ["work"]
+# favorite = true
+# reconnect = true
+#
+# [tunnel.ssh]
+# host = "server1"                  # alias from ~/.ssh/config
+# flags = ["-N"]
+# options = { ServerAliveInterval = "30" }
+#
+# [[tunnel.forward]]
+# kind = "L"
+# bind = "127.0.0.1:5433"
+# target = "127.0.0.1:5432"
+`

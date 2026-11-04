@@ -2,6 +2,8 @@
 
 **Goal:** everything in `host.Service` that is not Wails moves to a package the daemon can use. The app behaves exactly as before, still in one process.
 
+**Implementation:** extracted in-process; automated checks cover lifecycle, prompts, events and the headless boundary. Native macOS window start/stop/prompt acceptance remains unverified.
+
 **Depends on:** nothing. Design: [control-plane.md](../design/control-plane.md).
 
 ## 14.1 Shared types
@@ -14,7 +16,7 @@ Regenerate bindings with `wails3 task common:generate:bindings`. Update the type
 
 ## 14.2 `internal/engine`
 
-Move `service_tunnels.go`, `service_profiles.go`, `service_ssh.go` and `service_vault.go`, plus the wiring in `NewService`, and rename the receiver.
+Move `service_tunnels.go`, `service_profiles.go`, `service_ssh.go` and `service_vault.go`, plus the wiring in `NewService`, and rename the receiver. Settings persistence also moves to the engine so shortcut, tool and update preferences have one writer; the host keeps update HTTP requests and shortcut registration.
 
 ```go
 type Options struct {
@@ -49,7 +51,7 @@ Stays in `host`, because each needs a window, the clipboard or OS auth:
 
 - `notify` emits a coalesced `tunnels.changed` to subscribers, in place of `Event.Emit`.
 - `askUser` queues the prompt and emits `prompt.added`. The host's subscriber emits the Wails event and shows the main window.
-- Move `monitorClockJump` and `clockJumped` to the engine, with `Wake()` public for the GUI's OS event.
+- Move `monitorClockJump` and `clockJumped` to the engine, with `Wake()` public for the GUI's OS event. Shutdown cancels the monitor, pending prompts, notifications and broker.
 - `Focus()` wraps the `secrets.Forget` and `configStore.Changed` logic from the window focus hook.
 
 ## 14.4 Host forwards in-process
