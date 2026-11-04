@@ -14,7 +14,7 @@ Describes intended behavior. Stack, per-OS details and code layout are in [platf
 ## SSH integration
 
 - Tunnels built from a config host pass the alias to `ssh`, so `Include`, `Match`, `ProxyJump`, `IdentityFile` and the agent behave exactly as in a terminal.
-- Host list and resolved values (HostName, User, Port, IdentityFile, ProxyJump) come from `ssh -G <alias>` rather than a custom parser, which keeps `Match`/`Include` semantics correct.
+- A bounded parser scans `Host` and `Include` directives for literal aliases; it skips wildcard and negated patterns and does not interpret connection settings. `ssh -G <alias>` runs only after explicit selection to resolve HostName, User, Port, IdentityFile and ProxyJump with OpenSSH's full `Match`/`Include` semantics.
 - A profile's SSH config file is passed with `-F`; note that `-F` replaces the default config instead of adding to it.
 - Supervised tunnels pass `-o ControlMaster=no -o ControlPath=none` so that the forward belongs to the process the app supervises.
 - All SSH prompts go through the `devt-tunnel-askpass` helper (`SSH_ASKPASS` with `SSH_ASKPASS_REQUIRE=force`), which forwards them to the app over a local socket with a per-spawn token. Passphrase prompts are answered from the Vault when the tunnel names a secret; every other prompt (host key, password, OTP) goes to the user. The passphrase never appears in argv or env.
@@ -28,7 +28,7 @@ Describes intended behavior. Stack, per-OS details and code layout are in [platf
 ## Storage
 
 - Definitions: `tunnels.toml` (tunnels, profiles) in `~/.config/devt-tunnel/` on macOS, `$XDG_CONFIG_HOME/devt-tunnel/` on Linux and `%APPDATA%\devt-tunnel\` on Windows. Kept free of runtime state so it stays diffable and shareable.
-- Runtime state (active profile, running processes, window state) lives in a separate state file under the OS state directory (see [platform.md](platform.md)).
+- Runtime state lives in `state.json` under the OS state directory; crash process records remain in `processes.json`. Per-machine tool paths, shortcut and shell live in `settings.toml` beside the definitions. Config writes detect outside changes, keep `tunnels.toml.bak`, validate before replacement and write atomically; hand-written comments are not preserved.
 
 ```toml
 [[profile]]
@@ -37,7 +37,7 @@ name = "Work"
 ssh_config = "~/.ssh/config"
 on_activate = "start_autostart"   # or "filter"
 stop_non_members = false
-autostart = ["prod-db"]
+autostart = ["srv1"]
 
 [[tunnel]]
 id = "srv1"
@@ -76,6 +76,10 @@ secret = "ngrok-personal"
 
 Parses `ssh`, `ngrok` and `cloudflared` argv into the model. Recognized flags and `-o` options map to fields; anything unrecognized goes to `extra_args` so a round trip never drops arguments.
 
+## Network recovery
+
+SSH remains responsible for detecting dead connections; new SSH drafts set `ServerAliveInterval=30`, and the supervisor reconnects after exit. A system wake event or a wall-clock jump interrupts reconnect backoff, but the app does not add a separate network-change listener.
+
 ## Decisions
 
 - **System binaries over an embedded SSH library:** full `~/.ssh/config` and agent compatibility at the cost of depending on installed versions.
@@ -88,9 +92,8 @@ Parses `ssh`, `ngrok` and `cloudflared` argv into the model. Recognized flags an
 - **One process, no daemon:** tunnels stop on quit by product definition.
 - **Askpass forwards prompts:** `SSH_ASKPASS_REQUIRE=force` routes every prompt to the helper, so it must not answer them all with a stored passphrase.
 - **No sandboxed distribution:** Mac App Store, Flatpak and strict Snap conflict with spawning host binaries.
+- **No v1 import/export format:** copying `tunnels.toml` is the sharing mechanism.
 
 ## Open questions
 
-- Whether the Windows and Linux desktop behavior passes the validation checks in [platform.md](platform.md).
-- Whether several profiles may be active at once.
-- Import/export format for sharing tunnel definitions.
+- Windows and Linux native behavior still requires the real-desktop validation matrix in [platform.md](platform.md).

@@ -1,6 +1,6 @@
 # Platform
 
-Status: **adopted** for the code base. The checks in [Validation spike](#validation-spike) are still open; only macOS has been run so far. Research date: 2026-11-03.
+Status: **adopted** for the code base. Automated builds target all three operating systems, but the native desktop matrix remains incomplete; only the existing macOS evidence below has been observed by a person. Research date: 2026-11-03; implementation status updated 2026-11-04.
 
 Targets: macOS, Windows and Linux.
 
@@ -219,6 +219,8 @@ Build one minimal app on the pinned Wails version: tray, global shortcut, quick 
 | 8 | Secret round trip; missing keyring handled | ☐ | ☐ | ☐ | | |
 | 9 | No console window flashes when spawning | | ☐ | | | |
 | 10 | Idle memory and installer size recorded | ☐ | ☐ | ☐ | | |
+
+Extended checks still requiring real desktops: wake event delivery, OS-authenticated reveal, keyboard/IME behavior, multi-monitor palette focus, window restoration after monitor removal, Windows quoting, 500-tunnel rendering, second-instance focus, GNOME close behavior and installed helper discovery. Automated CI and cross-compilation are not acceptance evidence for these checks.
 
 **Results so far (macOS arm64 only, Windows and Linux not run):**
 

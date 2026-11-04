@@ -10,16 +10,37 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 
 | Area | State |
 |---|---|
-| Tunnel model, `tunnels.toml`, command builder | Done |
-| Supervisor: readiness, auto-reconnect, stop, crash recovery | Done |
+| Tunnel model, safe persistence, command builder and paste import | Implemented and unit tested |
+| Supervisor: readiness, reconnect, wake recovery, stop and crash recovery | Implemented; real sleep/wake acceptance remains |
 | SSH prompts through the askpass helper | Done |
-| Secrets in the OS keychain | Done; not yet exercised against a real keychain |
-| Main window, quick launch, tray, global shortcut | First version; no tunnel editor yet |
-| Editor, paste-command import, profile activation, Vault screen | Not started |
-| `ssh -G` host list, per-tool path settings, reveal with OS authentication | Not started |
-| Signed installers, updater | Not started |
+| Secrets and Vault metadata | Implemented; reveal stays disabled until native OS authentication is available |
+| Main window, editor, quick launch, profiles, Vault and Settings | Implemented; frontend tests cover only filtering, shortcuts and quick-launch results, and native visual acceptance remains |
+| SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
+| Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
 
-Until the editor exists, tunnels are defined by editing `tunnels.toml`: use **Edit tunnels.toml** in the app, then **Reload**.
+Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
+
+## Install
+
+Release artifacts are created as a draft from `v*` tags. Until signed artifacts are published, build locally with the development instructions below; files named `-unsigned` are tester-only.
+
+- macOS: install the `.dmg` once the first signed and notarized release is published; Homebrew cask publication follows it.
+- Windows 10/11: run the NSIS installer once signed releases exist. Windows 10 may install the WebView2 runtime during setup.
+- Ubuntu 24.04+/Debian 13+: install the `.deb`; Fedora users install the `.rpm`. GNOME may need a StatusNotifierItem extension for a tray icon.
+
+The app uses system binaries and does not bundle `ssh`, `ngrok` or `cloudflared`.
+
+## First tunnel
+
+Open **New tunnel**, choose **SSH**, select a host from the scanned SSH config, add a local forward such as `127.0.0.1:5433 → 127.0.0.1:5432`, review the generated command and checks, then choose **Save & start**. The same editor accepts a pasted `ssh`, `ngrok` or `cloudflared` command.
+
+## Security and data
+
+- `tunnels.toml` contains definitions and secret names, not secret values, and can be shared after reviewing hostnames, paths and custom commands.
+- Secret values stay in macOS Keychain, Windows Credential Manager or Linux Secret Service. There is no plaintext fallback.
+- Runtime metadata is in the OS state directory; per-machine paths and shortcuts are in `settings.toml` beside the definitions.
+- Tunnel output stays in memory. The rotating application log excludes secret values.
+- The optional release update check is the app's only network request of its own; tunnel processes make their normal connections.
 
 ## Development
 
@@ -67,4 +88,4 @@ pnpm --dir frontend test
 
 ## Design
 
-UI and flow mockups: https://claude.ai/artifact/38AsU71MWNsiUGp4FH4vs2 (private; ask the owner for access).
+UI and flow mockups: [docs/devTTunel UI.html](docs/devTTunel%20UI.html).

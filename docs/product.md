@@ -37,7 +37,7 @@ Forwards are always displayed as `listen → target` for every kind; the `-L/-R/
 
 **Create / edit:** New (⌘N), Edit (⌘E) or Duplicate → choose source (SSH config host, pasted command, manual) → configure forwards, flags, profiles → review live command preview and checks → Save or Save & start.
 
-Editor checks: binary on PATH; host exists in SSH config; local listen ports (`-L`, `-D`, ngrok/cloudflared local addresses) not used by another tunnel; missing `-N` warning (ssh would open a remote shell); required secret present.
+Editor checks: resolved binary; host alias in the scanned SSH config; local listen ports (`-L`, `-D`) not used by another tunnel or process; shared ngrok/cloudflared targets reported separately; unsafe SSH flags; missing `-N` and keepalive warnings; required secret present.
 
 ## Screens
 
