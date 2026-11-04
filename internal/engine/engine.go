@@ -252,7 +252,7 @@ func (s *Engine) views() []api.TunnelView {
 		}
 		spec, _ := command.Build(t, command.Options{Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect()})
 		toolPath, _ := s.tools.Resolve(spec.Tool)
-		views = append(views, api.TunnelView{Tunnel: t, Status: statuses[i], Preview: preview, MissingSecrets: missing, ToolPath: toolPath})
+		views = append(views, api.TunnelView{Tunnel: t, Status: statuses[i], Endpoints: endpoints(t, statuses[i]), Preview: preview, MissingSecrets: missing, ToolPath: toolPath})
 	}
 	return views
 }
@@ -298,7 +298,7 @@ func (s *Engine) Findings(id string) []checks.Finding {
 	cfg := s.manager.Config()
 	for _, t := range cfg.Tunnels {
 		if t.ID == id {
-			found := checks.Run(t, cfg, checks.Deps{Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell})
+			found := checks.Run(t, cfg, s.checkDeps(t))
 			if found == nil {
 				return []checks.Finding{}
 			}

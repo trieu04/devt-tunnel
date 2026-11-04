@@ -50,6 +50,7 @@ func newTestEngine(t *testing.T, cfg model.Config) (*Engine, *fakeRunner, *secre
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("HOME", root)
+	t.Setenv("DTT_SOCKET", filepath.Join(root, "test.sock"))
 	t.Setenv("USERPROFILE", root)
 	t.Setenv("SHELL", "")
 	runner := &fakeRunner{started: make(chan supervisor.SpawnRequest, 16), processes: make(chan *fakeProcess, 16)}
@@ -104,7 +105,7 @@ func TestTunnelLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := e.Overview(); len(got.Tunnels) != 1 || got.Tunnels[0].Tunnel.ID != id || got.Shortcut != "" || got.ShortcutError != "" {
+	if got := e.Overview(); len(got.Tunnels) != 1 || got.Tunnels[0].Tunnel.ID != id || got.Shortcut != "" || got.ShortcutError != "" || got.Tunnels[0].Endpoints == nil {
 		t.Fatalf("overview = %#v", got)
 	}
 	if err := e.Start(id); err != nil {

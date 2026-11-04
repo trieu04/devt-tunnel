@@ -1,6 +1,6 @@
 # Central tunnel management
 
-Status: **accepted 2026-11-04; phase 14 engine extraction implemented.** The GUI still hosts the engine in-process; the daemon, local API, CLI and MCP remain planned. The target design was written against commit `956c869` and rechecked against `6e0028f`; [phases 14–21](../plans/README.md#phases) deliver it.
+Status: **accepted 2026-11-04; phases 14–15 engine extraction and core fixes implemented; native-window acceptance pending.** The GUI still hosts the engine in-process; the daemon, local API, CLI and MCP remain planned. The target design was written against commit `956c869` and rechecked against `6e0028f`; [phases 14–21](../plans/README.md#phases) deliver it.
 
 Companion contracts: [cli.md](cli.md) (`dtt` command line and its documentation) and [mcp.md](mcp.md) (tools for agents).
 
@@ -162,6 +162,12 @@ The response for a tunnel adds fields to today's `TunnelView`:
   "missingSecrets": []
 }
 ```
+
+`endpoints` is additive and is always an array. SSH forwards preserve bind and target strings with kinds `local`, `remote` and `socks`; Unix socket and loopback binds are not public. Ngrok and cloudflared endpoints are `public` with `public: true`, and `listen` stays empty until the public address is known (ngrok's local-target fallback is excluded). Command tunnels expose configured forwards or an address announced by their readiness log; otherwise the array is empty. `public` describes the bind, while agent policy still requires approval for every remote forward.
+
+`WaitReady` returns `supervisor.ErrNeedsSecret` for a pending secret start or `needs_token`, `secret.ErrUnavailable` for `keyring_unavailable`, and `supervisor.ErrStopped` for an ordinary stop. Failed starts retain the status error with a nonempty fallback. `Manager.Start` and Vault retries are unchanged.
+
+Editor draft checks and saved-tunnel findings probe loopback TCP listeners with a 100 ms timeout. They exclude the active tunnel's own configured local ports; editing it to use a different occupied port still warns.
 
 `preview` still comes from the same builder as the spawn, so the guarantee that the preview equals execution holds for all clients.
 

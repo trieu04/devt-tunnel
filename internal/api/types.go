@@ -12,7 +12,15 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
+type Endpoint struct {
+	Kind   string `json:"kind"`
+	Listen string `json:"listen"`
+	Target string `json:"target,omitempty"`
+	Public bool   `json:"public"`
+}
+
 type TunnelView struct {
+	Endpoints      []Endpoint        `json:"endpoints"`
 	Tunnel         model.Tunnel      `json:"tunnel"`
 	Status         supervisor.Status `json:"status"`
 	Preview        string            `json:"preview"`

@@ -4,6 +4,8 @@
 
 **Depends on:** 14.
 
+**Implementation:** typed wait errors, shared endpoints and loopback port checks are implemented with automated tests; native-window port-warning acceptance remains unverified.
+
 ## 15.1 `WaitReady` reports why
 
 Today `Manager.Start` with a missing secret returns `nil` and leaves `stopped`, and `WaitReady` then returns `errors.New("")`.
@@ -34,7 +36,7 @@ type Endpoint struct {
 }
 ```
 
-Derive it in the engine from `Forwards` and `Status.Address`. `Public` is true for ngrok and cloudflared and for a bind that is not loopback. Tests for each tunnel type, for several forwards, and for IPv6 and Unix socket binds.
+Derive it in the engine from `Forwards` and `Status.Address`. Preserve SSH bind/target strings, including Unix sockets; an empty endpoint list is `[]`. A public provider endpoint has an empty `listen` until its public address is known; ngrok's local-target `Status.Address` fallback is not a public address. Command tunnels without an announced URL or configured forwards have no endpoints. `Public` is true for ngrok and cloudflared and for a bind that is not loopback. Tests for each tunnel type, for several forwards, and for IPv6 and Unix socket binds.
 
 ## 15.3 Wire the port check
 

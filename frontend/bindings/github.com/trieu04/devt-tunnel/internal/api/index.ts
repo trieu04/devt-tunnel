@@ -3,6 +3,7 @@
 
 export type {
     DraftResult,
+    Endpoint,
     Overview,
     PendingPrompt,
     SSHHostList,

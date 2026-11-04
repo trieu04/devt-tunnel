@@ -343,6 +343,11 @@ func (m *Manager) Wake() {
 	m.mu.Unlock()
 }
 
+var (
+	ErrNeedsSecret = errors.New("tunnel needs a secret")
+	ErrStopped     = errors.New("tunnel stopped")
+)
+
 func (m *Manager) WaitReady(ctx context.Context, id string) (Status, error) {
 	m.mu.Lock()
 	e, ok := m.tunnels[id]
@@ -352,23 +357,55 @@ func (m *Manager) WaitReady(ctx context.Context, id string) (Status, error) {
 	}
 	if terminalStatus(e.status.State) {
 		st := e.status
+		err := readyError(st, m.pendingStart[id])
 		m.mu.Unlock()
-		if st.State == StateRunning {
-			return st, nil
-		}
-		return st, errors.New(st.Error)
+		return st, err
 	}
 	ch := make(chan Status, 1)
 	m.waiters[id] = append(m.waiters[id], ch)
 	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for i, waiter := range m.waiters[id] {
+			if waiter == ch {
+				m.waiters[id] = append(m.waiters[id][:i], m.waiters[id][i+1:]...)
+				if len(m.waiters[id]) == 0 {
+					delete(m.waiters, id)
+				}
+				break
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		return Status{}, ctx.Err()
 	case st := <-ch:
-		if st.State == StateRunning {
-			return st, nil
+		m.mu.Lock()
+		err := readyError(st, m.pendingStart[id])
+		m.mu.Unlock()
+		return st, err
+	}
+}
+
+func readyError(st Status, pending bool) error {
+	switch st.State {
+	case StateRunning:
+		return nil
+	case StateNeedsToken:
+		return ErrNeedsSecret
+	case StateKeyringUnavailable:
+		return secret.ErrUnavailable
+	case StateStopped:
+		if pending {
+			return ErrNeedsSecret
 		}
-		return st, errors.New(st.Error)
+		return ErrStopped
+	default:
+		if st.Error != "" {
+			return errors.New(st.Error)
+		}
+		return errors.New("tunnel failed")
 	}
 }
 

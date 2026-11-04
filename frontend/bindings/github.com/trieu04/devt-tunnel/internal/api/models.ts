@@ -26,6 +26,13 @@ export interface DraftResult {
     "findings": checks$0.Finding[] | null;
 }
 
+export interface Endpoint {
+    "kind": string;
+    "listen": string;
+    "target"?: string;
+    "public": boolean;
+}
+
 export interface Overview {
     "configPath": string;
     "configError": string;
@@ -69,6 +76,7 @@ export interface ToolInfo {
 }
 
 export interface TunnelView {
+    "endpoints": Endpoint[] | null;
     "tunnel": model$0.Tunnel;
     "status": supervisor$0.Status;
     "preview": string;

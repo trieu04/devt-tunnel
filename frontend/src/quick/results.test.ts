@@ -8,6 +8,7 @@ const tunnel = (id: string, name: string, host: string, profiles: string[] = [])
     status: { id, state: "stopped" },
     preview: "",
     missingSecrets: [],
+    endpoints: [],
   }) as TunnelView;
 describe("quick results", () => {
   it("groups tunnels, unused hosts and actions", () => {

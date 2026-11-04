@@ -3,14 +3,18 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
+	"github.com/trieu04/devt-tunnel/internal/core/command"
 	"github.com/trieu04/devt-tunnel/internal/core/config"
 	"github.com/trieu04/devt-tunnel/internal/core/importer"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/state"
+	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
 
@@ -21,16 +25,54 @@ func (s *Engine) EvaluateDraft(t model.Tunnel) api.DraftResult {
 		result.BuildError = err.Error()
 	}
 	cfg := s.manager.Config()
-	result.Findings = checks.Run(t, cfg, s.checkDeps(firstProfile(t)))
+	result.Findings = checks.Run(t, cfg, s.checkDeps(t))
 	if result.Findings == nil {
 		result.Findings = []checks.Finding{}
 	}
 	return result
 }
 
-func (s *Engine) checkDeps(profileID string) checks.Deps {
+func (s *Engine) checkDeps(t model.Tunnel) checks.Deps {
+	own := map[string]bool{}
+	for _, st := range s.manager.Statuses() {
+		if st.ID != t.ID || (st.State != supervisor.StateStarting && st.State != supervisor.StateRunning && st.State != supervisor.StateReconnecting) {
+			continue
+		}
+		for _, saved := range s.manager.Config().Tunnels {
+			if saved.ID == t.ID {
+				for _, f := range saved.Forwards {
+					if f.Kind != model.ForwardRemote {
+						own[command.DialAddress(f.Bind)] = true
+					}
+				}
+			}
+		}
+	}
+	profileID := firstProfile(t)
 	return checks.Deps{
 		Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), ProfileID: profileID,
+		Listening: func(address string) bool {
+			if own[address] {
+				return false
+			}
+			host, port, err := net.SplitHostPort(address)
+			if err != nil || strings.Contains(port, "/") {
+				return false
+			}
+			if host == "localhost" {
+				host = "127.0.0.1"
+			}
+			ip := net.ParseIP(host)
+			if ip == nil || !ip.IsLoopback() {
+				return false
+			}
+			conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 100*time.Millisecond)
+			if err != nil {
+				return false
+			}
+			conn.Close()
+			return true
+		},
 		Hosts: func(id string) ([]string, error) {
 			list := s.SSHHosts(id)
 			hosts := make([]string, 0, len(list.Hosts))
