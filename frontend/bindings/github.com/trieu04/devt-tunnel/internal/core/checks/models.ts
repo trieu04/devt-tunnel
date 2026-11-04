@@ -4,6 +4,7 @@
 export interface Finding {
     "severity": Severity;
     "message": string;
+    "field"?: string;
 }
 
 export enum Severity {
@@ -14,4 +15,5 @@ export enum Severity {
 
     Error = "error",
     Warning = "warning",
+    OK = "ok",
 };

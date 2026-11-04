@@ -6,10 +6,25 @@
 import * as askpass$0 from "../askpass/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as checks$0 from "../core/checks/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as model$0 from "../core/model/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as secret$0 from "../core/secret/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as sshconfig$0 from "../core/sshconfig/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as supervisor$0 from "../core/supervisor/models.js";
+
+export interface DraftResult {
+    "preview": string;
+    "buildError": string;
+    "findings": checks$0.Finding[] | null;
+}
 
 /**
  * Overview is everything the UI needs to render its first frame.
@@ -23,6 +38,10 @@ export interface Overview {
     "tunnels": TunnelView[] | null;
     "orphans": supervisor$0.Record[] | null;
     "prompts": PendingPrompt[] | null;
+    "activeProfile": string;
+    "lastUsed": { [_ in string]?: string } | null;
+    "keychainAvailable": boolean;
+    "keychainName": string;
 }
 
 /**
@@ -33,6 +52,28 @@ export interface PendingPrompt {
     "prompt": askpass$0.Prompt;
 }
 
+export interface SSHHostList {
+    "configPath": string;
+    "hosts": sshconfig$0.Host[] | null;
+    "warnings": string[] | null;
+}
+
+export interface SecretView {
+    "name": string;
+    "kind": secret$0.Kind;
+    "state": string;
+    "usedBy": string[] | null;
+    "lastUsed": string;
+}
+
+export interface ToolInfo {
+    "name": string;
+    "path": string;
+    "version": string;
+    "source": string;
+    "error": string;
+}
+
 /**
  * TunnelView is a tunnel as the UI sees it.
  */
@@ -40,4 +81,13 @@ export interface TunnelView {
     "tunnel": model$0.Tunnel;
     "status": supervisor$0.Status;
     "preview": string;
+    "missingSecrets": string[] | null;
+    "toolPath"?: string;
+}
+
+export interface UpdateInfo {
+    "current": string;
+    "latest": string;
+    "url": string;
+    "available": boolean;
 }

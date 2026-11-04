@@ -6,6 +6,7 @@ export {
 } from "./models.js";
 
 export type {
+    LogLine,
     Record,
     Status
 } from "./models.js";

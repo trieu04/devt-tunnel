@@ -9,6 +9,7 @@ export interface Cloudflared {
     "hostname"?: string;
     "url"?: string;
     "secret"?: string;
+    "extraArgs"?: string;
 }
 
 export interface Command {
@@ -43,6 +44,7 @@ export interface Ngrok {
     "addr": string;
     "domain"?: string;
     "secret"?: string;
+    "extraArgs"?: string;
 }
 
 export interface Profile {

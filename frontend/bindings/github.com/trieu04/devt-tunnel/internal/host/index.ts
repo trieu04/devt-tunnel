@@ -7,7 +7,12 @@ export {
 };
 
 export type {
+    DraftResult,
     Overview,
     PendingPrompt,
-    TunnelView
+    SSHHostList,
+    SecretView,
+    ToolInfo,
+    TunnelView,
+    UpdateInfo
 } from "./models.js";

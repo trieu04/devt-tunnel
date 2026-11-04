@@ -13,16 +13,67 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as checks$0 from "../core/checks/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as importer$0 from "../core/importer/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as model$0 from "../core/model/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as secret$0 from "../core/secret/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as sshconfig$0 from "../core/sshconfig/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as supervisor$0 from "../core/supervisor/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+export function ActivateProfile(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1135488226, id);
+}
 
 /**
  * AnswerPrompt delivers the user's reply to a waiting ssh prompt.
  */
 export function AnswerPrompt(id: string, value: string, cancelled: boolean): $CancellablePromise<void> {
     return $Call.ByID(1992270408, id, value, cancelled);
+}
+
+export function AppVersion(): $CancellablePromise<string> {
+    return $Call.ByID(1195868565);
+}
+
+export function CheckForUpdate(force: boolean): $CancellablePromise<$models.UpdateInfo> {
+    return $Call.ByID(1607546054, force);
+}
+
+export function DeleteProfile(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1838220660, id);
+}
+
+export function DeleteSecret(name: string): $CancellablePromise<void> {
+    return $Call.ByID(383616939, name);
+}
+
+export function DeleteTunnel(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3493382845, id);
+}
+
+export function DuplicateDraft(id: string): $CancellablePromise<model$0.Tunnel> {
+    return $Call.ByID(3961818488, id);
+}
+
+export function DuplicateProfile(id: string): $CancellablePromise<string> {
+    return $Call.ByID(825768290, id);
+}
+
+export function EvaluateDraft(t: model$0.Tunnel): $CancellablePromise<$models.DraftResult> {
+    return $Call.ByID(4144135326, t);
 }
 
 /**
@@ -39,11 +90,27 @@ export function HideQuickLaunch(): $CancellablePromise<void> {
     return $Call.ByID(3520085000);
 }
 
+export function ImportCommand(line: string): $CancellablePromise<importer$0.Result> {
+    return $Call.ByID(2915497514, line);
+}
+
+export function ListSecrets(): $CancellablePromise<$models.SecretView[] | null> {
+    return $Call.ByID(4286835157);
+}
+
 /**
  * Logs returns a tunnel's retained output.
  */
 export function Logs(id: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(999700435, id);
+}
+
+export function NewDraft(kind: model$0.TunnelType): $CancellablePromise<model$0.Tunnel> {
+    return $Call.ByID(2040666205, kind);
+}
+
+export function OpenIn(screen: string, param: string): $CancellablePromise<void> {
+    return $Call.ByID(1614092343, screen, param);
 }
 
 /**
@@ -67,6 +134,22 @@ export function Reload(): $CancellablePromise<void> {
     return $Call.ByID(3588594325);
 }
 
+export function ReloadSSHHosts(): $CancellablePromise<void> {
+    return $Call.ByID(3023534104);
+}
+
+export function RenameSecret($from: string, to: string): $CancellablePromise<void> {
+    return $Call.ByID(69995074, $from, to);
+}
+
+export function ResolveSSHHost(alias: string, profileID: string): $CancellablePromise<sshconfig$0.Resolved> {
+    return $Call.ByID(147114640, alias, profileID);
+}
+
+export function Restart(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1964938523, id);
+}
+
 /**
  * RevealConfig shows tunnels.toml in the file manager, creating it from a template if needed.
  */
@@ -74,11 +157,47 @@ export function RevealConfig(): $CancellablePromise<void> {
     return $Call.ByID(2050183143);
 }
 
+export function RevealSecret(name: string): $CancellablePromise<string> {
+    return $Call.ByID(3165671985, name);
+}
+
+export function SSHHosts(profileID: string): $CancellablePromise<$models.SSHHostList> {
+    return $Call.ByID(2010502573, profileID);
+}
+
+export function SaveProfile(profile: model$0.Profile, members: string[] | null): $CancellablePromise<string> {
+    return $Call.ByID(4056232342, profile, members);
+}
+
+export function SaveTunnel(t: model$0.Tunnel, start: boolean): $CancellablePromise<string> {
+    return $Call.ByID(4172880143, t, start);
+}
+
+export function SetFavorite(id: string, favorite: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1477876364, id, favorite);
+}
+
+export function SetProfileAutostart(id: string, tunnelID: string, on: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1476010998, id, tunnelID, on);
+}
+
 /**
  * SetSecret stores a value in the OS keychain.
  */
-export function SetSecret(name: string, value: string): $CancellablePromise<void> {
-    return $Call.ByID(465753292, name, value);
+export function SetSecret(name: string, value: string, kind: secret$0.Kind): $CancellablePromise<void> {
+    return $Call.ByID(465753292, name, value, kind);
+}
+
+export function SetShortcut(accel: string): $CancellablePromise<void> {
+    return $Call.ByID(1801315298, accel);
+}
+
+export function SetToolPath(tool: string, path: string): $CancellablePromise<$models.ToolInfo[] | null> {
+    return $Call.ByID(341103145, tool, path);
+}
+
+export function SetUpdateChecks(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1547946608, enabled);
 }
 
 /**
@@ -102,6 +221,14 @@ export function Start(id: string): $CancellablePromise<void> {
     return $Call.ByID(4017288844, id);
 }
 
+export function StartAndCopy(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2749213260, id);
+}
+
+export function StartProfile(id: string): $CancellablePromise<void> {
+    return $Call.ByID(4097054905, id);
+}
+
 /**
  * Stop ends a tunnel and waits for it to exit.
  */
@@ -116,9 +243,29 @@ export function StopOrphan(pid: number): $CancellablePromise<void> {
     return $Call.ByID(167127862, pid);
 }
 
+export function StopProfile(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2691935373, id);
+}
+
 /**
  * Toggle starts a stopped tunnel or stops an active one.
  */
 export function Toggle(id: string): $CancellablePromise<void> {
     return $Call.ByID(437651580, id);
+}
+
+export function Tools(): $CancellablePromise<$models.ToolInfo[] | null> {
+    return $Call.ByID(654813659);
+}
+
+export function UpdateChecksEnabled(): $CancellablePromise<boolean> {
+    return $Call.ByID(3319290305);
+}
+
+export function UserAuthAvailable(): $CancellablePromise<boolean> {
+    return $Call.ByID(2589080160);
+}
+
+export function WatchLogs(id: string): $CancellablePromise<supervisor$0.LogLine[] | null> {
+    return $Call.ByID(250669704, id);
 }
