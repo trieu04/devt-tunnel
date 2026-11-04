@@ -63,19 +63,20 @@ Rejected without detailed comparison:
 ## Architecture
 
 ```text
-┌─ devt-tunnel (one process) ────────────────────────────────────┐
+┌─ devt-tunnel GUI ─────────────────────────────────────────────┐
 │  frontend/ React UI: main, quick launch, editor, vault        │
-│        ▲ generated typed bindings + events                    │
-│  internal/host: Wails services, tray, shortcut, windows       │
-│        ▼ internal/api shared types                           │
-│  internal/engine: registry, prompts, settings, core wiring    │
+│        ▲ generated typed bindings + Wails events              │
+│  internal/host: daemon client, tray, shortcut, windows        │
+└────────┬──────────────────────────────────────────────────────┘
+         │ same-user local JSON-RPC
+┌────────▼─ dtt daemon ─────────────────────────────────────────┐
+│  internal/control + internal/engine: API, registry, prompts   │
 │        ▼                                                      │
-│  internal/core: model · config · argv builder · importer      │
-│                 supervisor · readiness · checks · profiles    │
+│  internal/core: model · config · supervisor · checks          │
 │        ▼ interfaces                                           │
-│  internal/platform: proc · env · dirs · secrets · userauth    │
+│  internal/platform: proc · env · dirs · secrets               │
 └───────┬──────────────────────────────────────▲────────────────┘
-        │ spawn                                │ local IPC, per-spawn token
+        │ spawn                                │ askpass IPC
         ▼                                      │
    ssh · cloudflared · ngrok · command ──► devt-tunnel-askpass
 ```
@@ -83,7 +84,11 @@ Rejected without detailed comparison:
 ```text
 main.go                   Wails entry point; embeds frontend/dist (Wails build tasks expect it at the root)
 cmd/devt-tunnel-askpass/    helper; no GUI dependency
+cmd/dtt/                    daemon lifecycle entry point; no GUI dependency
 internal/api/             shared client types and events; no Wails
+internal/client/          local API client and daemon startup; no Wails
+internal/control/         local API server; no Wails
+internal/daemon/          daemon process lifecycle; no Wails
 internal/engine/           registry, prompts, settings and core wiring; no Wails
 internal/core/            model, config, command, checks, supervisor; no Wails, no OS-specific code
 internal/askpass/         prompt protocol shared by the app and the helper
@@ -97,7 +102,7 @@ Rules:
 
 - **`internal/core`, `internal/api`, `internal/engine` and `cmd/dtt` must not depend on Wails.** The headless dependency test checks core, API, engine and every existing command; CI runs them with `CGO_ENABLED=0` and no GTK. Only the host and app entry point import Wails.
 - **Business logic does not go in React.** The UI renders state and sends intents; argv and checks come from the core, which keeps the preview-equals-execution guarantee in [architecture.md](architecture.md).
-- **Daemon/API implemented in phase 16; GUI migration pending.** The diagram and layout above show today's code. [design/control-plane.md](design/control-plane.md) describes the local API served by `internal/control`, its `internal/client`, and the `cmd/dtt` lifecycle entry point in `internal/daemon`. Phase 14 has extracted the in-process engine and shared types; host subscriptions translate engine events into the existing Wails events. `dtt` must build with `CGO_ENABLED=0` and no Wails. Tunnels still stop when the app quits, by product definition.
+- **Daemon/API and GUI migration are implemented.** The local API is served by `internal/control`, the GUI uses `internal/client`, and `cmd/dtt` owns daemon lifecycle. Host subscriptions translate daemon events into the existing Wails events, and cached overview data keeps the window usable during reconnect. `dtt` must build with `CGO_ENABLED=0` and no Wails. App quit calls `daemon.shutdown`, so all tunnels still stop by product definition; a GUI crash leaves the daemon and tunnels running.
 
 ```go
 type Process interface {
@@ -155,7 +160,7 @@ The current design has the helper read the keychain and return a passphrase. Cha
 1. **`SSH_ASKPASS_REQUIRE=force` sends every prompt to the helper**, potentially including host-key confirmation and OTP, not only key passphrases. Answering all of them with a stored passphrase would be wrong, and could answer a security question blindly.
 2. Keychain access from a second binary can cause separate OS permission prompts.
 
-Flow: the app listens on one local Unix socket in a private temp directory (Go supports `AF_UNIX` on Windows 10 1803 and later) and passes its address and a per-spawn token through the environment. `devt-tunnel-askpass` sends the prompt there and prints the answer. The app matches a passphrase prompt to the Vault entry and shows anything else in a dialog. The passphrase still never appears in argv or env.
+Flow: the daemon listens on one local Unix socket in a private temp directory (Go supports `AF_UNIX` on Windows 10 1803 and later) and passes its address and a per-spawn token through the environment. `devt-tunnel-askpass` sends the prompt there and prints the answer. The daemon matches a passphrase prompt to the Vault entry and queues anything else for a user client such as the GUI dialog. The passphrase still never appears in argv or env.
 
 Windows caveat: `SSH_ASKPASS` behavior depends on version. A [Win32-OpenSSH report](https://github.com/PowerShell/Win32-OpenSSH/issues/2115) shows it being ignored on 8.6 until `SSH_ASKPASS_REQUIRE` was set, while 8.1 behaved differently. Set `SSH_ASKPASS_REQUIRE=force` and a dummy `DISPLAY`, then test both versions.
 

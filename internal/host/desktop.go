@@ -36,7 +36,7 @@ type desktop struct {
 	hasTray bool
 }
 
-// Attach creates the desktop integration and starts tunnels marked to start on launch.
+// Attach creates the desktop integration and requests marked tunnels after application startup.
 func Attach(app *application.App, svc *Service) {
 	d := &desktop{app: app, svc: svc, hasTray: trayAvailable()}
 	d.createWindows()
@@ -46,13 +46,14 @@ func Attach(app *application.App, svc *Service) {
 	svc.mu.Lock()
 	svc.host = d
 	svc.mu.Unlock()
-	app.Event.OnApplicationEvent(events.Common.SystemDidWake, func(*application.ApplicationEvent) { svc.engine.Wake() })
+	app.Event.OnApplicationEvent(events.Common.SystemDidWake, func(*application.ApplicationEvent) { svc.wake() })
 
 	// Registered after startup so that a conflict comes back here rather than to the global error handler.
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		log.Printf("application ready")
+		svc.applicationReady()
 		d.registerShortcut()
-		svc.engine.StartOnLaunch()
+		svc.startMarked()
 	})
 }
 
@@ -77,7 +78,7 @@ func (d *desktop) createWindows() {
 		d.app.Quit()
 	})
 	d.main.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
-		d.svc.engine.Focus()
+		d.svc.focus()
 	})
 
 	d.quick = d.app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -167,7 +168,7 @@ func defaultShortcut() string {
 }
 
 func (d *desktop) registerShortcut() {
-	accel := d.svc.engine.Shortcut()
+	accel := d.svc.shortcutSetting()
 	if accel == "" {
 		accel = defaultShortcut()
 	}

@@ -30,7 +30,7 @@ Baseline when this was written (2026-11-03): `go test ./...` passes on macOS arm
 | 20 | [MCP server](20-mcp.md) | Tools for agents, tested with a real client | 19 | 3 d |
 | 21 | [Packaging `dtt`](21-cli-packaging.md) | Signed binary in every installer, on `PATH` | 18, 20 | 3 d |
 
-Estimates are rough, for one developer, and have not been checked against real progress. Phase 12 is the least certain, because its cost depends on what breaks. Phases 14–21 come from the accepted [central management design](../design/control-plane.md); phase 14 is implemented with native-window regression acceptance pending, phase 15 is implemented with native-window port-warning acceptance pending, phase 16 implements the daemon/API with automated process and SSH checks but detached Keychain access unverified, and phases 17–21 have not started.
+Estimates are rough, for one developer, and have not been checked against real progress. Phase 12 is the least certain, because its cost depends on what breaks. Phases 14–21 come from the accepted [central management design](../design/control-plane.md); phases 14–17 are implemented with their automated checks, phase 16 detached Keychain access remains unverified, phase 17 native-window acceptance remains pending, and phases 18–21 have not started.
 
 ```text
 1 ─┬─► 2 ─┬─► 4 ────────┐

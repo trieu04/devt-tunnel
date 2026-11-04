@@ -17,10 +17,11 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Main window, editor, quick launch, profiles, Vault and Settings | Implemented; frontend tests cover only filtering, shortcuts and quick-launch results, and native visual acceptance remains |
 | SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
 | Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
-| Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; GUI still runs the engine in-process; native-window regression check pending |
+| Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; the daemon now owns the engine; native-window regression check pending |
 | Typed readiness errors, endpoint lists and live port checks (phase 15) | Implemented and unit tested; editor/native-window warning acceptance pending |
 | Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
-| GUI as daemon client, full `dtt` CLI and MCP | Planned for phases 17–20; the GUI still owns a separate in-process engine |
+| GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; native macOS window acceptance remains pending |
+| Full `dtt` CLI and MCP | Planned for phases 18–20 |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
 
@@ -72,7 +73,7 @@ pnpm --dir frontend test
 
 `go test` needs no frontend build. `internal/e2e` starts a private `sshd` and is skipped where that is not possible. Building the root package needs `frontend/dist`, which `wails3 task build` produces.
 
-Build the headless binary with `CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt`. Phase 16 provides `dtt version` and `dtt daemon run|status|stop|restart`; `run --idle-exit 0` disables the default five-minute idle exit. `stop` and `restart` stop every daemon-owned tunnel. The GUI joins this daemon in phase 17; avoid running the two engines against the same definitions until then. See [the daemon API](docs/design/control-plane.md#local-api) for client methods and version handling.
+Build the headless binary with `CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt`. Phase 16 provides `dtt version` and `dtt daemon run|status|stop|restart`; `run --idle-exit 0` disables the default five-minute idle exit. `stop` and `restart` stop every daemon-owned tunnel. The GUI uses the same daemon and stops it, with all tunnels, on app quit. See [the daemon API](docs/design/control-plane.md#local-api) for client methods and version handling.
 
 ## Layout
 
@@ -93,7 +94,7 @@ Build the headless binary with `CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt`. Ph
 - [docs/product.md](docs/product.md): concepts, tunnel types, flows, screens, shortcuts.
 - [docs/architecture.md](docs/architecture.md): process model, SSH integration, secrets, storage, data model, decisions, open questions.
 - [docs/platform.md](docs/platform.md): cross-platform stack, code layout, per-OS differences, distribution, validation checks.
-- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API implemented; GUI migration, full CLI and MCP remain planned.
+- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API and GUI migration are implemented; full CLI and MCP remain planned.
 - [docs/plans/README.md](docs/plans/README.md): implementation plans.
 
 ## Design

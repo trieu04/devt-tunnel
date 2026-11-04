@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/trieu04/devt-tunnel/internal/api"
 )
 
 type UpdateInfo struct {
@@ -23,16 +25,34 @@ func (s *Service) SetShortcut(accel string) error {
 	if err := s.host.setShortcut(accel); err != nil {
 		return err
 	}
-	return s.engine.SetShortcut(accel)
+	if err := action(s, "settings.setShortcut", api.ShortcutParams{Shortcut: accel}); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.settings.Shortcut = accel
+	s.mu.Unlock()
+	return nil
 }
 
-func (s *Service) SetUpdateChecks(enabled bool) error { return s.engine.SetUpdateChecks(enabled) }
+func (s *Service) SetUpdateChecks(enabled bool) error {
+	if err := action(s, "settings.setUpdateChecks", api.UpdateChecksParams{Enabled: enabled}); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.settings.UpdateChecks = enabled
+	s.mu.Unlock()
+	return nil
+}
 
-func (s *Service) UpdateChecksEnabled() bool { return s.engine.UpdateChecksEnabled() }
+func (s *Service) UpdateChecksEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings.UpdateChecks
+}
 
 func (s *Service) CheckForUpdate(force bool) (UpdateInfo, error) {
 	s.mu.Lock()
-	if !s.engine.UpdateChecksEnabled() && !force {
+	if !s.settings.UpdateChecks && !force {
 		info := UpdateInfo{Current: Version}
 		s.mu.Unlock()
 		return info, nil

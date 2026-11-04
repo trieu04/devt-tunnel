@@ -2,6 +2,10 @@
 
 **Goal:** the desktop app holds no tunnel state. Every `host.Service` method reaches the daemon over the API, with no visible change for a user who only uses the app.
 
+**Implementation:** typed forwarding, connection cache/backoff, event resubscription, lifecycle forwarding and the host-to-engine boundary are implemented with automated tests; the native macOS window checklist remains pending.
+
+**Automated evidence (2026-11-05, macOS arm64):** host race tests, full internal/command Go tests including daemon e2e, frontend tests/typecheck/build, binding regeneration without contract changes, dependency audits and the Wails native shell build passed. The app was not launched or inspected, so none of the native-window rows below are accepted.
+
 **Depends on:** 16. This is the riskiest phase: `go test` cannot show that the tray, dialogs and quit still work.
 
 ## 17.1 Connection
@@ -30,11 +34,11 @@ Bound signatures do not change, apart from the types moved in phase 14. Methods 
 | Wake | The Wails event calls `system.wake`. The daemon also has the clock-jump fallback |
 | Window focus | Calls `system.focus` |
 | `RevealSecret` | OS auth, then `platform.Keychain{}.Get` directly. The API returns no values |
-| Settings | Read at launch from `settings.toml`; writes use `settings.update`, so the daemon is the only writer |
+| Settings | Read at launch through `settings.get`; writes use `settings.setShortcut` and `settings.setUpdateChecks`, so the daemon is the only writer |
 
 ## 17.3 Launch and quit
 
-- **`StartOnLaunch`:** the GUI calls `tunnel.startMarked` once, on `ApplicationStarted`. The daemon never does this by itself, so `dtt ls` cannot start tunnels.
+- **`StartOnLaunch`:** the GUI calls the existing phase 16 method `tunnel.startOnLaunch` once, on `ApplicationStarted`, and keeps that one request pending across an initial connection failure. The daemon never does this by itself, so `dtt ls` cannot start tunnels.
 - **⌘Q and "Stop all and quit":** `OnShutdown` calls `daemon.shutdown` and waits up to 15 seconds. This keeps the product rule ([decision C3](../design/control-plane.md#decisions)).
 - **Window close without a tray:** quits as above, so tunnels do not run with no way back in.
 - **A GUI crash:** the daemon and tunnels keep running, and the next launch reconnects and shows them.

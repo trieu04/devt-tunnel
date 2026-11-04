@@ -4,12 +4,12 @@ Describes intended behavior. Stack, per-OS details and code layout are in [platf
 
 ## Control plane
 
-Phase 15 adds typed readiness errors, shared endpoint lists and loopback port checks; native-window port-warning acceptance is pending. Phase 14 has extracted the shared `internal/api` types and GUI-independent `internal/engine`; the host forwards to that engine in-process. Phase 16 adds a separate headless daemon/API and lifecycle CLI; the GUI moves to that daemon in phase 17. Until phase 17 ships, "the app" below still means the desktop process. Afterward, an on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
+Phase 15 adds typed readiness errors, shared endpoint lists and loopback port checks; native-window port-warning acceptance is pending. Phase 14 extracted the shared `internal/api` types and GUI-independent `internal/engine`; phase 16 added the headless daemon/API and lifecycle CLI; phase 17 moved the GUI host to that API with native-window acceptance pending. An on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" below means the daemon. The GUI, the `dtt` CLI and the planned MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
 
 ## Process model
 
-- Each running tunnel is one child process of the system binary (`ssh`, `cloudflared`, `ngrok`) or of the user's command, spawned and supervised by the app. SSH tunnels never use `-f`; the app owns the lifecycle.
-- The command preview in the editor is generated from the same argv the app spawns, so preview and execution cannot diverge.
+- Each running tunnel is one child process of the system binary (`ssh`, `cloudflared`, `ngrok`) or of the user's command, spawned and supervised by the daemon. SSH tunnels never use `-f`; the daemon owns the lifecycle.
+- The command preview in the editor is generated from the same argv the daemon spawns, so preview and execution cannot diverge.
 - Ready detection: SSH runs with `-o ExitOnForwardFailure=yes` and is ready once every local listen port (`-L`, `-D`) accepts connections; `-R` relies on the process staying alive. Cloudflared, ngrok and Command tunnels are ready when a log line matches their pattern (e.g. the public URL).
 - stdout/stderr go to a per-tunnel in-memory log ring buffer shown in the detail panel.
 - Unexpected exit with auto-reconnect on → restart with backoff (starting at 5 s). Stop ends the whole process tree: SIGTERM to the process group, then SIGKILL after a timeout on Unix; `TerminateJobObject` on Windows. Quit stops all tunnels.
@@ -20,8 +20,8 @@ Phase 15 adds typed readiness errors, shared endpoint lists and loopback port ch
 - Tunnels built from a config host pass the alias to `ssh`, so `Include`, `Match`, `ProxyJump`, `IdentityFile` and the agent behave exactly as in a terminal.
 - A bounded parser scans `Host` and `Include` directives for literal aliases; it skips wildcard and negated patterns and does not interpret connection settings. `ssh -G <alias>` runs only after explicit selection to resolve HostName, User, Port, IdentityFile and ProxyJump with OpenSSH's full `Match`/`Include` semantics.
 - A profile's SSH config file is passed with `-F`; note that `-F` replaces the default config instead of adding to it.
-- Supervised tunnels pass `-o ControlMaster=no -o ControlPath=none` so that the forward belongs to the process the app supervises.
-- All SSH prompts go through the `devt-tunnel-askpass` helper (`SSH_ASKPASS` with `SSH_ASKPASS_REQUIRE=force`), which forwards them to the app over a local socket with a per-spawn token. Passphrase prompts are answered from the Vault when the tunnel names a secret; every other prompt (host key, password, OTP) goes to the user. The passphrase never appears in argv or env.
+- Supervised tunnels pass `-o ControlMaster=no -o ControlPath=none` so that the forward belongs to the process the daemon supervises.
+- All SSH prompts go through the `devt-tunnel-askpass` helper (`SSH_ASKPASS` with `SSH_ASKPASS_REQUIRE=force`), which forwards them to the daemon over a local socket with a per-spawn token. Passphrase prompts are answered from the Vault when the tunnel names a secret; every other prompt (host key, password, OTP) is queued for a user client. The passphrase never appears in argv or env.
 
 ## Secrets
 

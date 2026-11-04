@@ -42,6 +42,17 @@ The ten checks in platform.md, plus these for features built since:
 
 Record results in platform.md with OS version and date. Say which were seen in a native window.
 
+Phase 17 adds these daemon-client checks; every cell requires a person in a native window:
+
+| Check | macOS | Windows | Linux |
+|---|---|---|---|
+| First GUI launch starts or joins the daemon and shows tunnels | ☐ | ☐ | ☐ |
+| Hidden-window prompt comes forward and accepts an answer | ☐ | ☐ | ☐ |
+| App quit stops tunnels and exits the daemon | ☐ | ☐ | ☐ |
+| GUI crash preserves tunnels; relaunch reconnects | ☐ | ☐ | ☐ |
+| Daemon crash shows the banner; restart reconnects and offers orphans where supported | ☐ | ☐ | ☐ |
+| Sleep and wake retries reconnecting tunnels promptly | ☐ | ☐ | ☐ |
+
 ## 12.4 Windows tasks
 
 Known items from reading the code:

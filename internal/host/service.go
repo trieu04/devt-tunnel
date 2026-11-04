@@ -1,20 +1,23 @@
-// Package host connects the engine to Wails and desktop integration.
+// Package host connects the daemon client to Wails and desktop integration.
 package host
 
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/client"
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
 	"github.com/trieu04/devt-tunnel/internal/core/importer"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
 	"github.com/trieu04/devt-tunnel/internal/core/sshconfig"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
-	"github.com/trieu04/devt-tunnel/internal/engine"
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
 
@@ -23,59 +26,258 @@ const (
 	eventPrompt  = "askpass:prompt"
 )
 
+const (
+	connectTimeout  = 5 * time.Second
+	callTimeout     = 30 * time.Second
+	shutdownTimeout = 15 * time.Second
+)
+
 var Version = "0.1.0"
 
+type daemonClient interface {
+	Call(context.Context, string, any, any) error
+	Events(func(api.Event))
+	Done() <-chan struct{}
+	Close() error
+}
+
+type connector func(context.Context) (daemonClient, error)
+
 type Service struct {
-	engine         *engine.Engine
 	auth           platform.UserAuth
 	keychain       secret.Store
 	host           *desktop
 	mu             sync.Mutex
+	connectMu      sync.Mutex
+	client         daemonClient
+	connectionErr  error
+	overview       api.Overview
+	settings       api.SettingsResult
 	shortcut       string
 	shortcutErr    string
-	unsubscribe    func()
 	logWatchCancel context.CancelFunc
 	updateChecked  time.Time
 	updateInfo     UpdateInfo
+	connect        connector
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	shutdown       sync.Once
+	eventSink      func(api.Event)
+	ready          bool
+	startRequested bool
+	startPending   bool
+	startInFlight  bool
+	stopping       bool
 }
 
 func NewService() (*Service, error) {
 	keychain := platform.Keychain{}
-	core, err := engine.New(engine.Options{Version: Version, Secrets: keychain})
+	connect := func(ctx context.Context) (daemonClient, error) {
+		return client.Ensure(ctx, client.EnsureOptions{Info: api.ClientInfo{Kind: "gui", Name: "devt-tunnel", Version: Version}})
+	}
+	return newService(connect, platform.NewUserAuth(), keychain), nil
+}
+
+func newService(connect connector, auth platform.UserAuth, keychain secret.Store) *Service {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Service{auth: auth, keychain: keychain, connect: connect, ctx: ctx, cancel: cancel, settings: api.SettingsResult{UpdateChecks: true}}
+	initialCtx, initialCancel := context.WithTimeout(ctx, connectTimeout)
+	initial, err := s.connectClient(initialCtx)
+	initialCancel()
 	if err != nil {
+		s.setConnectionError(err)
+	}
+	s.wg.Add(1)
+	go s.maintainConnection(initial)
+	return s
+}
+
+func (s *Service) connectClient(ctx context.Context) (daemonClient, error) {
+	s.connectMu.Lock()
+	c, err := s.connect(ctx)
+	if err != nil {
+		s.connectMu.Unlock()
 		return nil, err
 	}
-	s := &Service{engine: core, auth: platform.NewUserAuth(), keychain: keychain}
-	s.unsubscribe = core.Subscribe(func(event api.Event) {
-		s.mu.Lock()
-		desktop := s.host
+	c.Events(s.handleEvent)
+	var subscribed api.Empty
+	if err = c.Call(ctx, api.EventsSubscribe, api.Empty{}, &subscribed); err != nil {
+		c.Close()
+		s.connectMu.Unlock()
+		return nil, err
+	}
+	var overview api.Overview
+	if err = c.Call(ctx, "config.overview", api.Empty{}, &overview); err != nil {
+		c.Close()
+		s.connectMu.Unlock()
+		return nil, err
+	}
+	var settings api.SettingsResult
+	if err = c.Call(ctx, "settings.get", api.Empty{}, &settings); err != nil {
+		c.Close()
+		s.connectMu.Unlock()
+		return nil, err
+	}
+	s.mu.Lock()
+	if s.stopping {
 		s.mu.Unlock()
-		if desktop == nil {
-			return
+		c.Close()
+		s.connectMu.Unlock()
+		return nil, context.Canceled
+	}
+	s.client = c
+	s.connectionErr = nil
+	s.overview = overview
+	s.settings = settings
+	desktop := s.host
+	ready := s.ready
+	s.mu.Unlock()
+	s.connectMu.Unlock()
+	if desktop != nil {
+		desktop.app.Event.Emit(eventTunnels)
+		if ready {
+			desktop.registerShortcut()
 		}
-		switch event.Type {
-		case api.EventTunnelsChanged:
-			desktop.app.Event.Emit(eventTunnels)
-		case api.EventPromptAdded:
-			if event.Prompt != nil {
-				desktop.app.Event.Emit(eventPrompt, *event.Prompt)
-				desktop.showMain()
+	}
+	s.flushStartMarked()
+	return c, nil
+}
+
+func (s *Service) maintainConnection(current daemonClient) {
+	defer s.wg.Done()
+	backoff := 250 * time.Millisecond
+	for {
+		if current != nil {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-current.Done():
+				s.markDisconnected(current, io.EOF)
+				current = nil
+				backoff = 250 * time.Millisecond
 			}
+			continue
 		}
-	})
-	return s, nil
+		timer := time.NewTimer(backoff)
+		select {
+		case <-s.ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		attemptCtx, cancel := context.WithTimeout(s.ctx, connectTimeout)
+		connected, err := s.connectClient(attemptCtx)
+		cancel()
+		if err != nil {
+			s.setConnectionError(err)
+			backoff = min(backoff*2, 5*time.Second)
+			continue
+		}
+		current = connected
+		backoff = 250 * time.Millisecond
+	}
+}
+
+func (s *Service) setConnectionError(err error) {
+	if err == nil {
+		err = io.EOF
+	}
+	s.mu.Lock()
+	s.connectionErr = err
+	desktop := s.host
+	s.mu.Unlock()
+	if desktop != nil {
+		desktop.app.Event.Emit(eventTunnels)
+	}
+}
+
+func (s *Service) markDisconnected(c daemonClient, err error) {
+	s.mu.Lock()
+	if s.client == c {
+		s.client = nil
+		s.connectionErr = err
+	}
+	desktop := s.host
+	s.mu.Unlock()
+	if desktop != nil {
+		desktop.app.Event.Emit(eventTunnels)
+	}
+}
+
+func (s *Service) handleEvent(event api.Event) {
+	s.mu.Lock()
+	desktop := s.host
+	sink := s.eventSink
+	s.mu.Unlock()
+	if sink != nil {
+		sink(event)
+	}
+	if desktop == nil {
+		return
+	}
+	switch event.Type {
+	case api.EventTunnelsChanged:
+		desktop.app.Event.Emit(eventTunnels)
+	case api.EventPromptAdded:
+		if event.Prompt != nil {
+			desktop.app.Event.Emit(eventPrompt, *event.Prompt)
+			desktop.showMain()
+		}
+	}
+}
+
+func callContext[R any](ctx context.Context, s *Service, method string, params any) (R, error) {
+	var result R
+	s.mu.Lock()
+	c := s.client
+	err := s.connectionErr
+	s.mu.Unlock()
+	if c == nil {
+		if err == nil {
+			err = errors.New("connection is not ready")
+		}
+		return result, fmt.Errorf("Cannot reach the tunnel service: %w", err)
+	}
+	if err = c.Call(ctx, method, params, &result); err != nil {
+		select {
+		case <-c.Done():
+			s.markDisconnected(c, err)
+		default:
+		}
+	}
+	return result, err
+}
+
+func call[R any](s *Service, method string, params any) (R, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	return callContext[R](ctx, s, method, params)
+}
+
+func action(s *Service, method string, params any) error {
+	_, err := call[api.Empty](s, method, params)
+	return err
 }
 
 func (s *Service) Overview() api.Overview {
-	overview := s.engine.Overview()
+	overview, err := call[api.Overview](s, "config.overview", api.Empty{})
 	s.mu.Lock()
+	if err == nil {
+		s.overview = overview
+	} else {
+		overview = s.overview
+	}
+	if err != nil {
+		overview.ConfigError = err.Error()
+	}
 	overview.Shortcut, overview.ShortcutError = s.shortcut, s.shortcutErr
 	s.mu.Unlock()
 	return overview
 }
 
 func (s *Service) RevealConfig() error {
-	path, err := s.engine.EnsureConfigFile()
+	path, err := call[string](s, "config.path", api.Empty{})
 	if err != nil {
 		return err
 	}
@@ -83,96 +285,220 @@ func (s *Service) RevealConfig() error {
 }
 
 func (s *Service) Shutdown() {
-	s.mu.Lock()
-	if s.logWatchCancel != nil {
-		s.logWatchCancel()
-	}
-	s.mu.Unlock()
-	s.unsubscribe()
-	s.engine.Shutdown()
+	s.shutdown.Do(func() {
+		s.mu.Lock()
+		s.stopping = true
+		if s.logWatchCancel != nil {
+			s.logWatchCancel()
+		}
+		s.mu.Unlock()
+		s.cancel()
+		s.connectMu.Lock()
+		s.connectMu.Unlock()
+		s.mu.Lock()
+		c := s.client
+		s.mu.Unlock()
+		if c != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			_, err := callContext[api.Empty](ctx, s, api.DaemonShutdown, api.ShutdownParams{})
+			cancel()
+			if err != nil {
+				log.Printf("daemon shutdown: %v", err)
+			}
+		}
+		if c != nil {
+			_ = c.Close()
+		}
+		s.wg.Wait()
+	})
 }
 
-func (s *Service) Start(id string) error { return s.engine.Start(id) }
+func (s *Service) Start(id string) error { return action(s, "tunnel.start", api.IDParams{ID: id}) }
 
-func (s *Service) Stop(id string) { s.engine.Stop(id) }
+func (s *Service) Stop(id string) {
+	if err := action(s, "tunnel.stop", api.IDParams{ID: id}); err != nil {
+		log.Printf("stop tunnel %s: %v", id, err)
+	}
+}
 
-func (s *Service) Toggle(id string) error { return s.engine.Toggle(id) }
+func (s *Service) Toggle(id string) error {
+	view, err := call[api.TunnelView](s, "tunnel.get", api.IDParams{ID: id})
+	if err != nil {
+		return err
+	}
+	switch view.Status.State {
+	case "starting", "running", "reconnecting":
+		return action(s, "tunnel.stop", api.IDParams{ID: id})
+	default:
+		return action(s, "tunnel.start", api.IDParams{ID: id})
+	}
+}
 
-func (s *Service) Logs(id string) []string { return s.engine.Logs(id) }
+func (s *Service) Logs(id string) []string {
+	logs, err := call[[]string](s, "logs.read", api.IDParams{ID: id})
+	if err != nil {
+		log.Printf("read logs for %s: %v", id, err)
+		return []string{}
+	}
+	if logs == nil {
+		return []string{}
+	}
+	return logs
+}
 
-func (s *Service) Findings(id string) []checks.Finding { return s.engine.Findings(id) }
+func (s *Service) Findings(id string) []checks.Finding {
+	findings, err := call[[]checks.Finding](s, "tunnel.findings", api.IDParams{ID: id})
+	if err != nil {
+		log.Printf("read findings for %s: %v", id, err)
+		return []checks.Finding{}
+	}
+	if findings == nil {
+		return []checks.Finding{}
+	}
+	return findings
+}
 
-func (s *Service) Reload() { s.engine.Reload() }
+func (s *Service) Reload() {
+	if err := action(s, "config.reload", api.Empty{}); err != nil {
+		log.Printf("reload config: %v", err)
+	}
+}
 
 func (s *Service) SetSecret(name, value string, kind secret.Kind) error {
-	return s.engine.SetSecret(name, value, kind)
+	return action(s, "secret.set", api.SetSecretParams{Name: name, Value: value, Kind: kind})
 }
 
-func (s *Service) StopOrphan(pid int) error { return s.engine.StopOrphan(pid) }
+func (s *Service) StopOrphan(pid int) error {
+	return action(s, "orphan.stop", api.OrphanParams{PID: pid})
+}
 
 func (s *Service) AnswerPrompt(id, value string, cancelled bool) {
-	s.engine.AnswerPrompt(id, value, cancelled)
+	if err := action(s, "prompt.answer", api.AnswerPromptParams{ID: id, Value: value, Cancelled: cancelled}); err != nil {
+		log.Printf("answer prompt: %v", err)
+	}
 }
 
-func (s *Service) EvaluateDraft(t model.Tunnel) api.DraftResult { return s.engine.EvaluateDraft(t) }
+func (s *Service) EvaluateDraft(t model.Tunnel) api.DraftResult {
+	result, err := call[api.DraftResult](s, "tunnel.evaluateDraft", api.TunnelParams{Tunnel: t})
+	if err != nil {
+		log.Printf("evaluate draft: %v", err)
+	}
+	return result
+}
 
-func (s *Service) NewDraft(kind model.TunnelType) model.Tunnel { return s.engine.NewDraft(kind) }
+func (s *Service) NewDraft(kind model.TunnelType) model.Tunnel {
+	draft, err := call[model.Tunnel](s, "tunnel.newDraft", api.NewDraftParams{Kind: kind})
+	if err != nil {
+		log.Printf("new draft: %v", err)
+	}
+	return draft
+}
 
 func (s *Service) ImportCommand(line string) (importer.Result, error) {
-	return s.engine.ImportCommand(line)
+	return call[importer.Result](s, "tunnel.import", api.ImportParams{Line: line})
 }
 
-func (s *Service) DuplicateDraft(id string) (model.Tunnel, error) { return s.engine.DuplicateDraft(id) }
+func (s *Service) DuplicateDraft(id string) (model.Tunnel, error) {
+	return call[model.Tunnel](s, "tunnel.duplicateDraft", api.IDParams{ID: id})
+}
 
 func (s *Service) SaveTunnel(t model.Tunnel, start bool) (string, error) {
-	return s.engine.SaveTunnel(t, start)
+	return call[string](s, "tunnel.save", api.SaveTunnelParams{Tunnel: t, Start: start})
 }
 
-func (s *Service) DeleteTunnel(id string) error { return s.engine.DeleteTunnel(id) }
+func (s *Service) DeleteTunnel(id string) error {
+	return action(s, "tunnel.delete", api.IDParams{ID: id})
+}
 
 func (s *Service) SetFavorite(id string, favorite bool) error {
-	return s.engine.SetFavorite(id, favorite)
+	return action(s, "tunnel.setFavorite", api.FavoriteParams{ID: id, Favorite: favorite})
 }
 
-func (s *Service) Restart(id string) error { return s.engine.Restart(id) }
+func (s *Service) Restart(id string) error { return action(s, "tunnel.restart", api.IDParams{ID: id}) }
 
-func (s *Service) ActivateProfile(id string) error { return s.engine.ActivateProfile(id) }
+func (s *Service) ActivateProfile(id string) error {
+	return action(s, "profile.activate", api.IDParams{ID: id})
+}
 
 func (s *Service) SaveProfile(profile model.Profile, members []string) (string, error) {
-	return s.engine.SaveProfile(profile, members)
+	return call[string](s, "profile.save", api.SaveProfileParams{Profile: profile, Members: members})
 }
 
-func (s *Service) DeleteProfile(id string) error { return s.engine.DeleteProfile(id) }
+func (s *Service) DeleteProfile(id string) error {
+	return action(s, "profile.delete", api.IDParams{ID: id})
+}
 
-func (s *Service) DuplicateProfile(id string) (string, error) { return s.engine.DuplicateProfile(id) }
+func (s *Service) DuplicateProfile(id string) (string, error) {
+	return call[string](s, "profile.duplicate", api.IDParams{ID: id})
+}
 
 func (s *Service) SetProfileAutostart(id, tunnelID string, on bool) error {
-	return s.engine.SetProfileAutostart(id, tunnelID, on)
+	return action(s, "profile.setAutostart", api.AutostartParams{ID: id, TunnelID: tunnelID, On: on})
 }
 
-func (s *Service) StartProfile(id string) error { return s.engine.StartProfile(id) }
+func (s *Service) StartProfile(id string) error {
+	return action(s, "profile.start", api.IDParams{ID: id})
+}
 
-func (s *Service) StopProfile(id string) { s.engine.StopProfile(id) }
+func (s *Service) StopProfile(id string) {
+	if err := action(s, "profile.stop", api.IDParams{ID: id}); err != nil {
+		log.Printf("stop profile %s: %v", id, err)
+	}
+}
 
-func (s *Service) SSHHosts(profileID string) api.SSHHostList { return s.engine.SSHHosts(profileID) }
+func (s *Service) SSHHosts(profileID string) api.SSHHostList {
+	hosts, err := call[api.SSHHostList](s, "ssh.hosts", api.SSHParams{ProfileID: profileID})
+	if err != nil {
+		log.Printf("read SSH hosts: %v", err)
+	}
+	return hosts
+}
 
 func (s *Service) ResolveSSHHost(alias, profileID string) (sshconfig.Resolved, error) {
-	return s.engine.ResolveSSHHost(alias, profileID)
+	return call[sshconfig.Resolved](s, "ssh.resolve", api.SSHParams{Alias: alias, ProfileID: profileID})
 }
 
-func (s *Service) ReloadSSHHosts() { s.engine.ReloadSSHHosts() }
+func (s *Service) ReloadSSHHosts() {
+	if err := action(s, "ssh.reload", api.Empty{}); err != nil {
+		log.Printf("reload SSH hosts: %v", err)
+	}
+}
 
-func (s *Service) Tools() []api.ToolInfo { return s.engine.Tools() }
+func (s *Service) Tools() []api.ToolInfo {
+	tools, err := call[[]api.ToolInfo](s, "tool.list", api.Empty{})
+	if err != nil {
+		log.Printf("read tools: %v", err)
+		return []api.ToolInfo{}
+	}
+	if tools == nil {
+		return []api.ToolInfo{}
+	}
+	return tools
+}
 
 func (s *Service) SetToolPath(tool, path string) ([]api.ToolInfo, error) {
-	return s.engine.SetToolPath(tool, path)
+	return call[[]api.ToolInfo](s, "tool.setPath", api.ToolPathParams{Tool: tool, Path: path})
 }
 
-func (s *Service) ListSecrets() []api.SecretView { return s.engine.ListSecrets() }
+func (s *Service) ListSecrets() []api.SecretView {
+	secrets, err := call[[]api.SecretView](s, "secret.list", api.Empty{})
+	if err != nil {
+		log.Printf("list secrets: %v", err)
+		return []api.SecretView{}
+	}
+	if secrets == nil {
+		return []api.SecretView{}
+	}
+	return secrets
+}
 
-func (s *Service) DeleteSecret(name string) error { return s.engine.DeleteSecret(name) }
+func (s *Service) DeleteSecret(name string) error {
+	return action(s, "secret.delete", api.SecretNameParams{Name: name})
+}
 
-func (s *Service) RenameSecret(from, to string) error { return s.engine.RenameSecret(from, to) }
+func (s *Service) RenameSecret(from, to string) error {
+	return action(s, "secret.rename", api.RenameSecretParams{From: from, To: to})
+}
 
 func (s *Service) AppVersion() string { return Version }
 
@@ -211,11 +537,12 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 	if id == "" || s.host == nil {
 		return []supervisor.LogLine{}
 	}
-	_, initial := s.engine.LogsSince(id, 0)
-	var seq uint64
-	if len(initial) > 0 {
-		seq = initial[len(initial)-1].Seq
+	result, err := call[api.LogsResult](s, "logs.since", api.LogsParams{ID: id})
+	if err != nil {
+		log.Printf("watch logs for %s: %v", id, err)
+		return []supervisor.LogLine{}
 	}
+	seq := result.Sequence
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
@@ -224,15 +551,18 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				next, lines := s.engine.LogsSince(id, seq)
-				seq = next
-				if len(lines) > 0 && s.host != nil {
-					s.host.app.Event.Emit("logs:appended", api.LogAppend{ID: id, Lines: lines})
+				next, err := callContext[api.LogsResult](ctx, s, "logs.since", api.LogsParams{ID: id, Sequence: seq})
+				if err != nil {
+					continue
+				}
+				seq = next.Sequence
+				if len(next.Lines) > 0 && s.host != nil {
+					s.host.app.Event.Emit("logs:appended", api.LogAppend{ID: id, Lines: next.Lines})
 				}
 			}
 		}
 	}()
-	return initial
+	return result.Lines
 }
 
 func (s *Service) OpenIn(screen, param string) {
@@ -243,14 +573,16 @@ func (s *Service) OpenIn(screen, param string) {
 }
 
 func (s *Service) StartAndCopy(id string) error {
-	if err := s.engine.Start(id); err != nil {
+	if err := action(s, "tunnel.start", api.IDParams{ID: id}); err != nil {
 		return err
 	}
-	s.engine.RecordUsed(id)
+	if err := action(s, "tunnel.recordUsed", api.IDParams{ID: id}); err != nil {
+		log.Printf("record tunnel use for %s: %v", id, err)
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		status, err := s.engine.WaitReady(ctx, id)
+		status, err := callContext[supervisor.Status](ctx, s, "tunnel.waitReady", api.IDParams{ID: id})
 		if err == nil && status.Address != "" && s.host != nil {
 			_ = s.host.app.Clipboard.SetText(status.Address)
 		}
@@ -271,3 +603,59 @@ func (s *Service) RevealSecret(name string) (string, error) {
 }
 
 func (s *Service) UserAuthAvailable() bool { return s.auth.Available() }
+
+func (s *Service) wake() {
+	if err := action(s, "system.wake", api.Empty{}); err != nil {
+		log.Printf("system wake: %v", err)
+	}
+}
+
+func (s *Service) focus() {
+	if err := action(s, "system.focus", api.Empty{}); err != nil {
+		log.Printf("system focus: %v", err)
+	}
+}
+
+func (s *Service) startMarked() {
+	s.mu.Lock()
+	if s.startRequested {
+		s.mu.Unlock()
+		return
+	}
+	s.startRequested = true
+	s.startPending = true
+	s.mu.Unlock()
+	s.flushStartMarked()
+}
+
+func (s *Service) shortcutSetting() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings.Shortcut
+}
+
+func (s *Service) applicationReady() {
+	s.mu.Lock()
+	s.ready = true
+	s.mu.Unlock()
+}
+
+func (s *Service) flushStartMarked() {
+	s.mu.Lock()
+	if !s.startPending || s.startInFlight || s.client == nil {
+		s.mu.Unlock()
+		return
+	}
+	s.startInFlight = true
+	s.mu.Unlock()
+	err := action(s, "tunnel.startOnLaunch", api.Empty{})
+	s.mu.Lock()
+	s.startInFlight = false
+	if err == nil {
+		s.startPending = false
+	}
+	s.mu.Unlock()
+	if err != nil {
+		log.Printf("start marked tunnels: %v", err)
+	}
+}
