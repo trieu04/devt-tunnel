@@ -135,3 +135,12 @@ func (s *Engine) monitorClockJump() {
 func clockJumped(previous, current time.Time, interval time.Duration) bool {
 	return current.Sub(previous) > interval+60*time.Second
 }
+
+func (s *Engine) lifetimeError() error {
+	select {
+	case <-s.done:
+		return context.Canceled
+	default:
+		return nil
+	}
+}

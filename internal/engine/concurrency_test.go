@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sync"
@@ -189,5 +190,79 @@ func testConcurrentConfigCommits(t *testing.T, firstReload bool) {
 	}
 	if got := e.manager.Config(); !reflect.DeepEqual(got, disk) || len(got.Tunnels) != wantCount {
 		t.Fatalf("manager/disk diverged: manager=%+v disk=%+v", got, disk)
+	}
+}
+
+func TestShutdownFencesQueuedConfigOperations(t *testing.T) {
+	for _, mode := range []struct {
+		name                string
+		firstReload, reload bool
+	}{
+		{"save-save", false, false}, {"save-reload", false, true}, {"reload-save", true, false}, {"reload-reload", true, true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			e, _, _ := newTestEngine(t, model.Config{})
+			store := &pausedConfigStore{configurationStore: e.configStore, committed: make(chan struct{}), release: make(chan struct{}), secondRead: make(chan struct{})}
+			e.configStore = store
+			var release sync.Once
+			unblock := func() { release.Do(func() { close(store.release) }) }
+			defer unblock()
+			first := make(chan error, 1)
+			go func() {
+				if mode.firstReload {
+					first <- e.Reload()
+					return
+				}
+				_, err := e.SaveTunnel(commandTunnel(), false)
+				first <- err
+			}()
+			receive(t, store.committed)
+			queued := make(chan error, 1)
+			started := make(chan struct{})
+			go func() {
+				close(started)
+				if mode.reload {
+					queued <- e.Reload()
+					return
+				}
+				tunnel := commandTunnel()
+				tunnel.Name = "queued"
+				_, err := e.SaveTunnel(tunnel, false)
+				queued <- err
+			}()
+			<-started
+			select {
+			case <-store.secondRead:
+				t.Fatal("queued operation bypassed config lock")
+			case <-time.After(50 * time.Millisecond):
+			}
+			shutdown := make(chan struct{})
+			go func() { e.Shutdown(); close(shutdown) }()
+			select {
+			case <-shutdown:
+			case <-time.After(time.Second):
+				t.Fatal("shutdown waited for config I/O")
+			}
+			unblock()
+			for _, result := range []chan error{first, queued} {
+				if err := receive(t, result); !errors.Is(err, context.Canceled) {
+					t.Fatalf("operation continued after shutdown: %v", err)
+				}
+			}
+			if store.updates.Load() != 1 {
+				t.Fatalf("issued queued config I/O after shutdown: %d", store.updates.Load())
+			}
+			disk, err := config.Load(e.configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantDisk := 1
+			if mode.firstReload {
+				wantDisk = 0
+			}
+			if len(disk.Tunnels) != wantDisk || len(e.manager.Config().Tunnels) != 0 {
+				t.Fatalf("unexpected disk/manager state: %+v / %+v", disk, e.manager.Config())
+			}
+		})
 	}
 }

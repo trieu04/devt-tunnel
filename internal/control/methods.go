@@ -96,7 +96,7 @@ func (s *Server) register() {
 	action(s, "orphan.stop", func(p api.OrphanParams) error { return e.StopOrphan(p.PID) })
 	query(s, "config.overview", func(api.Empty) api.Overview { return e.Overview() })
 	handle(s, "config.path", func(context.Context, api.Empty) (string, error) { return e.EnsureConfigFile() })
-	action(s, "config.reload", func(api.Empty) error { e.Reload(); return nil })
+	action(s, "config.reload", func(api.Empty) error { return e.Reload() })
 	action(s, "system.wake", func(api.Empty) error { e.Wake(); return nil })
 	action(s, "system.focus", func(api.Empty) error { e.Focus(); return nil })
 }

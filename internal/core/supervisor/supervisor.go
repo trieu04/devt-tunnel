@@ -147,6 +147,10 @@ func New(deps Deps) *Manager {
 // Running tunnels keep their old settings until they are restarted.
 func (m *Manager) SetConfig(cfg model.Config) {
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
 	m.config = cfg
 	defined := map[string]bool{}
 	for _, t := range cfg.Tunnels {
@@ -506,6 +510,10 @@ func (m *Manager) optionsLocked(t model.Tunnel) command.Options {
 
 func (m *Manager) SetActiveProfile(id string) {
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
 	m.activeProfile = id
 	m.mu.Unlock()
 	m.changed()

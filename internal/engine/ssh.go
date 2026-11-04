@@ -103,21 +103,21 @@ func (s *Engine) SetToolPath(tool, path string) ([]api.ToolInfo, error) {
 			return nil, errors.New("tool path must be an executable file")
 		}
 	}
-	s.mu.Lock()
-	if s.settings.Tools == nil {
-		s.settings.Tools = map[string]string{}
-	}
-	if path == "" {
-		delete(s.settings.Tools, tool)
-	} else {
-		s.settings.Tools[tool] = path
-	}
-	if err := settings.Save(s.settingsPath, s.settings); err != nil {
-		s.mu.Unlock()
+	if err := s.updateSettings(func(next *settings.Settings) {
+		if next.Tools == nil {
+			next.Tools = map[string]string{}
+		}
+		if path == "" {
+			delete(next.Tools, tool)
+		} else {
+			next.Tools[tool] = path
+		}
+	}); err != nil {
 		return nil, err
 	}
-	s.tools.SetOverrides(s.settings.Tools)
-	s.mu.Unlock()
+	if err := s.lifetimeError(); err != nil {
+		return nil, err
+	}
 	s.notify()
 	return s.Tools(), nil
 }

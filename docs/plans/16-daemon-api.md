@@ -35,7 +35,7 @@ Methods mirror the engine, see the design's table. Leases, approvals and agent p
 - Each connection has a mutex-guarded writer with a deadline, and a small event queue. A client that cannot keep up is disconnected and resyncs on reconnect, so the engine never blocks on it.
 - `CheckPeer` runs before any read.
 - Request admission holds a short lock; idle-only shutdown rejects in-flight mutations instead of waiting for them. Unconditional shutdown closes admission and stops tunnels without draining RPC handlers blocked in OS calls. Credential operations stop their engine continuations at shutdown; an already-issued native credential write may still complete in the OS.
-- Config writes and reloads serialize the disk snapshot through application to the supervisor; unrelated start, stop and readiness calls remain concurrent.
+- Config writes and reloads serialize the disk snapshot through application to the supervisor; queued operations check engine lifetime before persistence and application. Settings saves serialize copied snapshots under a separate mutex, so filesystem I/O never holds the lifecycle mutex. An already-issued filesystem write may finish after shutdown, but its engine state is not applied; unrelated start, stop and readiness calls remain concurrent.
 
 ## 16.4 `internal/client`
 

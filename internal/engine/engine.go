@@ -46,6 +46,7 @@ type Engine struct {
 	configStore  configurationStore
 	stateStore   *corestate.Store
 	settings     settings.Settings
+	saveSettings func(string, settings.Settings) error
 	tools        *platform.Tools
 	records      *supervisor.FileRecords
 	manager      *supervisor.Manager
@@ -53,6 +54,7 @@ type Engine struct {
 	shell        []string
 
 	configMu       sync.Mutex
+	settingsMu     sync.Mutex
 	promptMu       sync.Mutex
 	mu             sync.Mutex
 	configError    string
@@ -81,9 +83,16 @@ type configurationStore interface {
 func (s *Engine) updateConfig(change func(*model.Config) error) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
+	if err := s.lifetimeError(); err != nil {
+		return err
+	}
 	cfg, err := s.configStore.Update(change)
+	if stopped := s.lifetimeError(); stopped != nil {
+		return stopped
+	}
 	if err == nil {
 		s.manager.SetConfig(cfg)
+		return s.lifetimeError()
 	}
 	return err
 }
@@ -136,6 +145,7 @@ func New(opts Options) (*Engine, error) {
 		configStore:  config.NewStore(opts.ConfigPath),
 		stateStore:   corestate.NewStore(filepath.Join(opts.StateDir, "state.json")),
 		settings:     appSettings,
+		saveSettings: settings.Save,
 		tools:        &platform.Tools{},
 		records:      &supervisor.FileRecords{Path: filepath.Join(opts.StateDir, "processes.json")},
 		shell:        platform.ShellFor(appSettings.Shell),
@@ -175,11 +185,21 @@ func askpassHelperPath() string {
 	return filepath.Join(filepath.Dir(exe), name)
 }
 
-func (s *Engine) loadConfig() {
+func (s *Engine) loadConfig() error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
+	if err := s.lifetimeError(); err != nil {
+		return err
+	}
 	cfg, err := s.configStore.Load()
+	if stopped := s.lifetimeError(); stopped != nil {
+		return stopped
+	}
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return context.Canceled
+	}
 	if err != nil {
 		s.configError = err.Error()
 	} else {
@@ -189,9 +209,12 @@ func (s *Engine) loadConfig() {
 	if err != nil {
 		log.Printf("config: %v", err) // keep the last good definitions
 		s.notify()
-		return
+		return err
 	}
 	s.manager.SetConfig(cfg)
+	if err := s.lifetimeError(); err != nil {
+		return err
+	}
 	active := s.stateStore.Get().ActiveProfile
 	if active != "" {
 		found := false
@@ -199,11 +222,18 @@ func (s *Engine) loadConfig() {
 			found = found || profile.ID == active
 		}
 		if !found {
+			if err := s.lifetimeError(); err != nil {
+				return err
+			}
 			_ = s.stateStore.Update(func(st *corestate.State) { st.ActiveProfile = "" })
 			active = ""
 		}
 	}
+	if err := s.lifetimeError(); err != nil {
+		return err
+	}
 	s.manager.SetActiveProfile(active)
+	return nil
 }
 
 func (s *Engine) findOrphans() {
@@ -332,7 +362,7 @@ func (s *Engine) Findings(id string) []checks.Finding {
 	return []checks.Finding{}
 }
 
-func (s *Engine) Reload() { s.loadConfig() }
+func (s *Engine) Reload() error { return s.loadConfig() }
 
 func (s *Engine) SetSecret(name, value string, kind secret.Kind) error {
 	if !secretName.MatchString(name) {
@@ -422,15 +452,23 @@ func (s *Engine) askUser(ctx context.Context, prompt askpass.Prompt) (string, er
 }
 
 func (s *Engine) EnsureConfigFile() (string, error) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	if err := s.lifetimeError(); err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(s.configPath); errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
+			return "", err
+		}
+		if err := s.lifetimeError(); err != nil {
 			return "", err
 		}
 		if err := os.WriteFile(s.configPath, []byte(configTemplate), 0o644); err != nil {
 			return "", err
 		}
 	}
-	return s.configPath, nil
+	return s.configPath, s.lifetimeError()
 }
 
 const configTemplate = `# devt-tunnel tunnel definitions. See docs/architecture.md for all fields.
