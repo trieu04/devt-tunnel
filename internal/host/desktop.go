@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -49,9 +50,12 @@ func Attach(app *application.App, svc *Service) {
 	svc.mu.Lock()
 	svc.host = d
 	svc.mu.Unlock()
+	app.Event.OnApplicationEvent(events.Common.SystemDidWake, func(*application.ApplicationEvent) { svc.manager.Wake() })
+	go monitorClockJump(svc.manager.Wake)
 
 	// Registered after startup so that a conflict comes back here rather than to the global error handler.
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		log.Printf("application ready")
 		d.registerShortcut()
 		d.refreshTray(svc.views())
 		for _, t := range svc.manager.Config().Tunnels {
@@ -84,6 +88,12 @@ func (d *desktop) createWindows() {
 		}
 		d.app.Quit()
 	})
+	d.main.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
+		d.svc.secrets.Forget()
+		if changed, err := d.svc.configStore.Changed(); err == nil && changed {
+			d.svc.loadConfig()
+		}
+	})
 
 	d.quick = d.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "quick",
@@ -104,6 +114,23 @@ func (d *desktop) createWindows() {
 	d.quick.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) {
 		d.quick.Hide()
 	})
+}
+
+func monitorClockJump(wake func()) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	previous := time.Now().Round(0)
+	for now := range ticker.C {
+		wall := now.Round(0)
+		if clockJumped(previous, wall, 30*time.Second) {
+			wake()
+		}
+		previous = wall
+	}
+}
+
+func clockJumped(previous, current time.Time, interval time.Duration) bool {
+	return current.Sub(previous) > interval+60*time.Second
 }
 
 func (d *desktop) showMain() {
@@ -131,18 +158,39 @@ func defaultShortcut() string {
 }
 
 func (d *desktop) registerShortcut() {
-	accel := defaultShortcut()
-	err := d.app.GlobalShortcut.Register(accel, d.toggleQuick)
-	d.svc.mu.Lock()
-	d.svc.shortcut = accel
-	if err != nil {
-		d.svc.shortcutErr = err.Error()
+	accel := d.svc.settings.Shortcut
+	if accel == "" {
+		accel = defaultShortcut()
 	}
-	d.svc.mu.Unlock()
+	err := d.setShortcut(accel)
 	if err != nil {
 		log.Printf("global shortcut: %v", err)
 		d.svc.notify()
 	}
+}
+
+func (d *desktop) setShortcut(accel string) error {
+	if accel == "" {
+		accel = defaultShortcut()
+	}
+	d.svc.mu.Lock()
+	old := d.svc.shortcut
+	d.svc.mu.Unlock()
+	if old == accel && d.app.GlobalShortcut.IsRegistered(accel) {
+		return nil
+	}
+	err := d.app.GlobalShortcut.Register(accel, d.toggleQuick)
+	if err != nil {
+		return err
+	}
+	if old != "" && old != accel {
+		_ = d.app.GlobalShortcut.Unregister(old)
+	}
+	d.svc.mu.Lock()
+	d.svc.shortcut = accel
+	d.svc.shortcutErr = ""
+	d.svc.mu.Unlock()
+	return nil
 }
 
 func (d *desktop) createTray() {

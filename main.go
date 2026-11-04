@@ -3,18 +3,29 @@ package main
 
 import (
 	"embed"
+	"io"
 	"io/fs"
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/trieu04/devt-tunnel/internal/host"
+	"github.com/trieu04/devt-tunnel/internal/platform"
 )
+
+var version = "0.1.0"
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
+	host.Version = version
+	if stateDir, err := platform.StateDir(); err == nil {
+		if file, err := platform.OpenRotatingLog(stateDir); err == nil {
+			defer file.Close()
+			log.SetOutput(io.MultiWriter(log.Writer(), file))
+		}
+	}
 	dist, err := fs.Sub(assets, "frontend/dist")
 	if err != nil {
 		log.Fatal(err)
