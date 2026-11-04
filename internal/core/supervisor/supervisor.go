@@ -344,6 +344,10 @@ func (m *Manager) Restart(id string) error {
 // SecretsChanged retries only starts that were explicitly requested while a secret was missing.
 func (m *Manager) SecretsChanged() {
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
 	ids := make([]string, 0, len(m.pendingStart))
 	for id := range m.pendingStart {
 		ids = append(ids, id)
@@ -445,8 +449,8 @@ func terminalStatus(state State) bool {
 
 // Shutdown stops every tunnel and refuses further starts.
 func (m *Manager) Shutdown() {
+	m.CloseAdmission()
 	m.mu.Lock()
-	m.closed = true
 	ids := make([]string, 0, len(m.tunnels))
 	for id := range m.tunnels {
 		ids = append(ids, id)
@@ -461,6 +465,13 @@ func (m *Manager) Shutdown() {
 		}()
 	}
 	wg.Wait()
+}
+
+// CloseAdmission refuses new manager work without waiting for running tunnels to stop.
+func (m *Manager) CloseAdmission() {
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
 }
 
 func (m *Manager) findLocked(id string) (model.Tunnel, bool) {

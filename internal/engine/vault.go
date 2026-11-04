@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 	"time"
@@ -16,10 +18,20 @@ var secretName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 func (s *Engine) ListSecrets() []api.SecretView {
 	byName := map[string]*api.SecretView{}
 	lastUsed := map[string]time.Time{}
-	for _, entry := range s.secretIndex.List() {
+	var entries []secret.Entry
+	if err := s.withSecretIndex(func(index secretIndexStore) error {
+		entries = index.List()
+		return nil
+	}); err != nil {
+		return []api.SecretView{}
+	}
+	for _, entry := range entries {
 		view := &api.SecretView{Name: entry.Name, Kind: entry.Kind, State: "missing"}
 		byName[entry.Name] = view
 		lastUsed[entry.Name] = entry.LastUsed
+	}
+	if s.lifetimeError() != nil {
+		return []api.SecretView{}
 	}
 	for _, tunnel := range s.manager.Config().Tunnels {
 		for _, name := range tunnel.Secrets() {
@@ -33,6 +45,9 @@ func (s *Engine) ListSecrets() []api.SecretView {
 	}
 	out := make([]api.SecretView, 0, len(byName))
 	for name, view := range byName {
+		if s.lifetimeError() != nil {
+			return []api.SecretView{}
+		}
 		if _, err := secret.Has(s.secrets, name); err == nil {
 			view.State = "present"
 		} else if !errors.Is(err, secret.ErrNotFound) {
@@ -43,6 +58,9 @@ func (s *Engine) ListSecrets() []api.SecretView {
 		}
 		sort.Strings(view.UsedBy)
 		out = append(out, *view)
+	}
+	if s.lifetimeError() != nil {
+		return []api.SecretView{}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -63,12 +81,17 @@ func inferKind(t model.Tunnel, name string) secret.Kind {
 
 func (s *Engine) DeleteSecret(name string) error {
 	if err := s.secrets.Delete(name); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return fmt.Errorf("secret deletion may have completed, but shutdown canceled confirmation: %w", err)
+		}
 		return err
 	}
-	if err := s.secretIndex.Delete(name); err != nil {
-		return err
+	if err := s.withSecretIndex(func(index secretIndexStore) error { return index.Delete(name) }); err != nil {
+		return fmt.Errorf("secret was deleted, but its metadata was not updated: %w", err)
 	}
-	s.notify()
+	if err := s.applyWhileAlive(s.notify); err != nil {
+		return fmt.Errorf("secret was deleted, but shutdown canceled its refresh: %w", err)
+	}
 	return nil
 }
 
@@ -81,6 +104,9 @@ func (s *Engine) RenameSecret(from, to string) error {
 		return err
 	}
 	if err := s.secrets.Set(to, value); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return fmt.Errorf("secret copy may have completed, but shutdown canceled confirmation: %w", err)
+		}
 		return err
 	}
 	err = s.updateConfig(func(cfg *model.Config) error {
@@ -90,13 +116,21 @@ func (s *Engine) RenameSecret(from, to string) error {
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return fmt.Errorf("secret was copied, but shutdown interrupted the reference update; both names may remain: %w", err)
+		}
 		_ = s.secrets.Delete(to)
 		return err
 	}
 	if err := s.secrets.Delete(from); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return fmt.Errorf("references were renamed, but deletion of the old credential may have completed without confirmation: %w", err)
+		}
 		return err
 	}
-	_ = s.secretIndex.Rename(from, to)
+	if err := s.withSecretIndex(func(index secretIndexStore) error { return index.Rename(from, to) }); err != nil {
+		return fmt.Errorf("credentials and references were renamed, but metadata was not updated: %w", err)
+	}
 	return nil
 }
 

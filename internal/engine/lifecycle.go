@@ -65,6 +65,7 @@ func (s *Engine) Shutdown() {
 			s.notifyTimer = nil
 		}
 		s.subscribers = nil
+		s.manager.CloseAdmission()
 		s.mu.Unlock()
 		s.lifecycleMu.Unlock()
 		s.broker.Close()

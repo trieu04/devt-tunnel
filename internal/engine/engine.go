@@ -39,22 +39,24 @@ type Options struct {
 }
 
 type Engine struct {
-	configPath   string
-	settingsPath string
-	secrets      *secret.Cached
-	secretIndex  *secret.Index
-	configStore  configurationStore
-	stateStore   *corestate.Store
-	settings     settings.Settings
-	saveSettings func(string, settings.Settings) error
-	tools        *platform.Tools
-	records      *supervisor.FileRecords
-	manager      *supervisor.Manager
-	broker       *askpass.Broker
-	shell        []string
+	configPath        string
+	settingsPath      string
+	secrets           *secret.Cached
+	secretIndex       secretIndexStore
+	configStore       configurationStore
+	stateStore        *corestate.Store
+	settings          settings.Settings
+	saveSettings      func(string, settings.Settings) error
+	beforeSecretIndex func()
+	tools             *platform.Tools
+	records           *supervisor.FileRecords
+	manager           *supervisor.Manager
+	broker            *askpass.Broker
+	shell             []string
 
 	configMu       sync.Mutex
 	settingsMu     sync.Mutex
+	secretIndexMu  sync.Mutex
 	lifecycleMu    sync.RWMutex
 	promptMu       sync.Mutex
 	mu             sync.Mutex
@@ -137,10 +139,11 @@ func New(opts Options) (*Engine, error) {
 	}
 	index := &secret.Index{Path: filepath.Join(opts.StateDir, "vault.json")}
 	done := make(chan struct{})
+	cachedSecrets := &secret.Cached{Inner: &lifetimeSecrets{inner: opts.Secrets, done: done}}
 	s := &Engine{
 		configPath:   opts.ConfigPath,
 		settingsPath: opts.SettingsPath,
-		secrets:      &secret.Cached{Inner: &lifetimeSecrets{inner: opts.Secrets, done: done}, Used: index.MarkUsed},
+		secrets:      cachedSecrets,
 		secretIndex:  index,
 		configStore:  config.NewStore(opts.ConfigPath),
 		stateStore:   corestate.NewStore(filepath.Join(opts.StateDir, "state.json")),
@@ -153,6 +156,7 @@ func New(opts Options) (*Engine, error) {
 		subscribers:  map[uint64]func(api.Event){},
 		done:         done,
 	}
+	cachedSecrets.Used = s.markSecretUsed
 	s.tools.SetOverrides(appSettings.Tools)
 	s.broker, err = askpass.NewBroker(opts.AskpassHelper, s.secrets, s.askUser)
 	if err != nil {
@@ -372,11 +376,21 @@ func (s *Engine) SetSecret(name, value string, kind secret.Kind) error {
 		return errors.New("secret is too large for the OS credential store")
 	}
 	if err := s.secrets.Set(name, value); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return fmt.Errorf("secret storage may have completed, but shutdown canceled confirmation: %w", err)
+		}
 		return err
 	}
-	_ = s.secretIndex.Upsert(name, kind)
+	if err := s.withSecretIndex(func(index secretIndexStore) error { return index.Upsert(name, kind) }); err != nil {
+		return fmt.Errorf("secret was stored, but its metadata was not updated: %w", err)
+	}
+	if err := s.lifetimeError(); err != nil {
+		return fmt.Errorf("secret was stored, but shutdown canceled its refresh: %w", err)
+	}
 	s.manager.SecretsChanged()
-	s.notify()
+	if err := s.applyWhileAlive(s.notify); err != nil {
+		return fmt.Errorf("secret was stored, but shutdown canceled its refresh: %w", err)
+	}
 	return nil
 }
 
