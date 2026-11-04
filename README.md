@@ -17,6 +17,7 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Main window, editor, quick launch, profiles, Vault and Settings | Implemented; frontend tests cover only filtering, shortcuts and quick-launch results, and native visual acceptance remains |
 | SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
 | Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
+| Daemon, `dtt` CLI and MCP server for agents | Design accepted; not implemented |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
 
@@ -85,6 +86,8 @@ pnpm --dir frontend test
 - [docs/product.md](docs/product.md): concepts, tunnel types, flows, screens, shortcuts.
 - [docs/architecture.md](docs/architecture.md): process model, SSH integration, secrets, storage, data model, decisions, open questions.
 - [docs/platform.md](docs/platform.md): cross-platform stack, code layout, per-OS differences, distribution, validation checks.
+- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Not implemented yet.
+- [docs/plans/README.md](docs/plans/README.md): implementation plans.
 
 ## Design
 

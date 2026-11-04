@@ -21,8 +21,16 @@ Baseline when this was written (2026-11-03): `go test ./...` passes on macOS arm
 | 11 | [Reliability](11-reliability.md) | Wake from sleep, reconnect edge cases, log streaming | 1 | 3 d |
 | 12 | [Cross-platform validation](12-cross-platform.md) | Validation matrix on real Windows and Linux desktops | 6–11 | 8 d |
 | 13 | [Distribution](13-distribution.md) | Signed installers, release pipeline, update notice | 12 | 6 d |
+| 14 | [Engine extraction](14-engine.md) | Core logic out of the Wails package, no behavior change | | 3 d |
+| 15 | [Core fixes for other clients](15-core-fixes.md) | Typed wait errors, endpoints, port-in-use check | 14 | 2 d |
+| 16 | [Daemon and local API](16-daemon-api.md) | `dtt daemon`, socket API, client library, on-demand start, idle exit | 14, 15 | 5 d |
+| 17 | [GUI as a client](17-gui-client.md) | The app holds no tunnel state; native acceptance on macOS | 16 | 5 d |
+| 18 | [`dtt` command line](18-cli.md) | The CLI and its generated documentation | 16 | 6 d |
+| 19 | [Ownership, leases and policy](19-leases-policy.md) | Ephemeral tunnels, leases, port allocation, approvals, audit | 16, 17 | 6 d |
+| 20 | [MCP server](20-mcp.md) | Tools for agents, tested with a real client | 19 | 3 d |
+| 21 | [Packaging `dtt`](21-cli-packaging.md) | Signed binary in every installer, on `PATH` | 18, 20 | 3 d |
 
-Estimates are rough, for one developer, and have not been checked against real progress. Phase 12 is the least certain, because its cost depends on what breaks.
+Estimates are rough, for one developer, and have not been checked against real progress. Phase 12 is the least certain, because its cost depends on what breaks. Phases 14–21 come from the accepted [central management design](../design/control-plane.md); none has started.
 
 ```text
 1 ─┬─► 2 ─┬─► 4 ────────┐
@@ -30,7 +38,12 @@ Estimates are rough, for one developer, and have not been checked against real p
    ├─► 3 ─┴─► 5 ────────┤           │
    │          └─► 8, 9, 10 ─────────┼─► 12 ─► 13
    └─► 11 ──────────────────────────┘
+
+14 ─► 15 ─► 16 ─┬─► 17 ─► 19 ─► 20 ─┬─► 21 (with 13)
+                └─► 18 ─────────────┘
 ```
+
+Run phase 12 after phase 17, since moving tunnels into a daemon changes process, socket and keychain behavior that its matrix would otherwise have to test twice. Phase 18 can run alongside 17 and 19; its commands that need leases wait for 19.
 
 Can run in parallel without touching the same files: 2 and 3, then 4 and 5, then 8, 9 and 10 once 5 is merged, and 11 at any point after 1. Phases 8, 9 and 10 each add methods to `internal/host/service.go`, so split that file in phase 2 (see its task 2.7) before they start. Phase 3 runs alongside that split, so it puts its methods in a new `service_ssh.go`, and each later phase does the same with its own file.
 
@@ -40,9 +53,12 @@ Can run in parallel without touching the same files: 2 and 3, then 4 and 5, then
 |---|---|---|
 | **v0.2, editor** | 1–6 | A new user creates a working tunnel from an SSH host and from a pasted command without opening `tunnels.toml` |
 | **v0.3, macOS feature complete** | 7–11 | Every row of the coverage table below works on macOS in the native window, not only in server mode |
-| **v0.4, Windows** | 12 (Windows) | Windows column of the validation matrix is filled in |
-| **v0.5, Linux** | 12 (Linux) | Linux columns are filled in; Wayland failures have working fallbacks |
-| **v1.0** | 13 | Signed installers published by the release workflow; a clean machine installs and runs one tunnel |
+| **v0.4, daemon** | 14–17 | The native-window checks in [phase 17](17-gui-client.md) pass on macOS |
+| **v0.5, CLI** | 18 | The headless exit test in [phase 18](18-cli.md) passes |
+| **v0.6, agents** | 19, 20 | A real MCP client with no shell opens, uses and closes a tunnel, and a public tunnel waits for a person |
+| **v0.7, Windows** | 12 (Windows) | Windows column of the validation matrix is filled in |
+| **v0.8, Linux** | 12 (Linux) | Linux columns are filled in; Wayland failures have working fallbacks |
+| **v1.0** | 13, 21 | Signed installers published by the release workflow; a clean machine installs and runs one tunnel from the app and from `dtt` |
 
 The order macOS, Windows, Linux comes from the risk table in [platform.md](../platform.md).
 

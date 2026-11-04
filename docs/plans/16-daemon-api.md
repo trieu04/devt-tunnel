@@ -1,0 +1,87 @@
+# Phase 16: Daemon and local API
+
+**Goal:** the engine runs in its own process, reachable over a local socket. The GUI does not use it until phase 17, so nothing changes for users yet.
+
+**Depends on:** 14, 15. Design: [control-plane.md](../design/control-plane.md#local-api).
+
+## 16.1 Platform additions
+
+| Function | Unix | Windows |
+|---|---|---|
+| `ControlSocket() (string, error)` | `DTT_SOCKET`, then `$XDG_RUNTIME_DIR/devt-tunnel/ctl.sock` on Linux, then `<state dir>/run/ctl.sock`. Over 100 bytes: a hashed per-user directory under the OS temp directory | Same order, without the XDG step |
+| `PreparePrivateDir(path) error` | Create `0700`. Refuse a symlink, another owner, or group or other access | Create. Inherit the profile ACL |
+| `AcquireLock(path) (release, error)` | `flock`, non-blocking; `ErrLocked` | `LockFileEx`, fail immediately |
+| `CheckPeer(net.Conn) error` | `SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS, compare the UID. Other Unix: directory permissions only | Directory ACL only |
+| `Detach(*exec.Cmd)` | `Setsid` | `DETACHED_PROCESS`, `CREATE_NEW_PROCESS_GROUP` |
+| `OpenRotatingLogFile(dir, name)` | Generalizes `OpenRotatingLog` | Same |
+
+Unit tests for path selection and the over-length fallback; refusal of a shared directory; a second lock failing; a lock free after the holder exits.
+
+## 16.2 Protocol
+
+JSON-RPC 2.0, one message per line, in `internal/api`: wire types, method names, parameter structs and error kinds.
+
+- `daemon.hello` must come first and carries `{apiVersion, client: {kind, name, version}}`.
+- Errors use `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`. These are the source for the CLI exit codes and MCP error codes.
+- Secret values may appear only in `secret.set` parameters. The server never logs parameters.
+
+Methods mirror the engine, see the design's table. Leases, approvals and agent policy come in phase 19.
+
+## 16.3 `internal/control` (server)
+
+- A generic `handle[P, R]` registers each method. Each request runs in its own goroutine, so a long `tunnel.waitReady` or `tunnel.stop` blocks nothing else. Its context ends when the connection closes.
+- Each connection has a mutex-guarded writer with a deadline, and a small event queue. A client that cannot keep up is disconnected and resyncs on reconnect, so the engine never blocks on it.
+- `CheckPeer` runs before any read.
+
+## 16.4 `internal/client`
+
+```go
+func Dial(ctx, socket string, info api.ClientInfo) (*Client, error)
+func Ensure(ctx, opts EnsureOptions) (*Client, error)
+func (c *Client) Call(ctx, method string, params, result any) error
+func (c *Client) Events(func(api.Event))
+func (c *Client) Done() <-chan struct{}
+```
+
+`Ensure` dials and, if nothing answers, starts `dtt daemon run` with `Detach`, then polls until the context ends. `DaemonPath` looks beside the running executable, as `askpassHelperPath` does, then on `PATH`.
+
+Version handling:
+
+| Found | Nothing active | Tunnels active |
+|---|---|---|
+| Same API, different build | Shut it down and start ours | Keep using it |
+| Different API | Shut it down and start ours | `incompatible` error, naming `dtt daemon restart` |
+
+## 16.5 `internal/daemon` and `cmd/dtt`
+
+`daemon.Run`: lock, private directory, log, remove any stale socket, engine, listen, serve.
+
+- Shutdown from `daemon.shutdown`, `SIGTERM` or `os.Interrupt` stops all tunnels first, then replies, then exits. `SIGHUP` is ignored.
+- Idle exit after 5 minutes with no `Active()` and no connections. `--idle-exit D`, with `0` for never.
+
+`cmd/dtt` has only `daemon run|status|stop|restart` and `version` in this phase, using the standard `flag` package. Phase 18 replaces that with `cobra`.
+
+Build `dtt` in the darwin, linux and windows `build` tasks, as `devt-tunnel-askpass` is. Packaging comes in phase 21.
+
+## Tests
+
+- **Contract, `internal/control`:** a real socket and a real engine with `secret.Memory`. Every registered method is called at least once. A test fails when `internal/api` lists a method with no handler, or a call has no hello.
+- **Process, `internal/daemon`, using the built `dtt` and a temporary `HOME` and `DTT_SOCKET`:**
+  - A `command` tunnel running `sleep` survives the client disconnecting and is visible to a new client.
+  - `daemon.shutdown` stops the process tree, and the daemon exits.
+  - A second daemon exits while the first keeps working. Concurrent `Ensure` calls end with one daemon.
+  - `kill -9` on the daemon, then a restart: a stale socket is replaced, and the child appears in `Overview.Orphans` on Unix.
+  - Idle exit fires with a short `--idle-exit`, and does not fire while a tunnel runs.
+  - A real SSH tunnel with the private `sshd` from `internal/e2e`, through the daemon, including a passphrase from `secret.Memory` and an answered prompt.
+- **Boundary:** `go list -deps ./cmd/dtt` includes no `wailsapp`. `CGO_ENABLED=0 GOOS=linux go build ./cmd/dtt` and the same for windows and darwin pass in CI.
+
+## Exit test
+
+With the app closed, a script using `internal/client` starts a tunnel through a daemon it launched, and exits. The tunnel keeps forwarding, and `dtt daemon status` shows it. `dtt daemon stop` ends both.
+
+## Open checks
+
+Run these on macOS early in the phase, because they could change the design:
+
+- Keychain reads from a detached daemon, started from a terminal and from Finder.
+- `SSH_AUTH_SOCK` for a daemon started from the app. A daemon started from a remote SSH session keeps that session's agent socket after it ends, so record the behavior and document it.

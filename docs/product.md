@@ -4,8 +4,9 @@
 
 - Find and start or stop any tunnel in a few keystrokes, from the main window, the tray or a global quick launch.
 - Create and edit tunnels without memorizing flags, starting from an `~/.ssh/config` host, a pasted command or manual input.
+- Planned: manage every tunnel on the machine from one place, through the app, the `dtt` command line, or agents using MCP. See [design/control-plane.md](design/control-plane.md).
 
-Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions.
+Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions, managing tunnels on other machines.
 
 ## Concepts
 
@@ -15,6 +16,8 @@ Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions.
 | Forward | One port mapping of an SSH tunnel: `-L` (listen locally), `-R` (listen on the SSH host), `-D` (local SOCKS5). |
 | Profile | Named group of tunnels (e.g. Work, Home, Client ABC). A tunnel can be in many profiles. |
 | Secret | API key, tunnel token, SSH key passphrase or env value, kept in the OS keychain and referenced by name. |
+| Ephemeral tunnel (planned) | A temporary tunnel from `dtt` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
+| Lease (planned) | A client's claim to use a tunnel until a set time. A person's stop always wins. |
 
 ## Tunnel types
 

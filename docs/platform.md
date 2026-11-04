@@ -11,7 +11,7 @@ Targets: macOS, Windows and Linux.
 | App shell | Wails v3.1.0, pinned (Go host, system WebView) |
 | Core | Go packages with no GUI dependency: model, argv builder, supervisor, checks |
 | UI | React + TypeScript + Vite, built with pnpm |
-| Process model | One app process in v1, no daemon; a small separate askpass helper |
+| Process model | One app process today. Accepted: an on-demand daemon with the GUI as a client ([design](design/control-plane.md), phases 14–17); a small separate askpass helper in both |
 | Secrets | `zalando/go-keyring` behind an interface; never a plaintext fallback |
 | Linux packages | deb and rpm first, AppImage later; no Flatpak or strict Snap |
 
@@ -32,7 +32,7 @@ The main reason for Wails is fit: most of devt-tunnel is supervising processes a
 | Eight architecture documents cover Linux AppImage issues alone (bundled WebKit, bubblewrap, proxy, host helpers) | AppImage is expensive; do not start there |
 | Strips AppImage variables from the environment of host programs it launches (`host_helper_env_linux.go`) | devt-tunnel spawns host programs for every tunnel, so this applies directly |
 | Separates test evidence: a container with Xvfb is explicitly "not native desktop acceptance" | Adopt the same rule for Wayland, tray and shortcut claims |
-| GUI and CLI are clients of a daemon, motivated by a mode where the GUI exits and the daemon stays ([ADR-008](https://github.com/UniClipboard/UniClipboard/blob/main/docs/architecture/adr-008-uniclipd-split-gui-as-client.md)) | **Do not copy.** devt-tunnel has no such mode: ⌘Q stops all tunnels |
+| GUI and CLI are clients of a daemon, motivated by a mode where the GUI exits and the daemon stays ([ADR-008](https://github.com/UniClipboard/UniClipboard/blob/main/docs/architecture/adr-008-uniclipd-split-gui-as-client.md)) | Originally not copied. Now adopted for a different reason: the CLI and agents need a shared registry with no desktop. ⌘Q still stops all tunnels |
 | Rust engine for P2P, crypto and encrypted storage | **Do not copy.** devt-tunnel has none of that; a second language would add cost only |
 | Relay, sync engine and Snap/Flatpak channels | **Do not copy.** Out of scope, and sandboxes conflict with spawning host binaries |
 
@@ -93,7 +93,7 @@ Rules:
 
 - **`internal/core` must not import Wails.** Its tests run with `CGO_ENABLED=0` and no GTK, and this boundary keeps the exit cost low if the spike or v3 disappoints.
 - **Business logic does not go in React.** The UI renders state and sends intents; argv and checks come from the core, which keeps the preview-equals-execution guarantee in [architecture.md](architecture.md).
-- **No daemon in v1.** Tunnels stop when the app quits, by product definition. If a CLI or background mode is wanted later, the core can move behind a local API then, as UniClipboard did.
+- **Daemon accepted, not yet built.** The diagram and layout above show today's code. [design/control-plane.md](design/control-plane.md) has the target, where `internal/engine` and a local API sit between the clients and the core. `dtt` must build with `CGO_ENABLED=0` and no Wails. Tunnels still stop when the app quits, by product definition.
 
 ```go
 type Process interface {

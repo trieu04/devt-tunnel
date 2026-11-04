@@ -2,6 +2,10 @@
 
 Describes intended behavior. Stack, per-OS details and code layout are in [platform.md](platform.md); the README lists what is implemented so far.
 
+## Control plane
+
+Accepted, not yet implemented: until [phases 14–17](plans/README.md#phases) ship, the code runs everything in the app process, and "the app" below means that process. Afterward, an on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
+
 ## Process model
 
 - Each running tunnel is one child process of the system binary (`ssh`, `cloudflared`, `ngrok`) or of the user's command, spawned and supervised by the app. SSH tunnels never use `-f`; the app owns the lifecycle.
@@ -89,7 +93,7 @@ SSH remains responsible for detecting dead connections; new SSH drafts set `Serv
 - **Many-to-many profiles, single active profile:** keeps filtering predictable while letting a tunnel serve several contexts.
 - **No quick-phrase aliases:** quick launch search over name, host and port covers the use case with less to maintain.
 - **Wails v3 with a Go core:** first-party tray and global shortcuts, and the core stays free of GUI dependencies. See [platform.md](platform.md).
-- **One process, no daemon:** tunnels stop on quit by product definition.
+- **On-demand daemon, GUI as a client:** the CLI and agents need tunnels with no desktop and one shared registry, so this replaces "one process, no daemon" (2026-11-04). ⌘Q still stops all tunnels. See [design/control-plane.md](design/control-plane.md#why-a-daemon).
 - **Askpass forwards prompts:** `SSH_ASKPASS_REQUIRE=force` routes every prompt to the helper, so it must not answer them all with a stored passphrase.
 - **No sandboxed distribution:** Mac App Store, Flatpak and strict Snap conflict with spawning host binaries.
 - **No v1 import/export format:** copying `tunnels.toml` is the sharing mechanism.
