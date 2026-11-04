@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"maps"
 
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
@@ -23,17 +22,16 @@ func (s *Engine) updateSettings(change func(*settings.Settings)) error {
 	next.Tools = maps.Clone(next.Tools)
 	change(&next)
 	err := s.saveSettings(s.settingsPath, next)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return context.Canceled
+	if stopped := s.lifetimeError(); stopped != nil {
+		return stopped
 	}
 	if err != nil {
 		return err
 	}
-	s.settings = next
-	s.tools.SetOverrides(next.Tools)
-	return nil
+	return s.applyWhileAlive(func() {
+		s.settings = next
+		s.tools.SetOverrides(next.Tools)
+	})
 }
 
 func (s *Engine) SetShortcut(accel string) error {

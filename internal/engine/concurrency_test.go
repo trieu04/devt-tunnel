@@ -266,3 +266,33 @@ func TestShutdownFencesQueuedConfigOperations(t *testing.T) {
 		})
 	}
 }
+
+func TestShutdownOrdersInFlightApplication(t *testing.T) {
+	e, _, _ := newTestEngine(t, model.Config{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	applied := make(chan error, 1)
+	go func() {
+		applied <- e.applyWhileAlive(func() {
+			close(entered)
+			<-release
+		})
+	}()
+	receive(t, entered)
+	shutdown := make(chan struct{})
+	go func() { e.Shutdown(); close(shutdown) }()
+	select {
+	case <-shutdown:
+		t.Fatal("shutdown closed lifetime during application")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := receive(t, applied); err != nil {
+		t.Fatal(err)
+	}
+	receive(t, shutdown)
+	called := false
+	if err := e.applyWhileAlive(func() { called = true }); !errors.Is(err, context.Canceled) || called {
+		t.Fatalf("application continued after shutdown: err=%v called=%v", err, called)
+	}
+}

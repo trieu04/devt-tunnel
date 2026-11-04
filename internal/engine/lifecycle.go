@@ -56,6 +56,7 @@ func (s *Engine) notify() {
 
 func (s *Engine) Shutdown() {
 	s.shutdown.Do(func() {
+		s.lifecycleMu.Lock()
 		s.mu.Lock()
 		s.closed = true
 		close(s.done)
@@ -65,6 +66,7 @@ func (s *Engine) Shutdown() {
 		}
 		s.subscribers = nil
 		s.mu.Unlock()
+		s.lifecycleMu.Unlock()
 		s.broker.Close()
 		s.manager.Shutdown()
 	})
@@ -143,4 +145,14 @@ func (s *Engine) lifetimeError() error {
 	default:
 		return nil
 	}
+}
+
+func (s *Engine) applyWhileAlive(apply func()) error {
+	s.lifecycleMu.RLock()
+	defer s.lifecycleMu.RUnlock()
+	if err := s.lifetimeError(); err != nil {
+		return err
+	}
+	apply()
+	return nil
 }

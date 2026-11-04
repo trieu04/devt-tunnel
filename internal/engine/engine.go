@@ -55,6 +55,7 @@ type Engine struct {
 
 	configMu       sync.Mutex
 	settingsMu     sync.Mutex
+	lifecycleMu    sync.RWMutex
 	promptMu       sync.Mutex
 	mu             sync.Mutex
 	configError    string
@@ -91,8 +92,7 @@ func (s *Engine) updateConfig(change func(*model.Config) error) error {
 		return stopped
 	}
 	if err == nil {
-		s.manager.SetConfig(cfg)
-		return s.lifetimeError()
+		return s.applyWhileAlive(func() { s.manager.SetConfig(cfg) })
 	}
 	return err
 }
@@ -195,24 +195,16 @@ func (s *Engine) loadConfig() error {
 	if stopped := s.lifetimeError(); stopped != nil {
 		return stopped
 	}
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return context.Canceled
-	}
 	if err != nil {
-		s.configError = err.Error()
-	} else {
-		s.configError = ""
-	}
-	s.mu.Unlock()
-	if err != nil {
+		if stopped := s.applyWhileAlive(func() {
+			s.mu.Lock()
+			s.configError = err.Error()
+			s.mu.Unlock()
+		}); stopped != nil {
+			return stopped
+		}
 		log.Printf("config: %v", err) // keep the last good definitions
 		s.notify()
-		return err
-	}
-	s.manager.SetConfig(cfg)
-	if err := s.lifetimeError(); err != nil {
 		return err
 	}
 	active := s.stateStore.Get().ActiveProfile
@@ -232,8 +224,13 @@ func (s *Engine) loadConfig() error {
 	if err := s.lifetimeError(); err != nil {
 		return err
 	}
-	s.manager.SetActiveProfile(active)
-	return nil
+	return s.applyWhileAlive(func() {
+		s.mu.Lock()
+		s.configError = ""
+		s.mu.Unlock()
+		s.manager.SetConfig(cfg)
+		s.manager.SetActiveProfile(active)
+	})
 }
 
 func (s *Engine) findOrphans() {
