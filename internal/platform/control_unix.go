@@ -17,6 +17,10 @@ func PreparePrivateDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
+	return CheckPrivateDir(path)
+}
+
+func CheckPrivateDir(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err

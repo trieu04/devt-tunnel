@@ -83,7 +83,7 @@ func (s *Engine) RenameSecret(from, to string) error {
 	if err := s.secrets.Set(to, value); err != nil {
 		return err
 	}
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err = s.updateConfig(func(cfg *model.Config) error {
 		for n := range cfg.Tunnels {
 			replaceSecretRefs(&cfg.Tunnels[n], from, to)
 		}
@@ -97,7 +97,6 @@ func (s *Engine) RenameSecret(from, to string) error {
 		return err
 	}
 	_ = s.secretIndex.Rename(from, to)
-	s.manager.SetConfig(cfg)
 	return nil
 }
 

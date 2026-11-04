@@ -175,6 +175,32 @@ func (m *Manager) Config() model.Config {
 	return m.config
 }
 
+// Active reads runtime state only, without the secret-presence checks used for presentation.
+func (m *Manager) Active() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, e := range m.tunnels {
+		switch e.status.State {
+		case StateStarting, StateRunning, StateReconnecting:
+			return true
+		}
+	}
+	return false
+}
+
+// RuntimeStatuses omits keychain presence and derived presentation fields for daemon lifecycle calls.
+func (m *Manager) RuntimeStatuses() []Status {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Status, 0, len(m.config.Tunnels))
+	for _, t := range m.config.Tunnels {
+		if e := m.tunnels[t.ID]; e != nil {
+			out = append(out, e.status)
+		}
+	}
+	return out
+}
+
 // Statuses returns the state of every defined tunnel, in definition order.
 // A tunnel at rest whose secret is missing reports that instead of Stopped.
 func (m *Manager) Statuses() []Status {

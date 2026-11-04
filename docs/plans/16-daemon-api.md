@@ -34,6 +34,8 @@ Methods mirror the engine, see the design's table. Leases, approvals and agent p
 - A generic `handle[P, R]` registers each method. Each request runs in its own goroutine, so a long `tunnel.waitReady` or `tunnel.stop` blocks nothing else. Its context ends when the connection closes.
 - Each connection has a mutex-guarded writer with a deadline, and a small event queue. A client that cannot keep up is disconnected and resyncs on reconnect, so the engine never blocks on it.
 - `CheckPeer` runs before any read.
+- Read-only RPCs do not hold the shutdown barrier; disconnect cancels their contexts without waiting for uninterruptible OS reads. Mutations drain before RPC shutdown and connection teardown.
+- Config writes and reloads serialize the disk snapshot through application to the supervisor; unrelated start, stop and readiness calls remain concurrent.
 
 ## 16.4 `internal/client`
 
@@ -46,6 +48,8 @@ func (c *Client) Done() <-chan struct{}
 ```
 
 `Ensure` dials and, if nothing answers, starts `dtt daemon run` with `Detach`, then polls until the context ends. `DaemonPath` looks beside the running executable, as `askpassHelperPath` does, then on `PATH`.
+
+Clients verify the connected peer and private socket directory before sending hello or any other bytes. Unix checks ownership and permissions; Windows still relies on the inherited per-user ACL pending native acceptance.
 
 Version handling:
 
@@ -60,6 +64,7 @@ Version handling:
 
 - Shutdown from `daemon.shutdown`, `SIGTERM` or `os.Interrupt` stops all tunnels first, then replies, then exits. `SIGHUP` is ignored.
 - Idle exit after 5 minutes with no `Active()` and no connections. `--idle-exit D`, with `0` for never.
+- Activity and daemon status use runtime state without keychain or file reads; pending prompts have a separate mutex from settings I/O. Presentation status still checks secret availability.
 
 `cmd/dtt` has only `daemon run|status|stop|restart` and `version` in this phase, using the standard `flag` package. Phase 18 replaces that with `cobra`.
 
@@ -76,6 +81,7 @@ Build `dtt` in the darwin, linux and windows `build` tasks, as `devt-tunnel-askp
   - Idle exit fires with a short `--idle-exit`, and does not fire while a tunnel runs.
   - A real SSH tunnel with the private `sshd` from `internal/e2e`, through the daemon, including a passphrase from `secret.Memory` and an answered prompt.
 - **Boundary:** `go list -deps ./cmd/dtt` includes no `wailsapp`. `CGO_ENABLED=0 GOOS=linux go build ./cmd/dtt` and the same for windows and darwin pass in CI.
+- **Regressions:** rejected peers/directories receive no hello bytes; a blocked secret store does not block runtime status, idle exit, cancellation or idle shutdown; staged config saves/reloads cannot apply an older snapshot after a newer commit.
 
 ## Exit test
 

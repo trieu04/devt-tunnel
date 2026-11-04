@@ -133,7 +133,7 @@ func (s *Engine) DuplicateDraft(id string) (model.Tunnel, error) {
 
 func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 	wasNew := t.ID == ""
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err := s.updateConfig(func(cfg *model.Config) error {
 		if wasNew {
 			taken := map[string]bool{}
 			for _, candidate := range cfg.Tunnels {
@@ -157,7 +157,6 @@ func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 		}
 		return "", err
 	}
-	s.manager.SetConfig(cfg)
 	if start {
 		if err := s.manager.Restart(t.ID); err != nil {
 			return t.ID, err
@@ -168,7 +167,7 @@ func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 }
 
 func (s *Engine) DeleteTunnel(id string) error {
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err := s.updateConfig(func(cfg *model.Config) error {
 		out := cfg.Tunnels[:0]
 		found := false
 		for _, tunnel := range cfg.Tunnels {
@@ -188,14 +187,13 @@ func (s *Engine) DeleteTunnel(id string) error {
 	if err != nil {
 		return err
 	}
-	s.manager.SetConfig(cfg)
 	return s.stateStore.Update(func(st *state.State) {
 		delete(st.LastUsed, id)
 	})
 }
 
 func (s *Engine) SetFavorite(id string, favorite bool) error {
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err := s.updateConfig(func(cfg *model.Config) error {
 		for n := range cfg.Tunnels {
 			if cfg.Tunnels[n].ID == id {
 				cfg.Tunnels[n].Favorite = favorite
@@ -204,9 +202,6 @@ func (s *Engine) SetFavorite(id string, favorite bool) error {
 		}
 		return fmt.Errorf("unknown tunnel %q", id)
 	})
-	if err == nil {
-		s.manager.SetConfig(cfg)
-	}
 	return err
 }
 

@@ -46,7 +46,7 @@ func (s *Engine) ActivateProfile(id string) error {
 }
 
 func (s *Engine) SaveProfile(profile model.Profile, members []string) (string, error) {
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err := s.updateConfig(func(cfg *model.Config) error {
 		if profile.ID == "" {
 			taken := map[string]bool{}
 			for _, p := range cfg.Profiles {
@@ -89,18 +89,14 @@ func (s *Engine) SaveProfile(profile model.Profile, members []string) (string, e
 		}
 		return nil
 	})
-	if err == nil {
-		s.manager.SetConfig(cfg)
-	}
 	return profile.ID, err
 }
 
 func (s *Engine) DeleteProfile(id string) error {
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error { profiles.Remove(cfg, id); return nil })
+	err := s.updateConfig(func(cfg *model.Config) error { profiles.Remove(cfg, id); return nil })
 	if err != nil {
 		return err
 	}
-	s.manager.SetConfig(cfg)
 	if s.stateStore.Get().ActiveProfile == id {
 		return s.ActivateProfile("")
 	}
@@ -109,21 +105,18 @@ func (s *Engine) DeleteProfile(id string) error {
 
 func (s *Engine) DuplicateProfile(id string) (string, error) {
 	var duplicate model.Profile
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err := s.updateConfig(func(cfg *model.Config) error {
 		duplicate = profiles.Duplicate(cfg, id)
 		if duplicate.ID == "" {
 			return fmt.Errorf("unknown profile %q", id)
 		}
 		return nil
 	})
-	if err == nil {
-		s.manager.SetConfig(cfg)
-	}
 	return duplicate.ID, err
 }
 
 func (s *Engine) SetProfileAutostart(id, tunnelID string, on bool) error {
-	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+	err := s.updateConfig(func(cfg *model.Config) error {
 		for n := range cfg.Profiles {
 			if cfg.Profiles[n].ID == id {
 				cfg.Profiles[n].Autostart = removeString(cfg.Profiles[n].Autostart, tunnelID)
@@ -135,9 +128,6 @@ func (s *Engine) SetProfileAutostart(id, tunnelID string, on bool) error {
 		}
 		return fmt.Errorf("unknown profile %q", id)
 	})
-	if err == nil {
-		s.manager.SetConfig(cfg)
-	}
 	return err
 }
 

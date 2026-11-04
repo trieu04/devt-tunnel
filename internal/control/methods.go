@@ -14,8 +14,12 @@ import (
 func action[P any](s *Server, method string, fn func(P) error) {
 	handle(s, method, func(_ context.Context, p P) (api.Empty, error) { return api.Empty{}, fn(p) })
 }
+func read[P, R any](s *Server, method string, fn func(context.Context, P) (R, error)) {
+	handle(s, method, fn)
+	s.readOnly[method] = true
+}
 func query[P, R any](s *Server, method string, fn func(P) R) {
-	handle(s, method, func(_ context.Context, p P) (R, error) { return fn(p), nil })
+	read(s, method, func(_ context.Context, p P) (R, error) { return fn(p), nil })
 }
 
 func (s *Server) register() {
@@ -25,10 +29,10 @@ func (s *Server) register() {
 		return api.DaemonStatus{HelloResult: s.Hello(), Active: e.Active(), Connections: s.Connections(), Tunnels: e.Statuses()}
 	})
 	// These methods need connection state or must reply before the process exits.
-	query(s, api.DaemonShutdown, func(api.ShutdownParams) api.Empty { return api.Empty{} })
+	handle(s, api.DaemonShutdown, func(context.Context, api.ShutdownParams) (api.Empty, error) { return api.Empty{}, nil })
 	query(s, api.EventsSubscribe, func(api.Empty) api.Empty { return api.Empty{} })
 	query(s, "tunnel.list", func(api.Empty) []api.TunnelView { return e.Overview().Tunnels })
-	handle(s, "tunnel.get", func(_ context.Context, p api.IDParams) (api.TunnelView, error) {
+	read(s, "tunnel.get", func(_ context.Context, p api.IDParams) (api.TunnelView, error) {
 		for _, v := range e.Overview().Tunnels {
 			if v.Tunnel.ID == p.ID {
 				return v, nil
@@ -43,11 +47,11 @@ func (s *Server) register() {
 	action(s, "tunnel.start", func(p api.IDParams) error { return e.Start(p.ID) })
 	action(s, "tunnel.stop", func(p api.IDParams) error { e.Stop(p.ID); return nil })
 	action(s, "tunnel.restart", func(p api.IDParams) error { return e.Restart(p.ID) })
-	handle(s, "tunnel.waitReady", func(ctx context.Context, p api.IDParams) (supervisor.Status, error) { return e.WaitReady(ctx, p.ID) })
+	read(s, "tunnel.waitReady", func(ctx context.Context, p api.IDParams) (supervisor.Status, error) { return e.WaitReady(ctx, p.ID) })
 	query(s, "tunnel.evaluateDraft", func(p api.TunnelParams) api.DraftResult { return e.EvaluateDraft(p.Tunnel) })
-	handle(s, "tunnel.import", func(_ context.Context, p api.ImportParams) (importer.Result, error) { return e.ImportCommand(p.Line) })
+	read(s, "tunnel.import", func(_ context.Context, p api.ImportParams) (importer.Result, error) { return e.ImportCommand(p.Line) })
 	query(s, "tunnel.newDraft", func(p api.NewDraftParams) model.Tunnel { return e.NewDraft(p.Kind) })
-	handle(s, "tunnel.duplicateDraft", func(_ context.Context, p api.IDParams) (model.Tunnel, error) { return e.DuplicateDraft(p.ID) })
+	read(s, "tunnel.duplicateDraft", func(_ context.Context, p api.IDParams) (model.Tunnel, error) { return e.DuplicateDraft(p.ID) })
 	action(s, "tunnel.setFavorite", func(p api.FavoriteParams) error { return e.SetFavorite(p.ID, p.Favorite) })
 	query(s, "tunnel.findings", func(p api.IDParams) []checks.Finding { return e.Findings(p.ID) })
 	action(s, "tunnel.recordUsed", func(p api.IDParams) error { e.RecordUsed(p.ID); return nil })
@@ -75,7 +79,7 @@ func (s *Server) register() {
 	query(s, "prompt.list", func(api.Empty) []api.PendingPrompt { return e.Overview().Prompts })
 	action(s, "prompt.answer", func(p api.AnswerPromptParams) error { e.AnswerPrompt(p.ID, p.Value, p.Cancelled); return nil })
 	query(s, "ssh.hosts", func(p api.SSHParams) api.SSHHostList { return e.SSHHosts(p.ProfileID) })
-	handle(s, "ssh.resolve", func(_ context.Context, p api.SSHParams) (sshconfig.Resolved, error) {
+	read(s, "ssh.resolve", func(_ context.Context, p api.SSHParams) (sshconfig.Resolved, error) {
 		return e.ResolveSSHHost(p.Alias, p.ProfileID)
 	})
 	action(s, "ssh.reload", func(api.Empty) error { e.ReloadSSHHosts(); return nil })

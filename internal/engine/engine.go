@@ -18,6 +18,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
 	"github.com/trieu04/devt-tunnel/internal/core/command"
 	"github.com/trieu04/devt-tunnel/internal/core/config"
+	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	corestate "github.com/trieu04/devt-tunnel/internal/core/state"
@@ -42,7 +43,7 @@ type Engine struct {
 	settingsPath string
 	secrets      *secret.Cached
 	secretIndex  *secret.Index
-	configStore  *config.Store
+	configStore  configurationStore
 	stateStore   *corestate.Store
 	settings     settings.Settings
 	tools        *platform.Tools
@@ -51,6 +52,8 @@ type Engine struct {
 	broker       *askpass.Broker
 	shell        []string
 
+	configMu       sync.Mutex
+	promptMu       sync.Mutex
 	mu             sync.Mutex
 	configError    string
 	orphans        []supervisor.Record
@@ -67,6 +70,22 @@ type Engine struct {
 type waitingPrompt struct {
 	view   api.PendingPrompt
 	answer chan promptAnswer
+}
+
+type configurationStore interface {
+	Load() (model.Config, error)
+	Changed() (bool, error)
+	Update(func(*model.Config) error) (model.Config, error)
+}
+
+func (s *Engine) updateConfig(change func(*model.Config) error) error {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	cfg, err := s.configStore.Update(change)
+	if err == nil {
+		s.manager.SetConfig(cfg)
+	}
+	return err
 }
 
 type promptAnswer struct {
@@ -156,6 +175,8 @@ func askpassHelperPath() string {
 }
 
 func (s *Engine) loadConfig() {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 	cfg, err := s.configStore.Load()
 	s.mu.Lock()
 	if err != nil {
@@ -213,11 +234,13 @@ func (s *Engine) Overview() api.Overview {
 		Orphans:     append([]supervisor.Record{}, s.orphans...),
 		Prompts:     []api.PendingPrompt{},
 	}
+	s.mu.Unlock()
+	s.promptMu.Lock()
 	for _, p := range s.prompts {
 		o.Prompts = append(o.Prompts, p.view)
 	}
+	s.promptMu.Unlock()
 	sort.Slice(o.Prompts, func(i, j int) bool { return o.Prompts[i].ID < o.Prompts[j].ID })
-	s.mu.Unlock()
 	state := s.stateStore.Get()
 	o.ActiveProfile = state.ActiveProfile
 	o.LastUsed = state.LastUsed
@@ -359,10 +382,10 @@ func (s *Engine) StopOrphan(pid int) error {
 }
 
 func (s *Engine) AnswerPrompt(id, value string, cancelled bool) {
-	s.mu.Lock()
+	s.promptMu.Lock()
 	p, ok := s.prompts[id]
 	delete(s.prompts, id)
-	s.mu.Unlock()
+	s.promptMu.Unlock()
 	if ok {
 		p.answer <- promptAnswer{value: value, cancelled: cancelled}
 	}
@@ -370,16 +393,16 @@ func (s *Engine) AnswerPrompt(id, value string, cancelled bool) {
 }
 
 func (s *Engine) askUser(ctx context.Context, prompt askpass.Prompt) (string, error) {
-	s.mu.Lock()
+	s.promptMu.Lock()
 	s.nextPrompt++
 	id := fmt.Sprintf("prompt-%d", s.nextPrompt)
 	p := &waitingPrompt{view: api.PendingPrompt{ID: id, Prompt: prompt}, answer: make(chan promptAnswer, 1)}
 	s.prompts[id] = p
-	s.mu.Unlock()
+	s.promptMu.Unlock()
 	defer func() {
-		s.mu.Lock()
+		s.promptMu.Lock()
 		delete(s.prompts, id)
-		s.mu.Unlock()
+		s.promptMu.Unlock()
 		s.notify()
 	}()
 	s.emit(api.Event{Type: api.EventPromptAdded, Prompt: &p.view})

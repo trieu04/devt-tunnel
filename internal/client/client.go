@@ -8,11 +8,13 @@ import (
 	"errors"
 	"io"
 	"net"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/platform"
 )
 
 type Client struct {
@@ -42,8 +44,20 @@ func Dial(ctx context.Context, socket string, info api.ClientInfo) (*Client, err
 
 // DialManagement permits status and shutdown across API versions for recovery.
 func DialManagement(ctx context.Context, socket string, info api.ClientInfo) (*Client, error) {
+	return dialManagement(ctx, socket, info, platform.CheckPeer)
+}
+
+func dialManagement(ctx context.Context, socket string, info api.ClientInfo, checkPeer func(net.Conn) error) (*Client, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	if err != nil {
+		return nil, err
+	}
+	if err = checkPeer(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err = platform.CheckPrivateDir(filepath.Dir(socket)); err != nil {
+		conn.Close()
 		return nil, err
 	}
 	c := &Client{conn: conn, done: make(chan struct{}), pending: map[string]chan api.Response{}, events: make(chan api.Event, 64)}

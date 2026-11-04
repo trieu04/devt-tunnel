@@ -71,26 +71,20 @@ func (s *Engine) Shutdown() {
 }
 
 func (s *Engine) Active() bool {
-	s.mu.Lock()
+	s.promptMu.Lock()
 	pending := len(s.prompts) > 0
-	s.mu.Unlock()
+	s.promptMu.Unlock()
 	if pending {
 		return true
 	}
-	for _, status := range s.manager.Statuses() {
-		switch status.State {
-		case supervisor.StateStarting, supervisor.StateRunning, supervisor.StateReconnecting:
-			return true
-		}
-	}
-	return false
+	return s.manager.Active()
 }
 
 func (s *Engine) Wake() { s.manager.Wake() }
 
 func (s *Engine) ForgetSecrets() { s.secrets.Forget() }
 
-func (s *Engine) Statuses() []supervisor.Status { return s.manager.Statuses() }
+func (s *Engine) Statuses() []supervisor.Status { return s.manager.RuntimeStatuses() }
 
 func (s *Engine) Focus() {
 	s.secrets.Forget()

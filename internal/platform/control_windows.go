@@ -16,6 +16,11 @@ func PreparePrivateDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
+	return CheckPrivateDir(path)
+}
+
+// Windows relies on the inherited per-user profile ACL; native ACL validation remains phase 12 acceptance.
+func CheckPrivateDir(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err

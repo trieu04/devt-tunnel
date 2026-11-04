@@ -28,6 +28,7 @@ type Server struct {
 	engine      *engine.Engine
 	version     string
 	handlers    map[string]handler
+	readOnly    map[string]bool
 	onShutdown  func()
 	mu          sync.Mutex
 	connections map[*connection]struct{}
@@ -39,7 +40,7 @@ type Server struct {
 }
 
 func New(e *engine.Engine, version string, onShutdown func()) *Server {
-	s := &Server{engine: e, version: version, onShutdown: onShutdown, handlers: map[string]handler{}, connections: map[*connection]struct{}{}}
+	s := &Server{engine: e, version: version, onShutdown: onShutdown, handlers: map[string]handler{}, readOnly: map[string]bool{}, connections: map[*connection]struct{}{}}
 	s.register()
 	return s
 }
@@ -212,7 +213,13 @@ func (c *connection) serve() {
 		default:
 			return
 		}
-		workers.Go(func() { defer func() { <-slots }(); c.execute(req) })
+		run := func() { defer func() { <-slots }(); c.execute(req) }
+		if c.server.readOnly[req.Method] {
+			// OS keychain reads cannot be cancelled and must not keep a disconnected client or daemon alive.
+			go run()
+		} else {
+			workers.Go(run)
+		}
 	}
 }
 
@@ -276,7 +283,7 @@ func (c *connection) execute(req api.Request) {
 		}
 		return
 	}
-	if req.Method != "tunnel.waitReady" {
+	if !s.readOnly[req.Method] {
 		s.operations.RLock()
 		defer s.operations.RUnlock()
 	}
