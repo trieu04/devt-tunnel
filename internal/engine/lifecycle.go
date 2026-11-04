@@ -88,6 +88,10 @@ func (s *Engine) Active() bool {
 
 func (s *Engine) Wake() { s.manager.Wake() }
 
+func (s *Engine) ForgetSecrets() { s.secrets.Forget() }
+
+func (s *Engine) Statuses() []supervisor.Status { return s.manager.Statuses() }
+
 func (s *Engine) Focus() {
 	s.secrets.Forget()
 	if changed, err := s.configStore.Changed(); err == nil && changed {

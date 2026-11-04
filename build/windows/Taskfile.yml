@@ -26,6 +26,10 @@ tasks:
           EXTRA_TAGS: '{{.EXTRA_TAGS}}'
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
+      - task: common:build:dtt
+        vars:
+          TARGET_OS: windows
+          TARGET_ARCH: '{{.ARCH | default ARCH}}'
     vars:
       # Default to CGO_ENABLED=0 if not explicitly set
       CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'

@@ -1,6 +1,6 @@
 # `dtt` command line
 
-Status: **accepted 2026-11-04, not implemented.** No command here exists yet; phases [16](../plans/16-daemon-api.md) and [18](../plans/18-cli.md) deliver them. Architecture and rationale are in [control-plane.md](control-plane.md).
+Status: **accepted 2026-11-04; phase 16 lifecycle commands implemented.** `dtt version` and `dtt daemon run|status|stop|restart` exist using `flag`; status/stop/restart support `--timeout` and `--json`, and run supports `--idle-exit` (default 5m, 0 disables). Remaining commands and global flags arrive in [phase 18](../plans/18-cli.md) with Cobra. Architecture and rationale are in [control-plane.md](control-plane.md).
 
 This file is both the interface contract and the first draft of the user documentation. See [Documentation plan](#documentation-plan) for where each part goes when commands ship.
 

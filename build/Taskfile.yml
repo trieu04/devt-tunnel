@@ -1,6 +1,18 @@
 version: '3'
 
 tasks:
+  build:dtt:
+    internal: true
+    cmds:
+      - go build -trimpath -ldflags="-X main.version={{.VERSION}}" -o "{{.DTT_OUTPUT}}" ./cmd/dtt
+    vars:
+      DEFAULT_DTT_OUTPUT: '{{.BIN_DIR}}/dtt{{if eq .TARGET_OS "windows"}}.exe{{end}}'
+      DTT_OUTPUT: '{{.DTT_OUTPUT | default .DEFAULT_DTT_OUTPUT}}'
+    env:
+      CGO_ENABLED: '0'
+      GOOS: '{{.TARGET_OS}}'
+      GOARCH: '{{.TARGET_ARCH | default ARCH}}'
+
   go:mod:tidy:
     summary: Runs `go mod tidy`
     internal: true

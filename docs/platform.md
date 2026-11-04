@@ -97,7 +97,7 @@ Rules:
 
 - **`internal/core`, `internal/api`, `internal/engine` and `cmd/dtt` must not depend on Wails.** The headless dependency test checks core, API, engine and every existing command; CI runs them with `CGO_ENABLED=0` and no GTK. Only the host and app entry point import Wails.
 - **Business logic does not go in React.** The UI renders state and sends intents; argv and checks come from the core, which keeps the preview-equals-execution guarantee in [architecture.md](architecture.md).
-- **Daemon accepted, not yet built.** The diagram and layout above show today's code. [design/control-plane.md](design/control-plane.md) has the target local API. Phase 14 has extracted the in-process engine and shared types; host subscriptions translate engine events into the existing Wails events. `dtt` must build with `CGO_ENABLED=0` and no Wails. Tunnels still stop when the app quits, by product definition.
+- **Daemon/API implemented in phase 16; GUI migration pending.** The diagram and layout above show today's code. [design/control-plane.md](design/control-plane.md) describes the local API served by `internal/control`, its `internal/client`, and the `cmd/dtt` lifecycle entry point in `internal/daemon`. Phase 14 has extracted the in-process engine and shared types; host subscriptions translate engine events into the existing Wails events. `dtt` must build with `CGO_ENABLED=0` and no Wails. Tunnels still stop when the app quits, by product definition.
 
 ```go
 type Process interface {
@@ -145,6 +145,8 @@ These decide whether the app works at all on first launch:
 - **PATH:** apps opened from Finder or a desktop launcher do not inherit the terminal's PATH, so Homebrew's `ngrok` or `cloudflared` would appear missing. Resolve in this order: per-tool path set in settings, PATH from a login shell (`$SHELL -ilc`, with a timeout), known directories, then process PATH. On Windows, also check `%SystemRoot%\System32\OpenSSH`. Show the resolved path in the editor's checks.
 - **Environment:** spawn from a clean copy with app-bundle variables removed (`LD_LIBRARY_PATH`, `GTK_*`, `GIO_*` and so on), or host binaries may load the wrong libraries.
 - **Quoting:** the command preview and paste import need POSIX rules on Unix and Windows rules on Windows, tested separately.
+
+The daemon inherits `SSH_AUTH_SOCK` when launched. A macOS Finder probe inherited the graphical launchd agent; a private localhost SSH session left its detached child with a stale forwarded-agent path after disconnect. Restart from the intended local/desktop session to change it. Detached Keychain reads remain unverified because the current library cannot select an isolated test keychain; no real user credentials were used.
 
 ### Askpass
 

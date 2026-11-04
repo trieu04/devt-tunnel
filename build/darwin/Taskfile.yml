@@ -22,6 +22,11 @@ tasks:
           EXTRA_TAGS: '{{.EXTRA_TAGS}}'
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
+      - task: common:build:dtt
+        vars:
+          TARGET_OS: darwin
+          TARGET_ARCH: '{{.ARCH | default ARCH}}'
+          DTT_OUTPUT: '{{.DTT_OUTPUT}}'
     vars:
       DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
@@ -97,10 +102,12 @@ tasks:
         vars:
           ARCH: amd64
           OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}-amd64"
+          DTT_OUTPUT: "{{.BIN_DIR}}/dtt-amd64"
       - task: build
         vars:
           ARCH: arm64
           OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
+          DTT_OUTPUT: "{{.BIN_DIR}}/dtt-arm64"
     cmds:
       - task: '{{if eq OS "darwin"}}build:universal:lipo:native{{else}}build:universal:lipo:go{{end}}'
 
@@ -109,6 +116,8 @@ tasks:
     internal: true
     cmds:
       - lipo -create -output "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
+      - lipo -create -output "{{.BIN_DIR}}/dtt" "{{.BIN_DIR}}/dtt-amd64" "{{.BIN_DIR}}/dtt-arm64"
+      - rm "{{.BIN_DIR}}/dtt-amd64" "{{.BIN_DIR}}/dtt-arm64"
       - rm "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
 
   build:universal:lipo:go:
@@ -116,6 +125,8 @@ tasks:
     internal: true
     cmds:
       - wails3 tool lipo -output "{{.BIN_DIR}}/{{.APP_NAME}}" -input "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" -input "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
+      - wails3 tool lipo -output "{{.BIN_DIR}}/dtt" -input "{{.BIN_DIR}}/dtt-amd64" -input "{{.BIN_DIR}}/dtt-arm64"
+      - rm -f "{{.BIN_DIR}}/dtt-amd64" "{{.BIN_DIR}}/dtt-arm64"
       - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
 
   package:

@@ -28,6 +28,10 @@ tasks:
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
           CGO_ENABLED: '{{.CGO_ENABLED}}'
+      - task: common:build:dtt
+        vars:
+          TARGET_OS: linux
+          TARGET_ARCH: '{{.ARCH | default ARCH}}'
     vars:
       DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'

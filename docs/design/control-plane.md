@@ -1,6 +1,6 @@
 # Central tunnel management
 
-Status: **accepted 2026-11-04; phases 14–15 engine extraction and core fixes implemented; native-window acceptance pending.** The GUI still hosts the engine in-process; the daemon, local API, CLI and MCP remain planned. The target design was written against commit `956c869` and rechecked against `6e0028f`; [phases 14–21](../plans/README.md#phases) deliver it.
+Status: **accepted 2026-11-04; phases 14–16 engine, core fixes and daemon/API implemented; native-window acceptance pending.** Phase 16 implements the daemon, local API and `dtt daemon` lifecycle commands. The GUI still hosts its engine in-process until phase 17; the full CLI and MCP remain planned. The target design was written against commit `956c869` and rechecked against `6e0028f`; [phases 14–21](../plans/README.md#phases) deliver it.
 
 Companion contracts: [cli.md](cli.md) (`dtt` command line and its documentation) and [mcp.md](mcp.md) (tools for agents).
 
@@ -68,7 +68,7 @@ Option C costs the most at first, because the GUI must move to the API at once. 
 - **Single instance:** an advisory lock on `daemon.lock` beside the socket decides ownership. The socket alone cannot, since a stale socket file can remain after a crash. A second daemon exits at once, so two clients starting one at the same moment both end up connected to the winner.
 - **Logs:** the daemon writes its own `daemon.log`, because two processes cannot safely rotate the one `devt-tunnel.log`.
 - **Idle exit:** the daemon exits after 5 minutes with no active tunnel, lease, pending prompt or connected client. There is no permanent background process unless the user runs `dtt daemon install` (launchd or systemd user unit; Windows later).
-- **Upgrade:** a client that finds a newer daemon API than it knows reports an error. A client that finds an older daemon with nothing active restarts it; with tunnels active, it asks the user to run `dtt daemon restart`, which stops them.
+- **Upgrade:** matching API/build is reused. A different build with the same API stays running while active, and an idle daemon is replaced. A different API is replaced only when idle; active incompatibility names `dtt daemon restart`, which stops all tunnels. The server rechecks `onlyIfIdle` during shutdown to prevent an upgrade racing a new tunnel start.
 - **Crash:** the existing recovery still applies. `processes.json` and `FindOrphans` find surviving children on Unix, where children run in their own process group. On Windows, `KILL_ON_JOB_CLOSE` means children die with the daemon, so there are no orphans, and leases are restored as stopped.
 
 ### What changes in the current code
@@ -133,6 +133,8 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 - **Location:** `$XDG_RUNTIME_DIR/devt-tunnel/ctl.sock` on Linux when set, otherwise `<state dir>/run/ctl.sock`, in a directory with mode `0700` and an owner check. Socket paths are limited to about 100 bytes, so a longer path falls back to a per-user `0700` directory under the OS temp directory.
 - **Authorization:** directory permissions and, on Unix, a peer UID check (`SO_PEERCRED`, `LOCAL_PEERCRED`). On Windows, the per-user ACL of the directory under `%LOCALAPPDATA%`. Whether that is enough on Windows needs testing in phase 12.
 - **Handshake:** `daemon.hello {apiVersion, client: {kind, name, version}}` returns `{apiVersion, daemonVersion, pid}`. `kind` selects the policy and is recorded in the audit log. A client declares it itself, see [Threat model](#threat-model).
+- **Version recovery:** an incompatible hello still returns version metadata and permits only `daemon.status` and `daemon.shutdown`; normal client dialing rejects it. `Ensure` uses these recovery methods to implement the upgrade rule.
+- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, or `timeout`. Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged.
 - **Types:** one package, `internal/api`, used by every client. New fields are additive, and a breaking change raises `apiVersion`.
 
 | Group | Methods |
@@ -147,6 +149,8 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 | `ssh.*`, `tool.*`, `settings.*`, `orphan.*`, `config.*` | The rest of today's `host.Service`, excluding window and OS auth methods |
 | `events.subscribe` | Stream: `tunnels.changed`, `prompt.added`, `approval.added`, `lease.expiring` |
 | `daemon.*`, `system.*` | `hello` `status` `shutdown`; `wake` |
+
+Phase 16 also exposes `tunnel.waitReady`, `tunnel.findings`, `tunnel.recordUsed`, `tunnel.startOnLaunch`, `config.overview`, `system.focus` and the current engine settings methods. `internal/api.Methods` is the tested registry. `tunnel.promote`, leases and approvals arrive in phase 19. Each connection handles concurrent requests, cancels their contexts on disconnect, and drops slow event consumers; clients subscribe then resync from `config.overview` after reconnect.
 
 The response for a tunnel adds fields to today's `TunnelView`:
 
@@ -262,7 +266,8 @@ Tasks, tests and order are in the [implementation plans](../plans/README.md#phas
 
 ### Risks
 
-- **Keychain from a background process.** `go-keyring` must work from a detached daemon, in particular Secret Service on Linux outside a desktop session, and macOS access before login completes. Not yet tested. Tunnels that need secrets report `keyring_unavailable` rather than failing silently.
+- **Keychain from a background process.** Still unverified: the macOS library cannot target a disposable keychain without altering user keychain selection. No real entries were used for phase 16. Secret Service without a desktop, login timing and signed/hardened-runtime access also need acceptance. Tunnels that need secrets report `keyring_unavailable`.
+- **Agent environment.** A Finder-launched disposable app and its detached child inherited the graphical launchd agent socket on macOS. A private localhost SSH-forwarding probe retained a stale session socket path after disconnect. The daemon keeps its launch environment; restart it from the desired local/desktop session to inherit a persistent agent. It does not silently replace `SSH_AUTH_SOCK`.
 - **macOS signing.** A second signed executable inside the bundle, launched detached, needs checking under hardened runtime and notarization.
 - **Tunnels that run with no window.** Today's code avoids invisible tunnels on purpose (`WindowClosing` quits without a tray). The daemon reverses that for CLI use. Mitigation: `dtt ls`, `dtt daemon status`, and the GUI shows everything on launch.
 - **MCP changes quickly.** The 2026-07-28 revision is a large change. Keep MCP in a thin adapter so that SDK upgrades do not reach the engine.

@@ -15,10 +15,14 @@ type RotatingLog struct {
 }
 
 func OpenRotatingLog(stateDir string) (*RotatingLog, error) {
+	return OpenRotatingLogFile(stateDir, "devt-tunnel.log")
+}
+
+func OpenRotatingLogFile(stateDir, name string) (*RotatingLog, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, err
 	}
-	log := &RotatingLog{path: filepath.Join(stateDir, "devt-tunnel.log")}
+	log := &RotatingLog{path: filepath.Join(stateDir, name)}
 	if err := log.open(); err != nil {
 		return nil, err
 	}

@@ -19,7 +19,8 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
 | Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; GUI still runs the engine in-process; native-window regression check pending |
 | Typed readiness errors, endpoint lists and live port checks (phase 15) | Implemented and unit tested; editor/native-window warning acceptance pending |
-| Daemon, `dtt` CLI and MCP server for agents | Design accepted; not implemented |
+| Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
+| GUI as daemon client, full `dtt` CLI and MCP | Planned for phases 17–20; the GUI still owns a separate in-process engine |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
 
@@ -71,11 +72,15 @@ pnpm --dir frontend test
 
 `go test` needs no frontend build. `internal/e2e` starts a private `sshd` and is skipped where that is not possible. Building the root package needs `frontend/dist`, which `wails3 task build` produces.
 
+Build the headless binary with `CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt`. Phase 16 provides `dtt version` and `dtt daemon run|status|stop|restart`; `run --idle-exit 0` disables the default five-minute idle exit. `stop` and `restart` stop every daemon-owned tunnel. The GUI joins this daemon in phase 17; avoid running the two engines against the same definitions until then. See [the daemon API](docs/design/control-plane.md#local-api) for client methods and version handling.
+
 ## Layout
 
 | Path | Purpose |
 |---|---|
 | `main.go` | Entry point |
+| `cmd/dtt`, `internal/daemon`, `internal/control`, `internal/client` | Headless daemon, local JSON-RPC server and client |
+| `internal/api`, `internal/engine` | Shared contracts and tunnel orchestration |
 | `internal/core` | Model, config, command builder, checks, supervisor; no GUI and no OS-specific code |
 | `internal/askpass`, `cmd/devt-tunnel-askpass` | Forward ssh prompts to the app |
 | `internal/platform` | Processes, environment, paths, keychain, per OS |
@@ -88,7 +93,7 @@ pnpm --dir frontend test
 - [docs/product.md](docs/product.md): concepts, tunnel types, flows, screens, shortcuts.
 - [docs/architecture.md](docs/architecture.md): process model, SSH integration, secrets, storage, data model, decisions, open questions.
 - [docs/platform.md](docs/platform.md): cross-platform stack, code layout, per-OS differences, distribution, validation checks.
-- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Not implemented yet.
+- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API implemented; GUI migration, full CLI and MCP remain planned.
 - [docs/plans/README.md](docs/plans/README.md): implementation plans.
 
 ## Design

@@ -2,6 +2,8 @@
 
 **Goal:** the engine runs in its own process, reachable over a local socket. The GUI does not use it until phase 17, so nothing changes for users yet.
 
+**Implementation:** daemon/API and lifecycle CLI implemented. Contract, process, SSH forwarding and headless build checks cover the implementation; native Windows/Linux, signed app launch and detached Keychain access remain unverified.
+
 **Depends on:** 14, 15. Design: [control-plane.md](../design/control-plane.md#local-api).
 
 ## 16.1 Platform additions
@@ -22,8 +24,8 @@ Unit tests for path selection and the over-length fallback; refusal of a shared 
 JSON-RPC 2.0, one message per line, in `internal/api`: wire types, method names, parameter structs and error kinds.
 
 - `daemon.hello` must come first and carries `{apiVersion, client: {kind, name, version}}`.
-- Errors use `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`. These are the source for the CLI exit codes and MCP error codes.
-- Secret values may appear only in `secret.set` parameters. The server never logs parameters.
+- Errors use `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, `timeout`. These are the source for the CLI exit codes and MCP error codes.
+- Stored secret values enter only through `secret.set`; credential answers may enter through `prompt.answer`. Neither method returns values, and the server never logs parameters. MCP clients cannot answer prompts.
 
 Methods mirror the engine, see the design's table. Leases, approvals and agent policy come in phase 19.
 
@@ -66,7 +68,7 @@ Build `dtt` in the darwin, linux and windows `build` tasks, as `devt-tunnel-askp
 ## Tests
 
 - **Contract, `internal/control`:** a real socket and a real engine with `secret.Memory`. Every registered method is called at least once. A test fails when `internal/api` lists a method with no handler, or a call has no hello.
-- **Process, `internal/daemon`, using the built `dtt` and a temporary `HOME` and `DTT_SOCKET`:**
+- **Process, `internal/daemon`, using a compiled `cmd/dtt` test binary with a test-only `secret.Memory` injection and a temporary `HOME` and `DTT_SOCKET`:**
   - A `command` tunnel running `sleep` survives the client disconnecting and is visible to a new client.
   - `daemon.shutdown` stops the process tree, and the daemon exits.
   - A second daemon exits while the first keeps working. Concurrent `Ensure` calls end with one daemon.
@@ -79,9 +81,13 @@ Build `dtt` in the darwin, linux and windows `build` tasks, as `devt-tunnel-askp
 
 With the app closed, a script using `internal/client` starts a tunnel through a daemon it launched, and exits. The tunnel keeps forwarding, and `dtt daemon status` shows it. `dtt daemon stop` ends both.
 
-## Open checks
+## macOS open-check results (2026-11-04)
 
-Run these on macOS early in the phase, because they could change the design:
+A disposable native `.app` opened through the Finder UI inherited the graphical login session's `SSH_AUTH_SOCK` (`/var/run/com.apple.launchd.…/Listeners`); its detached child retained it. A PTY-launched probe verified `setsid`, PPID 1 and loss of the controlling terminal. A real localhost SSH session with private sshd, keys and an empty agent showed that the detached child kept its forwarded-agent path after disconnect while that session socket became absent. `open` invoked from a shell inherited that shell's override, so it was not used as Finder evidence. No user socket was connected to or changed.
 
-- Keychain reads from a detached daemon, started from a terminal and from Finder.
-- `SSH_AUTH_SOCK` for a daemon started from the app. A daemon started from a remote SSH session keeps that session's agent socket after it ends, so record the behavior and document it.
+Keychain reads remain **unverified**, not failed: `go-keyring v0.2.8` cannot select a disposable keychain without changing the user's default/search list. No real keychain entry or search list was touched. Follow-up needs an isolated-keychain seam or disposable macOS user/VM; signing, hardened runtime and the real GUI-to-daemon launch also remain acceptance work. These results do not change C1–C5.
+
+## Remaining acceptance
+
+- Detached Keychain reads from terminal and Finder in an isolated macOS account/VM or through a supported isolated-keychain seam.
+- Signed/hardened-runtime GUI-to-daemon launch and native Windows/Linux socket, ACL and lifecycle behavior.

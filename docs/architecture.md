@@ -4,7 +4,7 @@ Describes intended behavior. Stack, per-OS details and code layout are in [platf
 
 ## Control plane
 
-Phase 15 adds typed readiness errors, shared endpoint lists and loopback port checks; native-window port-warning acceptance is pending. Phase 14 has extracted the shared `internal/api` types and GUI-independent `internal/engine`; the host forwards to that engine in-process. Until [phases 15–17](plans/README.md#phases) ship, "the app" below still means the desktop process. Afterward, an on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
+Phase 15 adds typed readiness errors, shared endpoint lists and loopback port checks; native-window port-warning acceptance is pending. Phase 14 has extracted the shared `internal/api` types and GUI-independent `internal/engine`; the host forwards to that engine in-process. Phase 16 adds a separate headless daemon/API and lifecycle CLI; the GUI moves to that daemon in phase 17. Until phase 17 ships, "the app" below still means the desktop process. Afterward, an on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
 
 ## Process model
 
