@@ -22,6 +22,18 @@ func deps() Deps {
 	}
 }
 
+func TestTargetPortsNormalizesLocalServiceURLs(t *testing.T) {
+	for _, tunnel := range []model.Tunnel{
+		{Type: model.TypeNgrok, Ngrok: &model.Ngrok{Addr: "http://127.0.0.1:3000"}},
+		{Type: model.TypeCloudflared, Cloudflared: &model.Cloudflared{URL: "http://127.0.0.1:3000"}},
+	} {
+		ports := targetPorts(tunnel)
+		if len(ports) != 1 || ports[0] != "127.0.0.1:3000" {
+			t.Fatalf("targetPorts(%s) = %v", tunnel.Type, ports)
+		}
+	}
+}
+
 func messages(f []Finding) string {
 	var parts []string
 	for _, x := range f {
@@ -31,8 +43,8 @@ func messages(f []Finding) string {
 }
 
 func TestCleanSSH(t *testing.T) {
-	tun := model.Tunnel{ID: "a", Type: model.TypeSSH, SSH: &model.SSH{Host: "h", Flags: []string{"-N"}}}
-	if f := Run(tun, model.Config{Tunnels: []model.Tunnel{tun}}, deps()); len(f) != 0 {
+	tun := model.Tunnel{ID: "a", Type: model.TypeSSH, SSH: &model.SSH{Host: "h", Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}}}
+	if f := Run(tun, model.Config{Tunnels: []model.Tunnel{tun}}, deps()); len(f) != 1 || f[0].Severity != OK {
 		t.Errorf("findings:\n%s", messages(f))
 	}
 }
@@ -61,7 +73,7 @@ func TestPortConflict(t *testing.T) {
 	remote.ID, remote.Forwards = "r", []model.Forward{{Kind: model.ForwardRemote, Bind: "127.0.0.1:1", Target: "x:1"}}
 
 	got := messages(Run(a, model.Config{Tunnels: []model.Tunnel{a, b, remote}}, deps()))
-	if !strings.Contains(got, "127.0.0.1:1 is also used by B") {
+	if !strings.Contains(got, "127.0.0.1:1 conflicts with B") {
 		t.Errorf("findings:\n%s", got)
 	}
 	// -R listens on the remote host, so it cannot conflict locally.

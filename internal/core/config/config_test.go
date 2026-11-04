@@ -1,11 +1,15 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/trieu04/devt-tunnel/internal/core/model"
 )
 
 // sample mirrors the example in docs/architecture.md.
@@ -16,7 +20,7 @@ name = "Work"
 ssh_config = "~/.ssh/config"
 on_activate = "start_autostart"
 stop_non_members = false
-autostart = ["prod-db"]
+autostart = ["srv1"]
 
 [[profile]]
 id = "home"
@@ -124,5 +128,78 @@ func TestLoadRejectsInvalid(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestLoadRejectsUnknownKeysAtEveryLevel(t *testing.T) {
+	for name, content := range map[string]string{
+		"root":   "tunnels = []\ntunnelz = []\n",
+		"tunnel": "[[tunnel]]\nid='a'\ntype='command'\nunknown=true\n[tunnel.command]\nline='ls'\n",
+		"nested": "[[tunnel]]\nid='a'\ntype='command'\n[tunnel.command]\nline='ls'\nlin='typo'\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(write(t, content))
+			if err == nil || !strings.Contains(err.Error(), "unknown key") {
+				t.Fatalf("got %v", err)
+			}
+		})
+	}
+}
+
+func TestStoreConflictBackupAndFailedValidation(t *testing.T) {
+	path := write(t, "[[tunnel]]\nid='a'\nname='A'\ntype='command'\n[tunnel.command]\nline='echo a'\n")
+	s := NewStore(path)
+	if _, err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(func(c *model.Config) error { c.Tunnels[0].Name = "B"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := os.ReadFile(path + ".bak")
+	if err != nil || !strings.Contains(string(backup), `name='A'`) {
+		t.Fatalf("backup=%q err=%v", backup, err)
+	}
+	current, err := os.ReadFile(path)
+	if err != nil || !strings.HasPrefix(string(current), "# Written by devt-tunnel.") {
+		t.Fatalf("header missing: %v", err)
+	}
+	if err := os.WriteFile(path, append(current, []byte("\n# outside edit\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(func(*model.Config) error { return nil }); !errors.Is(err, ErrConflict) {
+		t.Fatalf("conflict err=%v", err)
+	}
+	if _, err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, err := s.Update(func(c *model.Config) error { c.Tunnels[0].ID = ""; return nil }); err == nil {
+		t.Fatal("expected validation error")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("failed update changed file")
+	}
+}
+
+func TestConcurrentStoreUpdatesSerialize(t *testing.T) {
+	path := write(t, "")
+	s := NewStore(path)
+	if _, err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Update(func(*model.Config) error { return nil }); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if _, err := Load(path); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -62,9 +62,11 @@ type Deps struct {
 	Resolve  func(tool string) (string, error) // finds a binary
 	Environ  func() []string                   // base environment for children
 	Shell    []string                          // prefix for command tunnels
-	Askpass  Askpass                           // optional
-	Records  Records                           // optional
-	OnChange func()                            // optional; called after any state change
+	Home     string
+	Dialect  command.Dialect
+	Askpass  Askpass // optional
+	Records  Records // optional
+	OnChange func()  // optional; called after any state change
 
 	// Zero values select the defaults below.
 	BackoffBase  time.Duration
@@ -94,23 +96,29 @@ type Status struct {
 	Error     string    `json:"error,omitempty"`
 	Address   string    `json:"address,omitempty"`
 	Attempt   int       `json:"attempt,omitempty"`
+	Stale     bool      `json:"stale,omitempty"`
 }
 
 // Manager owns all tunnels.
 type Manager struct {
 	deps Deps
 
-	mu      sync.Mutex
-	config  model.Config
-	tunnels map[string]*entry
-	closed  bool
+	mu            sync.Mutex
+	config        model.Config
+	tunnels       map[string]*entry
+	closed        bool
+	activeProfile string
+	pendingStart  map[string]bool
+	waiters       map[string][]chan Status
 }
 
 type entry struct {
-	status Status
-	log    *logRing
-	cancel context.CancelFunc
-	done   chan struct{}
+	status      Status
+	log         *logRing
+	cancel      context.CancelFunc
+	done        chan struct{}
+	fingerprint string
+	wake        chan struct{}
 }
 
 func New(deps Deps) *Manager {
@@ -132,7 +140,7 @@ func New(deps Deps) *Manager {
 	if deps.PollInterval == 0 {
 		deps.PollInterval = defaultPoll
 	}
-	return &Manager{deps: deps, tunnels: map[string]*entry{}}
+	return &Manager{deps: deps, tunnels: map[string]*entry{}, pendingStart: map[string]bool{}, waiters: map[string][]chan Status{}}
 }
 
 // SetConfig replaces the definitions. Tunnels no longer defined are stopped.
@@ -184,6 +192,13 @@ func (m *Manager) Statuses() []Status {
 				out[i].State = s
 			}
 		}
+		if out[i].State != StateStopped && out[i].State != StateNeedsToken && out[i].State != StateKeyringUnavailable {
+			m.mu.Lock()
+			e := m.tunnels[t.ID]
+			spec, err := command.Build(t, m.optionsLocked(t))
+			out[i].Stale = err == nil && e != nil && e.fingerprint != "" && e.fingerprint != spec.Fingerprint()
+			m.mu.Unlock()
+		}
 	}
 	return out
 }
@@ -198,6 +213,16 @@ func (m *Manager) Logs(id string) []string {
 	return nil
 }
 
+func (m *Manager) LogsSince(id string, after uint64) (uint64, []LogLine) {
+	m.mu.Lock()
+	e := m.tunnels[id]
+	m.mu.Unlock()
+	if e == nil {
+		return after, nil
+	}
+	return e.log.snapshotSince(after)
+}
+
 // Preview returns the command line the tunnel would run.
 func (m *Manager) Preview(id string) (string, error) {
 	m.mu.Lock()
@@ -210,7 +235,17 @@ func (m *Manager) Preview(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return spec.Preview(), nil
+	return spec.Preview(m.deps.Dialect), nil
+}
+
+func (m *Manager) PreviewDraft(t model.Tunnel) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	spec, err := command.Build(t, m.optionsLocked(t))
+	if err != nil {
+		return "", err
+	}
+	return spec.Preview(m.deps.Dialect), nil
 }
 
 // Start launches a tunnel. Starting an active tunnel does nothing.
@@ -233,7 +268,8 @@ func (m *Manager) Start(id string) error {
 		return nil
 	}
 	if missing != "" {
-		e.status = Status{ID: id, State: missing}
+		m.pendingStart[id] = true
+		e.status = Status{ID: id, State: StateStopped}
 		go m.changed()
 		return nil
 	}
@@ -246,6 +282,9 @@ func (m *Manager) Start(id string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.done = make(chan struct{})
+	e.wake = make(chan struct{}, 1)
+	e.fingerprint = spec.Fingerprint()
+	delete(m.pendingStart, id)
 	e.status = Status{ID: id, State: StateStarting}
 	go m.loop(ctx, t, spec, e)
 	go m.changed()
@@ -255,6 +294,7 @@ func (m *Manager) Start(id string) error {
 // Stop ends a tunnel and waits for it to exit.
 func (m *Manager) Stop(id string) {
 	m.mu.Lock()
+	delete(m.pendingStart, id)
 	e, ok := m.tunnels[id]
 	if !ok || e.cancel == nil {
 		m.mu.Unlock()
@@ -264,6 +304,76 @@ func (m *Manager) Stop(id string) {
 	m.mu.Unlock()
 	cancel()
 	<-done
+}
+
+func (m *Manager) Restart(id string) error {
+	m.Stop(id)
+	return m.Start(id)
+}
+
+// SecretsChanged retries only starts that were explicitly requested while a secret was missing.
+func (m *Manager) SecretsChanged() {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.pendingStart))
+	for id := range m.pendingStart {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.mu.Lock()
+		t, ok := m.findLocked(id)
+		m.mu.Unlock()
+		if ok && m.secretState(t) == "" {
+			_ = m.Start(id)
+		}
+	}
+}
+
+// Wake interrupts reconnect backoff after the system resumes.
+func (m *Manager) Wake() {
+	m.mu.Lock()
+	for _, e := range m.tunnels {
+		if e.wake != nil && e.status.State == StateReconnecting {
+			select {
+			case e.wake <- struct{}{}:
+			default:
+			}
+		}
+	}
+	m.mu.Unlock()
+}
+
+func (m *Manager) WaitReady(ctx context.Context, id string) (Status, error) {
+	m.mu.Lock()
+	e, ok := m.tunnels[id]
+	if !ok {
+		m.mu.Unlock()
+		return Status{}, fmt.Errorf("unknown tunnel %q", id)
+	}
+	if terminalStatus(e.status.State) {
+		st := e.status
+		m.mu.Unlock()
+		if st.State == StateRunning {
+			return st, nil
+		}
+		return st, errors.New(st.Error)
+	}
+	ch := make(chan Status, 1)
+	m.waiters[id] = append(m.waiters[id], ch)
+	m.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return Status{}, ctx.Err()
+	case st := <-ch:
+		if st.State == StateRunning {
+			return st, nil
+		}
+		return st, errors.New(st.Error)
+	}
+}
+
+func terminalStatus(state State) bool {
+	return state == StateRunning || state == StateFailed || state == StateNeedsToken || state == StateKeyringUnavailable || state == StateStopped
 }
 
 // Shutdown stops every tunnel and refuses further starts.
@@ -306,7 +416,20 @@ func (m *Manager) entryLocked(id string) *entry {
 
 // optionsLocked picks the SSH config of the tunnel's first profile that sets one.
 func (m *Manager) optionsLocked(t model.Tunnel) command.Options {
-	opts := command.Options{Shell: m.deps.Shell}
+	opts := command.Options{Shell: m.deps.Shell, Home: m.deps.Home, Dialect: m.deps.Dialect}
+	if m.activeProfile != "" {
+		for _, pid := range t.Profiles {
+			if pid != m.activeProfile {
+				continue
+			}
+			for _, p := range m.config.Profiles {
+				if p.ID == pid && p.SSHConfig != "" {
+					opts.SSHConfig = p.SSHConfig
+					return opts
+				}
+			}
+		}
+	}
 	for _, pid := range t.Profiles {
 		for _, p := range m.config.Profiles {
 			if p.ID == pid && p.SSHConfig != "" {
@@ -318,9 +441,16 @@ func (m *Manager) optionsLocked(t model.Tunnel) command.Options {
 	return opts
 }
 
+func (m *Manager) SetActiveProfile(id string) {
+	m.mu.Lock()
+	m.activeProfile = id
+	m.mu.Unlock()
+	m.changed()
+}
+
 func (m *Manager) secretState(t model.Tunnel) State {
 	for _, name := range t.Secrets() {
-		if _, err := m.deps.Secrets.Get(name); err != nil {
+		if _, err := secret.Has(m.deps.Secrets, name); err != nil {
 			if errors.Is(err, secret.ErrNotFound) {
 				return StateNeedsToken
 			}
@@ -339,6 +469,15 @@ func (m *Manager) changed() {
 func (m *Manager) update(e *entry, f func(*Status)) {
 	m.mu.Lock()
 	f(&e.status)
+	if terminalStatus(e.status.State) {
+		for _, waiter := range m.waiters[e.status.ID] {
+			select {
+			case waiter <- e.status:
+			default:
+			}
+		}
+		delete(m.waiters, e.status.ID)
+	}
 	m.mu.Unlock()
 	m.changed()
 }
@@ -357,9 +496,17 @@ func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e
 	attempt := 0
 	for {
 		attempt++
-		wasRunning, err := m.runOnce(ctx, t, spec, e, attempt)
+		wasRunning, err := m.runOnce(ctx, t, spec, e, attempt, retrying)
 		if ctx.Err() != nil {
 			m.update(e, func(s *Status) { *s = Status{ID: t.ID, State: StateStopped} })
+			return
+		}
+		if errors.Is(err, secret.ErrNotFound) || errors.Is(err, secret.ErrUnavailable) {
+			state := StateNeedsToken
+			if errors.Is(err, secret.ErrUnavailable) {
+				state = StateKeyringUnavailable
+			}
+			m.update(e, func(s *Status) { *s = Status{ID: t.ID, State: state, Error: err.Error()} })
 			return
 		}
 		// A first start that fails is reported as Failed. Reconnect only applies once the tunnel has run.
@@ -376,26 +523,32 @@ func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e
 			attempt = 0
 		}
 		retrying = true
+		displayAttempt := attempt
+		if displayAttempt == 0 {
+			displayAttempt = 1
+		}
 		msg := "process exited"
 		if err != nil {
 			msg = err.Error()
 		}
 		e.log.Note(fmt.Sprintf("%s; reconnecting in %s", msg, backoff))
 		m.update(e, func(s *Status) {
-			*s = Status{ID: t.ID, State: StateReconnecting, Error: msg, Attempt: attempt}
+			*s = Status{ID: t.ID, State: StateReconnecting, Error: msg, Attempt: displayAttempt}
 		})
 		select {
 		case <-ctx.Done():
 			m.update(e, func(s *Status) { *s = Status{ID: t.ID, State: StateStopped} })
 			return
 		case <-time.After(backoff):
+			backoff = min(backoff*2, m.deps.BackoffMax)
+		case <-e.wake:
+			backoff = m.deps.BackoffBase
 		}
-		backoff = min(backoff*2, m.deps.BackoffMax)
 	}
 }
 
 // runOnce spawns the process and returns when it has exited. wasRunning says whether it became ready.
-func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec, e *entry, attempt int) (wasRunning bool, err error) {
+func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec, e *entry, attempt int, retrying bool) (wasRunning bool, err error) {
 	path, err := m.deps.Resolve(spec.Tool)
 	if err != nil {
 		e.log.Note(err.Error())
@@ -423,7 +576,7 @@ func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec
 	} else {
 		e.log.setOnLine(nil)
 	}
-	e.log.Note("starting: " + spec.Preview())
+	e.log.Note("starting: " + spec.Preview(m.deps.Dialect))
 	proc, err := m.deps.Runner.Start(SpawnRequest{Path: path, Args: spec.Args, Dir: spec.Dir, Env: env, Output: e.log})
 	if err != nil {
 		e.log.Note(err.Error())
@@ -436,7 +589,11 @@ func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec
 		defer m.deps.Records.Remove(proc.PID())
 	}
 	m.update(e, func(s *Status) {
-		*s = Status{ID: t.ID, State: StateStarting, PID: proc.PID(), Attempt: attempt}
+		state := StateStarting
+		if retrying {
+			state = StateReconnecting
+		}
+		*s = Status{ID: t.ID, State: state, PID: proc.PID(), Attempt: attempt}
 	})
 
 	exited := make(chan error, 1)
@@ -459,6 +616,9 @@ func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec
 				e.log.Note("exited: " + err.Error())
 			} else {
 				e.log.Note("exited")
+			}
+			if line := e.log.lastMeaningful(); line != "" {
+				return wasRunning, errors.New(line)
 			}
 			return wasRunning, err
 		case addr := <-ready:
@@ -495,7 +655,10 @@ func (m *Manager) environment(t model.Tunnel, spec command.Spec) ([]string, func
 	for name, secretName := range spec.SecretEnv {
 		value, err := m.deps.Secrets.Get(secretName)
 		if err != nil {
-			return nil, nil, fmt.Errorf("secret %q: %w", secretName, err)
+			if errors.Is(err, secret.ErrNotFound) || errors.Is(err, secret.ErrUnavailable) {
+				return nil, nil, fmt.Errorf("secret %q: %w", secretName, err)
+			}
+			return nil, nil, err
 		}
 		env = append(env, name+"="+value)
 	}
@@ -543,7 +706,7 @@ func (m *Manager) waitReady(ctx context.Context, r command.Ready, line <-chan st
 func allAccepting(ctx context.Context, addrs []string) bool {
 	for _, addr := range addrs {
 		dialCtx, cancel := context.WithTimeout(ctx, time.Second)
-		conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", dialAddress(addr))
+		conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", command.DialAddress(addr))
 		cancel()
 		if err != nil {
 			return false
@@ -553,17 +716,7 @@ func allAccepting(ctx context.Context, addrs []string) bool {
 	return true
 }
 
-// dialAddress accepts the forms ssh accepts for a bind address: "port" and "host:port".
-func dialAddress(bind string) string {
-	host, port, err := net.SplitHostPort(bind)
-	if err != nil {
-		return net.JoinHostPort("127.0.0.1", bind)
-	}
-	if host == "" || host == "*" || host == "0.0.0.0" {
-		host = "127.0.0.1"
-	}
-	return net.JoinHostPort(host, port)
-}
+func dialAddress(bind string) string { return command.DialAddress(bind) }
 
 var (
 	urlInLog    = regexp.MustCompile(`https?://[^\s|"']+`)
@@ -592,6 +745,12 @@ func defaultAddress(t model.Tunnel) string {
 		if f.Kind != model.ForwardRemote {
 			return f.Bind
 		}
+	}
+	if t.Type == model.TypeCloudflared && t.Cloudflared != nil && t.Cloudflared.Hostname != "" {
+		return "https://" + t.Cloudflared.Hostname
+	}
+	if t.Type == model.TypeNgrok && t.Ngrok != nil {
+		return t.Ngrok.Addr
 	}
 	return ""
 }

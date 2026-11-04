@@ -130,13 +130,13 @@ func TestPreviewNeverContainsSecretNameAsValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := spec.Preview(); got != "ngrok http 1 --log=stdout --log-format=logfmt" {
+	if got := spec.Preview(POSIX); got != "ngrok http 1 --log=stdout --log-format=logfmt" {
 		t.Errorf("preview %q", got)
 	}
 }
 
 func TestPreviewQuotes(t *testing.T) {
-	got := Spec{Tool: "sh", Args: []string{"-c", "echo 'hi' there"}}.Preview()
+	got := Spec{Tool: "sh", Args: []string{"-c", "echo 'hi' there"}}.Preview(POSIX)
 	if want := `sh -c 'echo '\''hi'\'' there'`; got != want {
 		t.Errorf("got %s want %s", got, want)
 	}
@@ -152,13 +152,13 @@ func TestSplitArgs(t *testing.T) {
 		`''`:               {""},
 	}
 	for in, want := range cases {
-		got, err := SplitArgs(in)
+		got, err := SplitArgs(in, POSIX)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Errorf("SplitArgs(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
 	for _, in := range []string{`'open`, `"open`, `trail\`} {
-		if _, err := SplitArgs(in); err == nil {
+		if _, err := SplitArgs(in, POSIX); err == nil {
 			t.Errorf("SplitArgs(%q) should fail", in)
 		}
 	}

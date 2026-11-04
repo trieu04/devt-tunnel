@@ -3,7 +3,10 @@
 package command
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"net"
 	"regexp"
 	"slices"
 	"sort"
@@ -16,13 +19,14 @@ import (
 
 // Spec describes a process to spawn. Secret values are never part of it.
 type Spec struct {
-	Tool       string            // binary name, or the first shell word for command tunnels
-	Args       []string          // arguments after Tool
-	Dir        string            // working directory
-	SecretEnv  map[string]string // environment variable → secret name
-	Askpass    bool              // ssh: route prompts through the askpass helper
-	Passphrase string            // ssh: secret name that answers passphrase prompts
-	Ready      Ready
+	Tool        string            // binary name, or the first shell word for command tunnels
+	Args        []string          // arguments after Tool
+	Dir         string            // working directory
+	SecretEnv   map[string]string // environment variable → secret name
+	Askpass     bool              // ssh: route prompts through the askpass helper
+	Passphrase  string            // ssh: secret name that answers passphrase prompts
+	Ready       Ready
+	CommandLine string // original command tunnel line, used for an exact Windows preview
 }
 
 // Ready says how to detect that the tunnel is up. With nothing set, the process only has to stay alive.
@@ -36,7 +40,16 @@ type Ready struct {
 type Options struct {
 	SSHConfig string   // profile's ssh config, passed with -F
 	Shell     []string // shell prefix for command tunnels, e.g. ["/bin/sh", "-c"]
+	Home      string
+	Dialect   Dialect
 }
+
+type Dialect int
+
+const (
+	POSIX Dialect = iota
+	Windows
+)
 
 const defaultAlive = 3 * time.Second
 
@@ -46,21 +59,24 @@ func Build(t model.Tunnel, opts Options) (Spec, error) {
 	case model.TypeSSH:
 		return buildSSH(t, opts)
 	case model.TypeCloudflared:
-		return buildCloudflared(t)
+		return buildCloudflared(t, opts)
 	case model.TypeNgrok:
-		return buildNgrok(t)
+		return buildNgrok(t, opts)
 	case model.TypeCommand:
 		return buildCommand(t, opts)
 	}
 	return Spec{}, fmt.Errorf("unknown tunnel type %q", t.Type)
 }
 
-// Preview renders the command line for display, with POSIX quoting.
-func (s Spec) Preview() string {
+// Preview renders the command line for display using the platform's quoting rules.
+func (s Spec) Preview(d Dialect) string {
+	if d == Windows && s.CommandLine != "" {
+		return s.CommandLine
+	}
 	parts := make([]string, 0, len(s.Args)+1)
-	parts = append(parts, quote(s.Tool))
+	parts = append(parts, quote(s.Tool, d))
 	for _, a := range s.Args {
-		parts = append(parts, quote(a))
+		parts = append(parts, quote(a, d))
 	}
 	return strings.Join(parts, " ")
 }
@@ -72,7 +88,7 @@ func buildSSH(t model.Tunnel, opts Options) (Spec, error) {
 	}
 	var args []string
 	if opts.SSHConfig != "" {
-		args = append(args, "-F", opts.SSHConfig)
+		args = append(args, "-F", expandHome(opts.SSHConfig, opts.Home))
 	}
 	args = append(args, c.Flags...)
 
@@ -114,7 +130,7 @@ func buildSSH(t model.Tunnel, opts Options) (Spec, error) {
 		ready.AliveFor = defaultAlive
 	}
 
-	extra, err := SplitArgs(c.ExtraArgs)
+	extra, err := SplitArgs(c.ExtraArgs, opts.Dialect)
 	if err != nil {
 		return Spec{}, fmt.Errorf("extra_args: %w", err)
 	}
@@ -144,15 +160,19 @@ var (
 	ngrokReady            = regexp.MustCompile(`started tunnel.*url=`)
 )
 
-func buildCloudflared(t model.Tunnel) (Spec, error) {
+func buildCloudflared(t model.Tunnel, opts Options) (Spec, error) {
 	c := t.Cloudflared
 	if c == nil {
 		return Spec{}, fmt.Errorf("cloudflared settings missing")
 	}
 	if c.Name == "" && c.Secret == "" {
+		extra, err := SplitArgs(c.ExtraArgs, opts.Dialect)
+		if err != nil {
+			return Spec{}, fmt.Errorf("extra_args: %w", err)
+		}
 		return Spec{
 			Tool:  "cloudflared",
-			Args:  []string{"tunnel", "--url", c.URL},
+			Args:  append([]string{"tunnel", "--url", c.URL}, extra...),
 			Ready: Ready{LogPattern: cloudflaredQuickReady},
 		}, nil
 	}
@@ -164,6 +184,11 @@ func buildCloudflared(t model.Tunnel) (Spec, error) {
 	if c.Name != "" {
 		args = append(args, c.Name)
 	}
+	extra, err := SplitArgs(c.ExtraArgs, opts.Dialect)
+	if err != nil {
+		return Spec{}, fmt.Errorf("extra_args: %w", err)
+	}
+	args = append(args, extra...)
 	spec := Spec{Tool: "cloudflared", Args: args, Ready: Ready{LogPattern: cloudflaredNamedReady}}
 	if c.Secret != "" {
 		spec.SecretEnv = map[string]string{"TUNNEL_TOKEN": c.Secret}
@@ -171,7 +196,7 @@ func buildCloudflared(t model.Tunnel) (Spec, error) {
 	return spec, nil
 }
 
-func buildNgrok(t model.Tunnel) (Spec, error) {
+func buildNgrok(t model.Tunnel, opts Options) (Spec, error) {
 	c := t.Ngrok
 	if c == nil {
 		return Spec{}, fmt.Errorf("ngrok settings missing")
@@ -181,6 +206,11 @@ func buildNgrok(t model.Tunnel) (Spec, error) {
 	if c.Domain != "" {
 		args = append(args, "--domain="+c.Domain)
 	}
+	extra, err := SplitArgs(c.ExtraArgs, opts.Dialect)
+	if err != nil {
+		return Spec{}, fmt.Errorf("extra_args: %w", err)
+	}
+	args = append(args, extra...)
 	spec := Spec{Tool: "ngrok", Args: args, Ready: Ready{LogPattern: ngrokReady}}
 	if c.Secret != "" {
 		spec.SecretEnv = map[string]string{"NGROK_AUTHTOKEN": c.Secret}
@@ -197,11 +227,12 @@ func buildCommand(t model.Tunnel, opts Options) (Spec, error) {
 		return Spec{}, fmt.Errorf("no shell configured")
 	}
 	spec := Spec{
-		Tool:      opts.Shell[0],
-		Args:      append(slices.Clone(opts.Shell[1:]), c.Line),
-		Dir:       c.Dir,
-		SecretEnv: c.SecretEnvs,
-		Ready:     Ready{AliveFor: defaultAlive},
+		Tool:        opts.Shell[0],
+		Args:        append(slices.Clone(opts.Shell[1:]), c.Line),
+		Dir:         expandHome(c.Dir, opts.Home),
+		SecretEnv:   c.SecretEnvs,
+		Ready:       Ready{AliveFor: defaultAlive},
+		CommandLine: c.Line,
 	}
 	if c.ReadyLog != "" {
 		re, err := regexp.Compile(c.ReadyLog)
@@ -213,8 +244,11 @@ func buildCommand(t model.Tunnel, opts Options) (Spec, error) {
 	return spec, nil
 }
 
-// SplitArgs splits a string into arguments using POSIX shell quoting rules.
-func SplitArgs(s string) ([]string, error) {
+// SplitArgs splits a string according to the selected command-line dialect.
+func SplitArgs(s string, d Dialect) ([]string, error) {
+	if d == Windows {
+		return splitWindows(s)
+	}
 	var (
 		args    []string
 		cur     strings.Builder
@@ -271,9 +305,126 @@ func SplitArgs(s string) ([]string, error) {
 	return args, nil
 }
 
-func quote(s string) string {
+func quote(s string, d Dialect) string {
+	if d == Windows {
+		return quoteWindows(s)
+	}
 	if s != "" && !strings.ContainsAny(s, " \t\n'\"\\$`&|;<>()*?[]#~!{}") {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func splitWindows(s string) ([]string, error) {
+	var args []string
+	for i := 0; i < len(s); {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+			i++
+		}
+		if i == len(s) {
+			break
+		}
+		var b strings.Builder
+		quoted := false
+		for i < len(s) {
+			if !quoted && (s[i] == ' ' || s[i] == '\t') {
+				break
+			}
+			if s[i] == '"' {
+				quoted = !quoted
+				i++
+				continue
+			}
+			if s[i] == '\\' {
+				start := i
+				for i < len(s) && s[i] == '\\' {
+					i++
+				}
+				n := i - start
+				if i < len(s) && s[i] == '"' {
+					b.WriteString(strings.Repeat("\\", n/2))
+					if n%2 == 1 {
+						b.WriteByte('"')
+						i++
+					} else {
+						quoted = !quoted
+						i++
+					}
+				} else {
+					b.WriteString(strings.Repeat("\\", n))
+				}
+				continue
+			}
+			b.WriteByte(s[i])
+			i++
+		}
+		if quoted {
+			return nil, fmt.Errorf("unterminated double quote")
+		}
+		args = append(args, b.String())
+	}
+	return args, nil
+}
+
+func quoteWindows(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t\n\"") {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	backslashes := 0
+	for _, r := range s {
+		if r == '\\' {
+			backslashes++
+			continue
+		}
+		if r == '"' {
+			b.WriteString(strings.Repeat("\\", backslashes*2+1))
+			b.WriteRune(r)
+		} else {
+			b.WriteString(strings.Repeat("\\", backslashes))
+			b.WriteRune(r)
+		}
+		backslashes = 0
+	}
+	b.WriteString(strings.Repeat("\\", backslashes*2))
+	b.WriteByte('"')
+	return b.String()
+}
+
+func expandHome(path, home string) string {
+	if home == "" || path == "~" {
+		if path == "~" {
+			return home
+		}
+		return path
+	}
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		return home + path[1:]
+	}
+	return path
+}
+
+// DialAddress normalizes the bind forms accepted by ssh for local TCP probes.
+func DialAddress(bind string) string {
+	host, port, err := net.SplitHostPort(bind)
+	if err != nil {
+		return net.JoinHostPort("127.0.0.1", bind)
+	}
+	if host == "" || host == "*" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// Fingerprint identifies settings that affect the spawned process without including secret values.
+func (s Spec) Fingerprint() string {
+	keys := make([]string, 0, len(s.SecretEnv))
+	for env, name := range s.SecretEnv {
+		keys = append(keys, env+"="+name)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	fmt.Fprintf(h, "%q\x00%q\x00%q\x00%q\x00%q", s.Tool, s.Args, s.Dir, keys, s.Passphrase)
+	return hex.EncodeToString(h.Sum(nil))
 }

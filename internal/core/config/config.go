@@ -24,8 +24,17 @@ func Load(path string) (model.Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	return decode(path, data)
+}
+
+func decode(path string, data []byte) (model.Config, error) {
+	var cfg model.Config
+	meta, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		return model.Config{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
+		return model.Config{}, fmt.Errorf("parse %s: unknown key %q", path, undecoded[0])
 	}
 	if err := cfg.Validate(); err != nil {
 		return model.Config{}, fmt.Errorf("%s: %w", path, err)
@@ -39,6 +48,7 @@ func Save(path string, cfg model.Config) error {
 		return err
 	}
 	var buf bytes.Buffer
+	buf.WriteString("# Written by devt-tunnel. Hand edits are kept; comments are not.\n")
 	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
 		return err
 	}

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -166,6 +168,9 @@ func freeAddr(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("TCP listeners are unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	defer l.Close()
@@ -180,6 +185,9 @@ func TestReadyWhenPortsAccept(t *testing.T) {
 	r.proc(t, 0)
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("TCP listeners are unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	defer l.Close()
@@ -192,6 +200,9 @@ func TestReadyWhenPortsAccept(t *testing.T) {
 func TestPortAlreadyInUseFailsWithoutSpawning(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("TCP listeners are unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	defer l.Close()
