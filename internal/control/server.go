@@ -35,7 +35,8 @@ type Server struct {
 	listener    net.Listener
 	closed      bool
 	wg          sync.WaitGroup
-	operations  sync.RWMutex
+	operations  sync.Mutex
+	mutations   int
 	stopping    atomic.Bool
 }
 
@@ -101,6 +102,9 @@ func (s *Server) Serve(listener net.Listener) error {
 }
 
 func (s *Server) Close() {
+	s.operations.Lock()
+	s.stopping.Store(true)
+	s.operations.Unlock()
 	s.mu.Lock()
 	s.closed = true
 	if s.listener != nil {
@@ -213,13 +217,8 @@ func (c *connection) serve() {
 		default:
 			return
 		}
-		run := func() { defer func() { <-slots }(); c.execute(req) }
-		if c.server.readOnly[req.Method] {
-			// OS keychain reads cannot be cancelled and must not keep a disconnected client or daemon alive.
-			go run()
-		} else {
-			workers.Go(run)
-		}
+		// OS operations may outlive the connection; shutdown must not wait for their handlers.
+		go func() { defer func() { <-slots }(); c.execute(req) }()
 	}
 }
 
@@ -249,6 +248,10 @@ func parseRequest(line []byte) (api.Request, error) {
 
 func (c *connection) execute(req api.Request) {
 	s := c.server
+	if s.stopping.Load() {
+		c.respond(req.ID, nil, api.NewError(api.Stopped, "daemon is shutting down"))
+		return
+	}
 	if !c.compatible && req.Method != api.DaemonStatusMethod && req.Method != api.DaemonShutdown {
 		c.respond(req.ID, nil, api.NewError(api.Incompatible, fmt.Sprintf("client API %d is incompatible with daemon API %d; run dtt daemon restart (stops all tunnels)", c.apiVersion, api.Version)))
 		return
@@ -269,28 +272,40 @@ func (c *connection) execute(req api.Request) {
 			return
 		}
 		s.operations.Lock()
-		if p.OnlyIfIdle && s.engine.Active() {
+		if s.stopping.Load() {
 			s.operations.Unlock()
-			c.respond(req.ID, nil, api.NewError(api.Conflict, "daemon has active tunnels or prompts"))
+			c.respond(req.ID, nil, api.NewError(api.Stopped, "daemon is shutting down"))
+			return
+		}
+		if p.OnlyIfIdle && (s.mutations > 0 || s.engine.Active()) {
+			s.operations.Unlock()
+			c.respond(req.ID, nil, api.NewError(api.Conflict, "daemon has active tunnels, prompts or mutations"))
 			return
 		}
 		s.stopping.Store(true)
-		s.engine.Shutdown()
 		s.operations.Unlock()
+		s.engine.Shutdown()
 		c.respond(req.ID, api.Empty{}, nil)
 		if s.onShutdown != nil {
 			s.onShutdown()
 		}
 		return
 	}
-	if !s.readOnly[req.Method] {
-		s.operations.RLock()
-		defer s.operations.RUnlock()
-	}
+	s.operations.Lock()
 	if s.stopping.Load() {
+		s.operations.Unlock()
 		c.respond(req.ID, nil, api.NewError(api.Stopped, "daemon is shutting down"))
 		return
 	}
+	if !s.readOnly[req.Method] {
+		s.mutations++
+		defer func() {
+			s.operations.Lock()
+			s.mutations--
+			s.operations.Unlock()
+		}()
+	}
+	s.operations.Unlock()
 	if c.client.Kind == "mcp" && req.Method == "prompt.answer" {
 		c.respond(req.ID, nil, api.NewError(api.Unknown, "MCP clients cannot answer prompts"))
 		return

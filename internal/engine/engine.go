@@ -127,10 +127,11 @@ func New(opts Options) (*Engine, error) {
 		opts.AskpassHelper = askpassHelperPath()
 	}
 	index := &secret.Index{Path: filepath.Join(opts.StateDir, "vault.json")}
+	done := make(chan struct{})
 	s := &Engine{
 		configPath:   opts.ConfigPath,
 		settingsPath: opts.SettingsPath,
-		secrets:      &secret.Cached{Inner: opts.Secrets, Used: index.MarkUsed},
+		secrets:      &secret.Cached{Inner: &lifetimeSecrets{inner: opts.Secrets, done: done}, Used: index.MarkUsed},
 		secretIndex:  index,
 		configStore:  config.NewStore(opts.ConfigPath),
 		stateStore:   corestate.NewStore(filepath.Join(opts.StateDir, "state.json")),
@@ -140,7 +141,7 @@ func New(opts Options) (*Engine, error) {
 		shell:        platform.ShellFor(appSettings.Shell),
 		prompts:      map[string]*waitingPrompt{},
 		subscribers:  map[uint64]func(api.Event){},
-		done:         make(chan struct{}),
+		done:         done,
 	}
 	s.tools.SetOverrides(appSettings.Tools)
 	s.broker, err = askpass.NewBroker(opts.AskpassHelper, s.secrets, s.askUser)

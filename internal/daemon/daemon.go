@@ -108,15 +108,18 @@ func Run(ctx context.Context, opts Options) error {
 	for {
 		select {
 		case <-ctx.Done():
+			s.Close()
 			e.Shutdown()
 			return nil
 		case <-shutdown:
 			return nil
 		case err := <-served:
+			s.Close()
 			e.Shutdown()
 			return err
 		case sig := <-signals:
 			if !isHangup(sig) {
+				s.Close()
 				e.Shutdown()
 				return nil
 			}
@@ -126,6 +129,7 @@ func Run(ctx context.Context, opts Options) error {
 				continue
 			}
 			if opts.IdleExit > 0 && now.Sub(idleSince) >= opts.IdleExit {
+				s.Close()
 				e.Shutdown()
 				return nil
 			}

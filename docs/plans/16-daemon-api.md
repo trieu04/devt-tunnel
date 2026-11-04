@@ -34,7 +34,7 @@ Methods mirror the engine, see the design's table. Leases, approvals and agent p
 - A generic `handle[P, R]` registers each method. Each request runs in its own goroutine, so a long `tunnel.waitReady` or `tunnel.stop` blocks nothing else. Its context ends when the connection closes.
 - Each connection has a mutex-guarded writer with a deadline, and a small event queue. A client that cannot keep up is disconnected and resyncs on reconnect, so the engine never blocks on it.
 - `CheckPeer` runs before any read.
-- Read-only RPCs do not hold the shutdown barrier; disconnect cancels their contexts without waiting for uninterruptible OS reads. Mutations drain before RPC shutdown and connection teardown.
+- Request admission holds a short lock; idle-only shutdown rejects in-flight mutations instead of waiting for them. Unconditional shutdown closes admission and stops tunnels without draining RPC handlers blocked in OS calls. Credential operations stop their engine continuations at shutdown; an already-issued native credential write may still complete in the OS.
 - Config writes and reloads serialize the disk snapshot through application to the supervisor; unrelated start, stop and readiness calls remain concurrent.
 
 ## 16.4 `internal/client`
@@ -81,7 +81,7 @@ Build `dtt` in the darwin, linux and windows `build` tasks, as `devt-tunnel-askp
   - Idle exit fires with a short `--idle-exit`, and does not fire while a tunnel runs.
   - A real SSH tunnel with the private `sshd` from `internal/e2e`, through the daemon, including a passphrase from `secret.Memory` and an answered prompt.
 - **Boundary:** `go list -deps ./cmd/dtt` includes no `wailsapp`. `CGO_ENABLED=0 GOOS=linux go build ./cmd/dtt` and the same for windows and darwin pass in CI.
-- **Regressions:** rejected peers/directories receive no hello bytes; a blocked secret store does not block runtime status, idle exit, cancellation or idle shutdown; staged config saves/reloads cannot apply an older snapshot after a newer commit.
+- **Regressions:** rejected peers/directories receive no hello bytes; a blocked secret store does not block runtime status, idle exit, cancellation or shutdown, including blocked starts and secret mutations; idle-only shutdown rejects in-flight mutations; staged config saves/reloads cannot apply an older snapshot after a newer commit.
 
 ## Exit test
 
