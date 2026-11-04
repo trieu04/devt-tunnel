@@ -1,4 +1,4 @@
-import type { TunnelView } from "./api";
+import type { TunnelView } from "../api";
 
 export type ViewFilter = "all" | "running" | "favorites";
 export type TypeFilter = "all" | "ssh" | "cloudflared" | "ngrok" | "command";
@@ -9,8 +9,7 @@ export function isActive(state: string): boolean {
   return ACTIVE.has(state);
 }
 
-/** Text that search matches: name, host and every port or address in the definition. */
-function searchText(v: TunnelView): string {
+export function searchText(v: TunnelView): string {
   const t = v.tunnel;
   return [
     t.name,
