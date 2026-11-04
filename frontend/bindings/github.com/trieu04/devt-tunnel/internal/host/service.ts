@@ -208,6 +208,13 @@ export function ShowMain(): $CancellablePromise<void> {
 }
 
 /**
+ * ShowQuickLaunch opens the global palette from the tray popup.
+ */
+export function ShowQuickLaunch(): $CancellablePromise<void> {
+    return $Call.ByID(1287002483);
+}
+
+/**
  * Shutdown is called by Wails when the app is exiting.
  */
 export function Shutdown(): $CancellablePromise<void> {

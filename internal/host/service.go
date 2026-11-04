@@ -466,6 +466,13 @@ func (s *Service) HideQuickLaunch() {
 	}
 }
 
+// ShowQuickLaunch opens the global palette from the tray popup.
+func (s *Service) ShowQuickLaunch() {
+	if s.host != nil {
+		s.host.showQuick()
+	}
+}
+
 // Quit stops all tunnels and exits.
 func (s *Service) Quit() {
 	if s.host != nil {
@@ -491,7 +498,6 @@ func (s *Service) notify() {
 		s.notifyTimer = nil
 		s.mu.Unlock()
 		s.host.app.Event.Emit(eventTunnels)
-		s.host.refreshTray(s.views())
 	})
 }
 

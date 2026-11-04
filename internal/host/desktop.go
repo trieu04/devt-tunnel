@@ -3,16 +3,12 @@ package host
 import (
 	"log"
 	"runtime"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	_ "embed"
-
-	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
 //go:embed tray-template.png
@@ -25,6 +21,8 @@ const (
 	mainTitle   = "devt-tunnel"
 	quickWidth  = 640
 	quickHeight = 420
+	trayWidth   = 360
+	trayHeight  = 540
 )
 
 // desktop owns the windows, tray and global shortcut.
@@ -33,10 +31,9 @@ type desktop struct {
 	svc   *Service
 	main  *application.WebviewWindow
 	quick *application.WebviewWindow
+	popup *application.WebviewWindow
 	tray  *application.SystemTray
 
-	mu      sync.Mutex
-	traySig string
 	hasTray bool
 }
 
@@ -57,7 +54,6 @@ func Attach(app *application.App, svc *Service) {
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		log.Printf("application ready")
 		d.registerShortcut()
-		d.refreshTray(svc.views())
 		for _, t := range svc.manager.Config().Tunnels {
 			if t.StartOnLaunch {
 				if err := svc.manager.Start(t.ID); err != nil {
@@ -114,6 +110,37 @@ func (d *desktop) createWindows() {
 	d.quick.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) {
 		d.quick.Hide()
 	})
+
+	if d.hasTray {
+		d.popup = d.app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:             "tray",
+			Title:            mainTitle,
+			Width:            trayWidth,
+			Height:           trayHeight,
+			MinWidth:         trayWidth,
+			MinHeight:        trayHeight,
+			MaxWidth:         trayWidth,
+			MaxHeight:        trayHeight,
+			Hidden:           true,
+			Frameless:        true,
+			AlwaysOnTop:      true,
+			DisableResize:    true,
+			HideOnFocusLost:  true,
+			HideOnEscape:     true,
+			URL:              "/?view=tray",
+			BackgroundColour: application.NewRGB(255, 255, 255),
+			Mac: application.MacWindow{
+				CornerType: application.MacWindowCornerTypeSquare,
+			},
+			Windows: application.WindowsWindow{
+				HiddenOnTaskbar: true,
+			},
+		})
+		d.popup.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+			e.Cancel()
+			d.popup.Hide()
+		})
+	}
 }
 
 func monitorClockJump(wake func()) {
@@ -134,8 +161,21 @@ func clockJumped(previous, current time.Time, interval time.Duration) bool {
 }
 
 func (d *desktop) showMain() {
+	if d.popup != nil {
+		d.popup.Hide()
+	}
 	d.main.Show()
 	d.main.Focus()
+}
+
+func (d *desktop) showQuick() {
+	if d.popup != nil {
+		d.popup.Hide()
+	}
+	d.quick.Center()
+	d.quick.Show()
+	d.quick.Focus()
+	d.app.Event.Emit("quick:opened")
 }
 
 func (d *desktop) toggleQuick() {
@@ -143,10 +183,7 @@ func (d *desktop) toggleQuick() {
 		d.quick.Hide()
 		return
 	}
-	d.quick.Center()
-	d.quick.Show()
-	d.quick.Focus()
-	d.app.Event.Emit("quick:opened")
+	d.showQuick()
 }
 
 func defaultShortcut() string {
@@ -201,80 +238,5 @@ func (d *desktop) createTray() {
 		d.tray.SetIcon(trayLightIcon)
 	}
 	d.tray.SetTooltip(mainTitle)
-}
-
-// refreshTray rebuilds the menu only when its content changed, so that an open menu is not disturbed.
-func (d *desktop) refreshTray(views []TunnelView) {
-	if d.tray == nil {
-		return
-	}
-	listed := trayTunnels(views)
-	var sig strings.Builder
-	for _, v := range listed {
-		sig.WriteString(v.Tunnel.ID + "\x00" + v.Tunnel.Name + "\x00" + string(v.Status.State) + "\n")
-	}
-	d.mu.Lock()
-	unchanged := d.traySig == sig.String() && d.traySig != ""
-	d.traySig = sig.String()
-	d.mu.Unlock()
-	if unchanged {
-		return
-	}
-
-	menu := d.app.NewMenu()
-	for _, v := range listed {
-		id := v.Tunnel.ID
-		label := v.Tunnel.Name
-		if v.Status.State != supervisor.StateStopped && v.Status.State != supervisor.StateRunning {
-			label += " (" + stateLabel(v.Status.State) + ")"
-		}
-		menu.AddCheckbox(label, isActive(v.Status.State)).OnClick(func(*application.Context) {
-			if err := d.svc.Toggle(id); err != nil {
-				log.Printf("toggle %s: %v", id, err)
-			}
-		})
-	}
-	if len(listed) > 0 {
-		menu.AddSeparator()
-	}
-	menu.Add("Quick launch").OnClick(func(*application.Context) { d.toggleQuick() })
-	menu.Add("Open devt-tunnel").OnClick(func(*application.Context) { d.showMain() })
-	menu.AddSeparator()
-	menu.Add("Stop all and quit").OnClick(func(*application.Context) { d.app.Quit() })
-	d.tray.SetMenu(menu)
-}
-
-// trayTunnels lists favorites and anything currently active.
-func trayTunnels(views []TunnelView) []TunnelView {
-	var out []TunnelView
-	for _, v := range views {
-		if v.Tunnel.Favorite || isActive(v.Status.State) {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-func isActive(s supervisor.State) bool {
-	switch s {
-	case supervisor.StateStarting, supervisor.StateRunning, supervisor.StateReconnecting:
-		return true
-	}
-	return false
-}
-
-func stateLabel(s supervisor.State) string {
-	switch s {
-	case supervisor.StateStarting:
-		return "starting"
-	case supervisor.StateReconnecting:
-		return "reconnecting"
-	case supervisor.StateFailed:
-		return "failed"
-	case supervisor.StateNeedsToken:
-		return "needs token"
-	case supervisor.StateKeyringUnavailable:
-		return "keyring unavailable"
-	}
-	return string(s)
+	d.tray.AttachWindow(d.popup).WindowOffset(4)
 }
