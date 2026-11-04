@@ -42,10 +42,43 @@ jobs:
           node-version: 22
       - name: Install Linux GUI libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb
       - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
       - run: pnpm test
         working-directory: frontend
+      - run: pnpm format:check
+        working-directory: frontend
       - run: wails3 task build
+      - name: Smoke built app on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d)
+          export DEVT_TUNNEL_CONFIG_DIR="$smoke_dir/config"
+          export DEVT_TUNNEL_STATE_DIR="$smoke_dir/state"
+          launcher=()
+          if [ "${RUNNER_OS}" = "Linux" ]; then launcher=(xvfb-run -a); fi
+          "${launcher[@]}" ./bin/devt-tunnel &
+          app_pid=$!
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            grep -q "application ready" "$DEVT_TUNNEL_STATE_DIR/devt-tunnel.log" 2>/dev/null && break
+            sleep 1
+          done
+          grep -q "application ready" "$DEVT_TUNNEL_STATE_DIR/devt-tunnel.log"
+          kill "$app_pid" || true
+      - name: Smoke built app on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "devt-tunnel-smoke"
+          $env:DEVT_TUNNEL_CONFIG_DIR = Join-Path $root "config"
+          $env:DEVT_TUNNEL_STATE_DIR = Join-Path $root "state"
+          $process = Start-Process -FilePath ".\bin\devt-tunnel.exe" -PassThru
+          for ($i = 0; $i -lt 10; $i++) {
+            Start-Sleep -Seconds 1
+            if ((Test-Path "$env:DEVT_TUNNEL_STATE_DIR\devt-tunnel.log") -and (Select-String -Quiet -Pattern "application ready" "$env:DEVT_TUNNEL_STATE_DIR\devt-tunnel.log")) { break }
+          }
+          if (-not (Select-String -Quiet -Pattern "application ready" "$env:DEVT_TUNNEL_STATE_DIR\devt-tunnel.log")) { throw "health line not found" }
+          Stop-Process -Id $process.Id -Force

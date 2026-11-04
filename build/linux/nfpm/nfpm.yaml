@@ -6,7 +6,7 @@
 name: "devt-tunnel"
 arch: ${GOARCH}
 platform: "linux"
-version: "0.1.0"
+version: ${VERSION}
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
@@ -18,9 +18,9 @@ release: "1"
 
 contents:
   - src: "./bin/devt-tunnel"
-    dst: "/usr/local/bin/devt-tunnel"
+    dst: "/usr/bin/devt-tunnel"
   - src: "./bin/devt-tunnel-askpass"
-    dst: "/usr/local/bin/devt-tunnel-askpass"
+    dst: "/usr/bin/devt-tunnel-askpass"
   - src: "./build/appicon.png"
     dst: "/usr/share/icons/hicolor/128x128/apps/devt-tunnel.png"
   - src: "./build/linux/devt-tunnel.desktop"
@@ -30,6 +30,8 @@ contents:
 depends:
   - libgtk-4-1
   - libwebkitgtk-6.0-4
+recommends:
+  - openssh-client
 
 # Distribution-specific overrides for different package formats
 overrides:
