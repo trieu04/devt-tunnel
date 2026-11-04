@@ -1,11 +1,13 @@
 package platform
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -92,4 +94,28 @@ func KillOrphan(pid int) error {
 	}
 	defer windows.CloseHandle(h)
 	return windows.TerminateProcess(h, 1)
+}
+
+func StopOrphan(pid int, identity string, grace time.Duration) error {
+	current, err := ProcessIdentity(pid)
+	if err != nil {
+		return err
+	}
+	if current != identity {
+		return fmt.Errorf("process %d identity changed", pid)
+	}
+	if err := KillOrphan(pid); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		if _, err := ProcessIdentity(pid); err != nil {
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if _, err := ProcessIdentity(pid); err == nil {
+		return fmt.Errorf("process %d is still alive", pid)
+	}
+	return nil
 }

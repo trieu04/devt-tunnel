@@ -34,8 +34,9 @@ func CleanEnviron(environ []string) []string {
 // Tools locates host binaries. Apps opened from Finder or a launcher do not inherit the
 // terminal's PATH, so a plain lookup would report Homebrew's ngrok as missing.
 type Tools struct {
-	Overrides map[string]string // tool → explicit path from settings
+	Overrides map[string]string // guarded by mu
 
+	mu   sync.RWMutex
 	once sync.Once
 	path string
 }
@@ -56,19 +57,43 @@ func (t *Tools) Environ() []string {
 
 // Resolve returns the absolute path of a tool.
 func (t *Tools) Resolve(tool string) (string, error) {
-	if p := t.Overrides[tool]; p != "" {
-		return p, nil
+	p, _, err := t.Locate(tool)
+	return p, err
+}
+
+// Locate returns a tool path and the source used to find it.
+func (t *Tools) Locate(tool string) (string, string, error) {
+	t.mu.RLock()
+	override := t.Overrides[tool]
+	t.mu.RUnlock()
+	if override != "" {
+		return override, "settings", nil
 	}
 	if filepath.IsAbs(tool) {
-		return tool, nil
+		return tool, "absolute path", nil
 	}
 	for _, dir := range filepath.SplitList(t.PATH()) {
 		candidate := filepath.Join(dir, tool)
 		if p, err := exec.LookPath(candidate); err == nil {
-			return p, nil
+			return p, "search path", nil
 		}
 	}
-	return "", fmt.Errorf("%s was not found on this machine", tool)
+	return "", "", fmt.Errorf("%s was not found on this machine", tool)
+}
+
+func (t *Tools) SetOverrides(overrides map[string]string) {
+	t.mu.Lock()
+	t.Overrides = make(map[string]string, len(overrides))
+	for name, path := range overrides {
+		t.Overrides[name] = path
+	}
+	t.mu.Unlock()
+}
+
+func (t *Tools) Override(tool string) string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.Overrides[tool]
 }
 
 func mergePath(parts ...any) string {
@@ -128,8 +153,18 @@ func loginShellPATH() string {
 
 // Shell returns the prefix that runs a command tunnel's line.
 func Shell() []string {
+	return ShellFor("")
+}
+
+func ShellFor(setting string) []string {
 	if runtime.GOOS == "windows" {
+		if strings.EqualFold(setting, "powershell") || strings.EqualFold(setting, "pwsh") {
+			return []string{"powershell.exe", "-NoProfile", "-Command"}
+		}
 		return []string{"cmd.exe", "/d", "/s", "/c"}
+	}
+	if setting != "" {
+		return []string{setting, "-c"}
 	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {

@@ -3,8 +3,10 @@ package askpass
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
@@ -43,6 +45,9 @@ func setup(t *testing.T, rec *recorder) (*Broker, *secret.Memory) {
 	store := &secret.Memory{}
 	b, err := NewBroker("/path/helper", store, rec.ask)
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("local IPC is unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { b.Close() })

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // configure puts the child in its own process group, so that stopping reaches anything it spawned.
@@ -48,5 +49,41 @@ func ProcessIdentity(pid int) (string, error) {
 	return id, nil
 }
 
-// KillOrphan stops a process group left by an earlier run.
-func KillOrphan(pid int) error { return signalGroup(pid, syscall.SIGTERM) }
+// StopOrphan verifies the process identity, terminates its group, then forces it after the grace period.
+func StopOrphan(pid int, identity string, grace time.Duration) error {
+	current, err := ProcessIdentity(pid)
+	if err != nil {
+		return err
+	}
+	if current != identity {
+		return fmt.Errorf("process %d identity changed", pid)
+	}
+	if err := signalGroup(pid, syscall.SIGTERM); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		if _, err := ProcessIdentity(pid); err != nil {
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if err := signalGroup(pid, syscall.SIGKILL); err != nil {
+		return err
+	}
+	for i := 0; i < 40; i++ {
+		if _, err := ProcessIdentity(pid); err != nil {
+			return nil
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return fmt.Errorf("process %d is still alive", pid)
+}
+
+func KillOrphan(pid int) error {
+	identity, err := ProcessIdentity(pid)
+	if err != nil {
+		return err
+	}
+	return StopOrphan(pid, identity, 0)
+}

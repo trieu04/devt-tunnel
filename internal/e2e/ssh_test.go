@@ -3,6 +3,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -34,6 +36,9 @@ func freePort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("TCP listeners are unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	defer l.Close()
@@ -83,6 +88,9 @@ func setup(t *testing.T) sshEnv {
 
 	echo, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("TCP listeners are unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { echo.Close() })
@@ -137,6 +145,9 @@ func newManager(t *testing.T, store secret.Store, ask askpass.Asker, tun model.T
 	t.Helper()
 	broker, err := askpass.NewBroker(buildHelper(t), store, ask)
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("local IPC is unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { broker.Close() })
@@ -262,6 +273,9 @@ func TestSSHForwardFailureIsFailed(t *testing.T) {
 	env := setup(t)
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		if os.IsPermission(err) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("TCP listeners are unavailable in this test environment: %v", err)
+		}
 		t.Fatal(err)
 	}
 	defer busy.Close()

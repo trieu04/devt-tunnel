@@ -2,7 +2,7 @@ package platform
 
 import "syscall"
 
-// Pdeathsig ends the child if the app dies, on top of the check made on the next launch.
+// Process records handle crash recovery; Pdeathsig is avoided because it follows the forking OS thread.
 func sysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	return &syscall.SysProcAttr{Setpgid: true}
 }

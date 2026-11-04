@@ -1,12 +1,24 @@
 package platform
 
 import (
+	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
+
+// RunTool runs a short host-tool query with the same hidden-window and clean-environment setup as tunnels.
+func RunTool(ctx context.Context, path string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Env = CleanEnviron(os.Environ())
+	configure(cmd)
+	return cmd.CombinedOutput()
+}
 
 // outputDrain is how long to wait for output after exit. A grandchild that keeps
 // the pipe open must not hold up the exit report.
