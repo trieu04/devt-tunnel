@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Overview, Service, TunnelView, onLogsAppended, openURL } from "../api";
+import { applyLogUpdate } from "../lib/logs";
 import { TypeFilter, ViewFilter, filterTunnels, isActive } from "../lib/filter";
 import {
   ChevronGlyph,
@@ -423,11 +424,26 @@ function Detail({
   const active = isActive(view.status.state);
   useEffect(() => {
     let mounted = true;
+    let initialized = false;
+    let pending: { lines: { seq: number; line: string }[]; replace?: boolean }[] = [];
     Service.WatchLogs(view.tunnel.id).then((initial) => {
-      if (mounted) setLogs(initial ?? []);
+      if (!mounted) return;
+      const next = pending.reduce(
+        (current, update) => applyLogUpdate(current, update.lines, update.replace),
+        initial ?? [],
+      );
+      initialized = true;
+      pending = [];
+      setLogs(next);
     });
     const off = onLogsAppended((event) => {
-      if (event.data.id === view.tunnel.id) setLogs((current) => [...current, ...event.data.lines].slice(-2000));
+      if (event.data.id === view.tunnel.id) {
+        if (!initialized) {
+          pending.push(event.data);
+          return;
+        }
+        setLogs((current) => applyLogUpdate(current, event.data.lines, event.data.replace));
+      }
     });
     return () => {
       mounted = false;

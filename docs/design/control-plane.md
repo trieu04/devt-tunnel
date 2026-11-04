@@ -134,7 +134,7 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 - **Authorization:** directory permissions and, on Unix, a peer UID check (`SO_PEERCRED`, `LOCAL_PEERCRED`). On Windows, the per-user ACL of the directory under `%LOCALAPPDATA%`. Whether that is enough on Windows needs testing in phase 12.
 - **Handshake:** `daemon.hello {apiVersion, client: {kind, name, version}}` returns `{apiVersion, daemonVersion, pid}`. `kind` selects the policy and is recorded in the audit log. A client declares it itself, see [Threat model](#threat-model).
 - **Version recovery:** an incompatible hello still returns version metadata and permits only `daemon.status` and `daemon.shutdown`; normal client dialing rejects it. `Ensure` uses these recovery methods to implement the upgrade rule.
-- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, or `timeout`. Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged.
+- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, or `timeout`. Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged. `daemon.shutdown` accepts the handshake PID as `expectedPid` and rejects a different daemon identity, so a lost response cannot make a retry stop a replacement process.
 - **Types:** one package, `internal/api`, used by every client. New fields are additive, and a breaking change raises `apiVersion`.
 
 | Group | Methods |

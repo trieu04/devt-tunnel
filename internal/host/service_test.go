@@ -44,12 +44,41 @@ type fakeDaemon struct {
 	calls    []rpcCall
 	events   func(api.Event)
 	logs     []api.LogsResult
+	readLogs []string
 	lastLogs api.LogsResult
+	pid      int
 }
+
+var nextFakePID atomic.Int32
 
 type failingShutdownClient struct {
 	*fakeDaemon
 	fail error
+}
+
+type blockingClient struct {
+	*fakeDaemon
+	block       atomic.Bool
+	blockMethod string
+	started     chan struct{}
+	release     chan struct{}
+}
+
+func (c *blockingClient) Call(ctx context.Context, method string, params, result any) error {
+	err := c.fakeDaemon.Call(ctx, method, params, result)
+	if err == nil && method == c.blockMethod && c.block.Load() {
+		select {
+		case <-c.started:
+		default:
+			close(c.started)
+		}
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return err
 }
 
 func (c *failingShutdownClient) Call(ctx context.Context, method string, params, result any) error {
@@ -61,7 +90,7 @@ func (c *failingShutdownClient) Call(ctx context.Context, method string, params,
 }
 
 func newFakeDaemon(path string) *fakeDaemon {
-	return &fakeDaemon{done: make(chan struct{}), overview: api.Overview{ConfigPath: path}, settings: api.SettingsResult{Shortcut: "Alt+Space", UpdateChecks: true}}
+	return &fakeDaemon{done: make(chan struct{}), overview: api.Overview{ConfigPath: path}, settings: api.SettingsResult{Shortcut: "Alt+Space", UpdateChecks: true}, pid: int(nextFakePID.Add(1))}
 }
 
 func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) error {
@@ -74,12 +103,21 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, rpcCall{method: method, params: params})
 	switch method {
-	case api.EventsSubscribe, api.DaemonShutdown, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks":
+	case api.EventsSubscribe, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks":
+		if out, ok := result.(*api.Empty); ok {
+			*out = api.Empty{}
+		}
+	case api.DaemonShutdown:
+		if expected := params.(api.ShutdownParams).ExpectedPID; expected != 0 && expected != f.pid {
+			return api.NewError(api.Conflict, "daemon identity changed")
+		}
 		if out, ok := result.(*api.Empty); ok {
 			*out = api.Empty{}
 		}
 	case "config.overview":
 		*(result.(*api.Overview)) = f.overview
+	case "logs.read":
+		*(result.(*[]string)) = append([]string(nil), f.readLogs...)
 	case "settings.get":
 		*(result.(*api.SettingsResult)) = f.settings
 	case "logs.since":
@@ -102,8 +140,9 @@ func (f *fakeDaemon) Events(callback func(api.Event)) {
 	f.mu.Unlock()
 }
 
-func (f *fakeDaemon) Done() <-chan struct{} { return f.done }
-func (f *fakeDaemon) Close() error          { f.closed.Do(func() { close(f.done) }); return nil }
+func (f *fakeDaemon) Hello() api.HelloResult { return api.HelloResult{PID: f.pid} }
+func (f *fakeDaemon) Done() <-chan struct{}  { return f.done }
+func (f *fakeDaemon) Close() error           { f.closed.Do(func() { close(f.done) }); return nil }
 
 func (f *fakeDaemon) emit(event api.Event) {
 	f.mu.Lock()
@@ -194,6 +233,124 @@ func TestServiceCachesOverviewAndReconnects(t *testing.T) {
 	}
 }
 
+func TestOverviewDoesNotCacheOldGenerationResult(t *testing.T) {
+	first := &blockingClient{fakeDaemon: newFakeDaemon("first.toml"), blockMethod: "config.overview", started: make(chan struct{}), release: make(chan struct{})}
+	second := newFakeDaemon("second.toml")
+	var attempts atomic.Int32
+	s := newService(func(context.Context) (daemonClient, error) {
+		if attempts.Add(1) == 1 {
+			return first, nil
+		}
+		return second, nil
+	}, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	first.block.Store(true)
+	result := make(chan api.Overview, 1)
+	go func() { result <- s.Overview() }()
+	select {
+	case <-first.started:
+	case <-time.After(time.Second):
+		t.Fatal("old-generation overview did not start")
+	}
+	first.Close()
+	eventually(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.client == second
+	})
+	close(first.release)
+	select {
+	case got := <-result:
+		if got.ConfigPath != "second.toml" || got.ConfigError != "" {
+			t.Fatalf("overview = %#v, want healthy reconnected cache", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old-generation overview did not return")
+	}
+	s.mu.Lock()
+	cached := s.overview.ConfigPath
+	s.mu.Unlock()
+	if cached != "second.toml" {
+		t.Fatalf("cached overview path = %q, want second.toml", cached)
+	}
+}
+
+func TestReadDoesNotReturnOldGenerationResult(t *testing.T) {
+	firstDaemon := newFakeDaemon("first.toml")
+	firstDaemon.readLogs = []string{"old generation"}
+	first := &blockingClient{fakeDaemon: firstDaemon, blockMethod: "logs.read", started: make(chan struct{}), release: make(chan struct{})}
+	second := newFakeDaemon("second.toml")
+	var attempts atomic.Int32
+	s := newService(func(context.Context) (daemonClient, error) {
+		if attempts.Add(1) == 1 {
+			return first, nil
+		}
+		return second, nil
+	}, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	first.block.Store(true)
+	result := make(chan []string, 1)
+	go func() { result <- s.Logs("db") }()
+	select {
+	case <-first.started:
+	case <-time.After(time.Second):
+		t.Fatal("old-generation read did not start")
+	}
+	first.Close()
+	eventually(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.client == second
+	})
+	close(first.release)
+	select {
+	case got := <-result:
+		if len(got) != 0 {
+			t.Fatalf("logs = %#v, want stale result rejected", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old-generation read did not return")
+	}
+}
+
+func TestOldGenerationEventsAreIgnored(t *testing.T) {
+	first := newFakeDaemon("first.toml")
+	second := newFakeDaemon("second.toml")
+	var attempts atomic.Int32
+	s := newService(func(context.Context) (daemonClient, error) {
+		if attempts.Add(1) == 1 {
+			return first, nil
+		}
+		return second, nil
+	}, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	events := make(chan api.Event, 2)
+	s.mu.Lock()
+	s.eventSink = func(event api.Event) { events <- event }
+	s.mu.Unlock()
+	first.Close()
+	eventually(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.client == second
+	})
+	first.emit(api.Event{Type: api.EventPromptAdded, Prompt: &api.PendingPrompt{ID: "old"}})
+	second.emit(api.Event{Type: api.EventPromptAdded, Prompt: &api.PendingPrompt{ID: "new"}})
+	select {
+	case got := <-events:
+		if got.Prompt == nil || got.Prompt.ID != "new" {
+			t.Fatalf("event = %#v, want new generation prompt", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("new-generation event was not delivered")
+	}
+	select {
+	case got := <-events:
+		t.Fatalf("unexpected old-generation event: %#v", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestShutdownCancelsReconnect(t *testing.T) {
 	first := newFakeDaemon("first.toml")
 	started := make(chan struct{})
@@ -270,6 +427,7 @@ func TestShutdownUsesManagementConnectionDuringReconnect(t *testing.T) {
 func TestShutdownRetriesTransportFailureOnManagementConnection(t *testing.T) {
 	installed := &failingShutdownClient{fakeDaemon: newFakeDaemon("installed.toml"), fail: io.EOF}
 	management := newFakeDaemon("management.toml")
+	management.pid = installed.pid
 	var managementConnections atomic.Int32
 	s := newServiceWithConnectors(func(context.Context) (daemonClient, error) { return installed, nil }, func(context.Context) (daemonClient, error) {
 		managementConnections.Add(1)
@@ -281,6 +439,23 @@ func TestShutdownRetriesTransportFailureOnManagementConnection(t *testing.T) {
 	}
 	if calls := management.recorded(api.DaemonShutdown); len(calls) != 1 {
 		t.Fatalf("management shutdown calls = %d, want 1", len(calls))
+	}
+}
+
+func TestShutdownRetryDoesNotStopReplacementDaemon(t *testing.T) {
+	installed := &failingShutdownClient{fakeDaemon: newFakeDaemon("installed.toml"), fail: io.EOF}
+	replacement := newFakeDaemon("replacement.toml")
+	s := newServiceWithConnectors(func(context.Context) (daemonClient, error) { return installed, nil }, func(context.Context) (daemonClient, error) {
+		return replacement, nil
+	}, fakeAuth{}, &secret.Memory{})
+	s.Shutdown()
+	calls := replacement.recorded(api.DaemonShutdown)
+	if len(calls) != 1 {
+		t.Fatalf("replacement shutdown calls = %d, want 1 fenced attempt", len(calls))
+	}
+	params := calls[0].params.(api.ShutdownParams)
+	if params.ExpectedPID != installed.pid || params.ExpectedPID == replacement.pid {
+		t.Fatalf("shutdown expected PID = %d, installed = %d, replacement = %d", params.ExpectedPID, installed.pid, replacement.pid)
 	}
 }
 
@@ -438,7 +613,7 @@ func TestWatchLogsRefetchesAfterSequenceReset(t *testing.T) {
 	}
 	select {
 	case got := <-appended:
-		if len(got.Lines) != 2 || got.Lines[0].Seq != 1 || got.Lines[1].Seq != 2 {
+		if !got.Replace || len(got.Lines) != 2 || got.Lines[0].Seq != 1 || got.Lines[1].Seq != 2 {
 			t.Fatalf("reset logs = %#v", got.Lines)
 		}
 	case <-time.After(time.Second):
@@ -493,7 +668,7 @@ func TestWatchLogsRefetchesAfterGenerationChangeWithHigherSequence(t *testing.T)
 	reconnect.Store(true)
 	select {
 	case got := <-appended:
-		if len(got.Lines) != 7 || got.Lines[0].Seq != 1 || got.Lines[6].Seq != 7 {
+		if !got.Replace || len(got.Lines) != 7 || got.Lines[0].Seq != 1 || got.Lines[6].Seq != 7 {
 			t.Fatalf("new daemon logs = %#v", got.Lines)
 		}
 	case <-time.After(3 * time.Second):

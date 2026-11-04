@@ -170,6 +170,28 @@ func TestWireErrors(t *testing.T) {
 	}
 }
 
+func TestShutdownRejectsDifferentDaemonPID(t *testing.T) {
+	s, socket := testServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	c, err := client.Dial(ctx, socket, api.ClientInfo{Kind: "gui", Name: "identity-test", Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{ExpectedPID: s.Hello().PID + 1}, nil)
+	var rpc *api.Error
+	if !errors.As(err, &rpc) || rpc.Data.Kind != api.Conflict {
+		t.Fatalf("shutdown error = %v, want identity conflict", err)
+	}
+	if s.stopping.Load() {
+		t.Fatal("mismatched shutdown stopped daemon")
+	}
+	if err = c.Call(ctx, api.DaemonStatusMethod, api.Empty{}, nil); err != nil {
+		t.Fatalf("daemon unavailable after rejected shutdown: %v", err)
+	}
+}
+
 func TestConcurrentWaitEventsAndDisconnect(t *testing.T) {
 	s, socket := testServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

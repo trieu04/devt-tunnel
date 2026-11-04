@@ -39,6 +39,7 @@ var Version = "0.1.0"
 type daemonClient interface {
 	Call(context.Context, string, any, any) error
 	Events(func(api.Event))
+	Hello() api.HelloResult
 	Done() <-chan struct{}
 	Close() error
 }
@@ -125,7 +126,7 @@ func (s *Service) connectClient(ctx context.Context) (daemonClient, error) {
 		s.connectMu.Unlock()
 		return nil, err
 	}
-	c.Events(s.handleEvent)
+	c.Events(func(event api.Event) { s.handleEvent(c, event) })
 	var subscribed api.Empty
 	if err = c.Call(ctx, api.EventsSubscribe, api.Empty{}, &subscribed); err != nil {
 		c.Close()
@@ -233,8 +234,17 @@ func (s *Service) markDisconnected(c daemonClient, err error) {
 	}
 }
 
-func (s *Service) handleEvent(event api.Event) {
+func (s *Service) handleEvent(c daemonClient, event api.Event) {
+	select {
+	case <-c.Done():
+		return
+	default:
+	}
 	s.mu.Lock()
+	if s.client != c {
+		s.mu.Unlock()
+		return
+	}
 	desktop := s.host
 	sink := s.eventSink
 	s.mu.Unlock()
@@ -259,6 +269,7 @@ func callContext[R any](ctx context.Context, s *Service, method string, params a
 	var result R
 	s.mu.Lock()
 	c := s.client
+	generation := s.clientGeneration
 	err := s.connectionErr
 	s.mu.Unlock()
 	if c == nil {
@@ -273,8 +284,15 @@ func callContext[R any](ctx context.Context, s *Service, method string, params a
 			s.markDisconnected(c, err)
 		default:
 		}
+		return result, err
 	}
-	return result, err
+	s.mu.Lock()
+	changed := s.client != c || s.clientGeneration != generation
+	s.mu.Unlock()
+	if changed {
+		return result, errConnectionChanged
+	}
+	return result, nil
 }
 
 func call[R any](s *Service, method string, params any) (R, error) {
@@ -289,12 +307,25 @@ func action(s *Service, method string, params any) error {
 }
 
 func (s *Service) Overview() api.Overview {
-	overview, err := call[api.Overview](s, "config.overview", api.Empty{})
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	var overview api.Overview
 	s.mu.Lock()
-	if err == nil {
+	c := s.client
+	generation := s.clientGeneration
+	s.mu.Unlock()
+	overview, err := callContext[api.Overview](ctx, s, "config.overview", api.Empty{})
+	s.mu.Lock()
+	if err == nil && s.client == c && s.clientGeneration == generation {
 		s.overview = overview
 	} else {
+		if err == nil {
+			err = errConnectionChanged
+		}
 		overview = s.overview
+		if errors.Is(err, errConnectionChanged) && s.connectionErr == nil {
+			err = nil
+		}
 	}
 	if err != nil {
 		overview.ConfigError = err.Error()
@@ -343,13 +374,15 @@ func (s *Service) Shutdown() {
 		}
 		usedInstalled := c != nil && c == installed
 		if c != nil {
+			targetPID := c.Hello().PID
+			params := api.ShutdownParams{ExpectedPID: targetPID}
 			var result api.Empty
-			err := c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{}, &result)
+			err := c.Call(ctx, api.DaemonShutdown, params, &result)
 			_ = c.Close()
 			if err != nil && usedInstalled && client.TransportError(err) && ctx.Err() == nil && s.shutdownConnect != nil {
 				c, err = s.shutdownConnect(ctx)
 				if err == nil {
-					err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{}, &result)
+					err = c.Call(ctx, api.DaemonShutdown, params, &result)
 					_ = c.Close()
 				}
 			}
@@ -643,8 +676,8 @@ func (s *Service) WatchLogs(id string) []supervisor.LogLine {
 				}
 				seq = next.Sequence
 				usedGeneration = nextGeneration
-				if len(next.Lines) > 0 {
-					s.emitLogAppend(api.LogAppend{ID: id, Lines: next.Lines})
+				if reset || len(next.Lines) > 0 {
+					s.emitLogAppend(api.LogAppend{ID: id, Lines: next.Lines, Replace: reset})
 				}
 			}
 		}

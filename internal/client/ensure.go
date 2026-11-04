@@ -84,7 +84,7 @@ func Ensure(ctx context.Context, opts EnsureOptions) (*Client, error) {
 				return c, nil
 			}
 			if err == nil {
-				err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{OnlyIfIdle: true}, nil)
+				err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{OnlyIfIdle: true, ExpectedPID: c.Hello().PID}, nil)
 			}
 			if err == nil {
 				select {

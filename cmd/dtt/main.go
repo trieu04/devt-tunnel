@@ -99,7 +99,7 @@ func run(args []string, out, diagnostics io.Writer) int {
 			return 0
 		}
 		fmt.Fprintln(diagnostics, "Stopping daemon and all tunnels.")
-		if err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{}, nil); err != nil {
+		if err = c.Call(ctx, api.DaemonShutdown, api.ShutdownParams{ExpectedPID: c.Hello().PID}, nil); err != nil {
 			return report(err)
 		}
 		select {

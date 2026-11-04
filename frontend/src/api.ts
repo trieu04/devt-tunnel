@@ -25,7 +25,7 @@ export function onQuickOpened(callback: () => void): () => void {
 }
 
 export function onLogsAppended(
-  callback: (event: { data: { id: string; lines: { seq: number; line: string }[] } }) => void,
+  callback: (event: { data: { id: string; lines: { seq: number; line: string }[]; replace?: boolean } }) => void,
 ): () => void {
   return Events.On("logs:appended", callback);
 }

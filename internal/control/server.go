@@ -277,6 +277,11 @@ func (c *connection) execute(req api.Request) {
 			c.respond(req.ID, nil, api.NewError(api.Stopped, "daemon is shutting down"))
 			return
 		}
+		if p.ExpectedPID != 0 && p.ExpectedPID != s.Hello().PID {
+			s.operations.Unlock()
+			c.respond(req.ID, nil, api.NewError(api.Conflict, "daemon identity changed"))
+			return
+		}
 		if p.OnlyIfIdle && (s.mutations > 0 || s.engine.Active()) {
 			s.operations.Unlock()
 			c.respond(req.ID, nil, api.NewError(api.Conflict, "daemon has active tunnels, prompts or mutations"))

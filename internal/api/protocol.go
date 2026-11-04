@@ -78,7 +78,8 @@ type DaemonStatus struct {
 }
 type Empty struct{}
 type ShutdownParams struct {
-	OnlyIfIdle bool `json:"onlyIfIdle"`
+	OnlyIfIdle  bool `json:"onlyIfIdle"`
+	ExpectedPID int  `json:"expectedPid,omitempty"`
 }
 type IDParams struct {
 	ID string `json:"id"`

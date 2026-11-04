@@ -55,8 +55,9 @@ type DraftResult struct {
 }
 
 type LogAppend struct {
-	ID    string               `json:"id"`
-	Lines []supervisor.LogLine `json:"lines"`
+	ID      string               `json:"id"`
+	Lines   []supervisor.LogLine `json:"lines"`
+	Replace bool                 `json:"replace,omitempty"`
 }
 
 type SSHHostList struct {

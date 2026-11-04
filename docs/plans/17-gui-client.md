@@ -14,6 +14,8 @@
 
 While disconnected, `Overview` returns the last data with `ConfigError` set to a message such as `Cannot reach the tunnel service: ...`, shown by the existing banner, and methods return that error. The app must not crash or block its window.
 
+Every RPC result and event callback is fenced to the client generation that produced it, so a late old-daemon response cannot replace state established by a reconnect.
+
 ## 17.2 Forwarding
 
 Replace the engine calls from phase 14 with typed calls through a helper:
@@ -29,7 +31,7 @@ Bound signatures do not change, apart from the types moved in phase 14. Methods 
 | `tunnels:changed` | Emitted on the `tunnels.changed` event |
 | `askpass:prompt` | Emitted on `prompt.added`, which also shows the main window. On connect, `Overview.Prompts` covers any already queued |
 | Tray popup (`TrayPopup.tsx`) | Unchanged: it uses `Overview` and `Service` methods |
-| `WatchLogs` | Polls `logs.since` |
+| `WatchLogs` | Polls `logs.since`; a sequence or daemon-generation reset emits a replace event so the frontend discards prior-generation lines |
 | `StartAndCopy` | `tunnel.start`, `tunnel.waitReady`, then the clipboard locally |
 | Wake | The Wails event calls `system.wake`. The daemon also has the clock-jump fallback |
 | Window focus | Calls `system.focus` |
@@ -39,7 +41,7 @@ Bound signatures do not change, apart from the types moved in phase 14. Methods 
 ## 17.3 Launch and quit
 
 - **`StartOnLaunch`:** the GUI calls the existing phase 16 method `tunnel.startOnLaunch` once, on `ApplicationStarted`, and keeps that one request pending across an initial connection failure. The daemon never does this by itself, so `dtt ls` cannot start tunnels.
-- **⌘Q and "Stop all and quit":** `OnShutdown` calls `daemon.shutdown` and waits up to 15 seconds. This keeps the product rule ([decision C3](../design/control-plane.md#decisions)).
+- **⌘Q and "Stop all and quit":** `OnShutdown` calls `daemon.shutdown` with the PID from its handshake and waits up to 15 seconds. A transport-only retry keeps that PID fence, so it cannot stop a replacement daemon. This keeps the product rule ([decision C3](../design/control-plane.md#decisions)).
 - **Window close without a tray:** quits as above, so tunnels do not run with no way back in.
 - **A GUI crash:** the daemon and tunnels keep running, and the next launch reconnects and shows them.
 - **`SingleInstance` stays** for the GUI.
