@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Kind } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/secret/models";
-import { Overview, Service } from "../api";
+import { onSettingsChanged, Overview, Service } from "../api";
 import { SHORTCUTS } from "../app/shortcuts";
 import { ConfirmDialog } from "../ConfirmDialog";
 
@@ -73,14 +73,18 @@ export function SettingsScreen({
 function General({ overview }: { overview: Overview }) {
   const [version, setVersion] = useState("");
   const [update, setUpdate] = useState<{ available: boolean; latest: string; url: string } | null>(null);
-  const [checksEnabled, setChecksEnabled] = useState(true);
+  const [checksEnabled, setChecksEnabled] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
+    const load = () => {
+      Service.UpdateChecksEnabled().then(setChecksEnabled);
+      Service.CheckForUpdate(false)
+        .then(setUpdate)
+        .catch(() => undefined);
+    };
     Service.AppVersion().then(setVersion);
-    Service.UpdateChecksEnabled().then(setChecksEnabled);
-    Service.CheckForUpdate(false)
-      .then(setUpdate)
-      .catch(() => undefined);
+    load();
+    return onSettingsChanged(load);
   }, []);
   const toggleChecks = (enabled: boolean) => {
     setChecksEnabled(enabled);

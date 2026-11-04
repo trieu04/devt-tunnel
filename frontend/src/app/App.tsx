@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
-import { Service, onNavigation } from "../api";
+import { Service, onNavigation, onSettingsChanged } from "../api";
 import { isActive } from "../lib/filter";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { PromptDialog } from "../PromptDialog";
@@ -28,9 +28,13 @@ export function App() {
 
   useEffect(() => onNavigation((event) => open(event.data.screen, event.data.param)), []);
   useEffect(() => {
-    Service.CheckForUpdate(false)
-      .then(setUpdate)
-      .catch(() => undefined);
+    const check = () => {
+      Service.CheckForUpdate(false)
+        .then(setUpdate)
+        .catch(() => undefined);
+    };
+    check();
+    return onSettingsChanged(check);
   }, []);
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {

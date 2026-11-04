@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -13,12 +14,20 @@ import (
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
+	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
 type fakeAuth struct{}
 
 func (fakeAuth) Available() bool                       { return false }
 func (fakeAuth) Confirm(context.Context, string) error { return errors.New("unavailable") }
+
+type countingHTTPClient struct{ calls atomic.Int32 }
+
+func (c *countingHTTPClient) Do(*http.Request) (*http.Response, error) {
+	c.calls.Add(1)
+	return nil, errors.New("unexpected HTTP request")
+}
 
 type rpcCall struct {
 	method string
@@ -33,6 +42,8 @@ type fakeDaemon struct {
 	settings api.SettingsResult
 	calls    []rpcCall
 	events   func(api.Event)
+	logs     []api.LogsResult
+	lastLogs api.LogsResult
 }
 
 func newFakeDaemon(path string) *fakeDaemon {
@@ -57,6 +68,14 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 		*(result.(*api.Overview)) = f.overview
 	case "settings.get":
 		*(result.(*api.SettingsResult)) = f.settings
+	case "logs.since":
+		if len(f.logs) > 0 {
+			f.lastLogs = f.logs[0]
+			f.logs = f.logs[1:]
+		} else {
+			f.lastLogs.Lines = nil
+		}
+		*(result.(*api.LogsResult)) = f.lastLogs
 	default:
 		return errors.New("unexpected method: " + method)
 	}
@@ -165,7 +184,7 @@ func TestShutdownCancelsReconnect(t *testing.T) {
 	first := newFakeDaemon("first.toml")
 	started := make(chan struct{})
 	var attempts atomic.Int32
-	s := newService(func(ctx context.Context) (daemonClient, error) {
+	connect := func(ctx context.Context) (daemonClient, error) {
 		if attempts.Add(1) == 1 {
 			return first, nil
 		}
@@ -176,7 +195,12 @@ func TestShutdownCancelsReconnect(t *testing.T) {
 		}
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	s := newServiceWithConnectors(connect, func(ctx context.Context) (daemonClient, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}, fakeAuth{}, &secret.Memory{})
+	s.shutdownLimit = 50 * time.Millisecond
 	first.Close()
 	select {
 	case <-started:
@@ -187,8 +211,178 @@ func TestShutdownCancelsReconnect(t *testing.T) {
 	go func() { s.Shutdown(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("shutdown did not cancel reconnect")
+	}
+}
+
+func TestShutdownUsesManagementConnectionDuringReconnect(t *testing.T) {
+	first := newFakeDaemon("first.toml")
+	management := newFakeDaemon("management.toml")
+	reconnecting := make(chan struct{})
+	var attempts atomic.Int32
+	connect := func(ctx context.Context) (daemonClient, error) {
+		if attempts.Add(1) == 1 {
+			return first, nil
+		}
+		select {
+		case <-reconnecting:
+		default:
+			close(reconnecting)
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	var managementConnections atomic.Int32
+	s := newServiceWithConnectors(connect, func(context.Context) (daemonClient, error) {
+		managementConnections.Add(1)
+		return management, nil
+	}, fakeAuth{}, &secret.Memory{})
+	first.Close()
+	select {
+	case <-reconnecting:
+	case <-time.After(time.Second):
+		t.Fatal("reconnect did not start")
+	}
+	s.Shutdown()
+	if got := managementConnections.Load(); got != 1 {
+		t.Fatalf("management connections = %d, want 1", got)
+	}
+	if calls := management.recorded(api.DaemonShutdown); len(calls) != 1 {
+		t.Fatalf("daemon shutdown calls = %d, want 1", len(calls))
+	}
+}
+
+func TestAutomaticUpdateCheckWaitsForSettings(t *testing.T) {
+	daemon := newFakeDaemon("settings.toml")
+	daemon.settings.UpdateChecks = false
+	var available atomic.Bool
+	connect := func(context.Context) (daemonClient, error) {
+		if !available.Load() {
+			return nil, errors.New("daemon unavailable")
+		}
+		return daemon, nil
+	}
+	s := newServiceWithConnectors(connect, func(context.Context) (daemonClient, error) {
+		return nil, errors.New("daemon unavailable")
+	}, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	httpClient := &countingHTTPClient{}
+	s.mu.Lock()
+	s.updateClient = httpClient
+	s.mu.Unlock()
+	if _, err := s.CheckForUpdate(false); err != nil {
+		t.Fatal(err)
+	}
+	if got := httpClient.calls.Load(); got != 0 {
+		t.Fatalf("HTTP calls before settings = %d, want 0", got)
+	}
+	if _, err := s.CheckForUpdate(true); err == nil {
+		t.Fatal("forced update check unexpectedly succeeded")
+	}
+	if got := httpClient.calls.Swap(0); got != 1 {
+		t.Fatalf("forced HTTP calls = %d, want 1", got)
+	}
+	available.Store(true)
+	eventually(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.settingsLoaded
+	})
+	if s.UpdateChecksEnabled() {
+		t.Fatal("disabled persisted update preference was not loaded")
+	}
+	if _, err := s.CheckForUpdate(false); err != nil {
+		t.Fatal(err)
+	}
+	if got := httpClient.calls.Load(); got != 0 {
+		t.Fatalf("HTTP calls with checks disabled = %d, want 0", got)
+	}
+}
+
+func TestConfirmedDefaultEnablesUpdateChecks(t *testing.T) {
+	daemon := newFakeDaemon("settings.toml")
+	s := newService(func(context.Context) (daemonClient, error) { return daemon, nil }, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	if !s.UpdateChecksEnabled() {
+		t.Fatal("confirmed default update preference is disabled")
+	}
+}
+
+func TestWatchLogsResumesAfterReconnect(t *testing.T) {
+	first := newFakeDaemon("first.toml")
+	second := newFakeDaemon("second.toml")
+	second.logs = []api.LogsResult{{Sequence: 2, Lines: []supervisor.LogLine{{Seq: 1, Line: "daemon ready"}, {Seq: 2, Line: "tunnel ready"}}}}
+	var attempts atomic.Int32
+	var reconnect atomic.Bool
+	connect := func(context.Context) (daemonClient, error) {
+		if attempts.Add(1) == 1 {
+			return first, nil
+		}
+		if !reconnect.Load() {
+			return nil, errors.New("daemon unavailable")
+		}
+		return second, nil
+	}
+	s := newService(connect, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	appended := make(chan api.LogAppend, 1)
+	s.mu.Lock()
+	s.logSink = func(lines api.LogAppend) { appended <- lines }
+	s.mu.Unlock()
+	first.Close()
+	if initial := s.WatchLogs("db"); len(initial) != 0 {
+		t.Fatalf("initial logs = %#v, want empty", initial)
+	}
+	reconnect.Store(true)
+	select {
+	case got := <-appended:
+		if got.ID != "db" || len(got.Lines) != 2 || got.Lines[0].Line != "daemon ready" {
+			t.Fatalf("appended logs = %#v", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("logs did not resume after reconnect")
+	}
+}
+
+func TestWatchLogsRefetchesAfterSequenceReset(t *testing.T) {
+	daemon := newFakeDaemon("logs.toml")
+	daemon.logs = []api.LogsResult{
+		{Sequence: 5, Lines: []supervisor.LogLine{{Seq: 5, Line: "old daemon"}}},
+		{Sequence: 2},
+		{Sequence: 2, Lines: []supervisor.LogLine{{Seq: 1, Line: "new daemon"}, {Seq: 2, Line: "new tunnel"}}},
+	}
+	s := newService(func(context.Context) (daemonClient, error) { return daemon, nil }, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	appended := make(chan api.LogAppend, 2)
+	s.mu.Lock()
+	s.logSink = func(lines api.LogAppend) { appended <- lines }
+	s.mu.Unlock()
+	initial := s.WatchLogs("db")
+	if len(initial) != 1 || initial[0].Seq != 5 {
+		t.Fatalf("initial logs = %#v", initial)
+	}
+	select {
+	case got := <-appended:
+		if len(got.Lines) != 2 || got.Lines[0].Seq != 1 || got.Lines[1].Seq != 2 {
+			t.Fatalf("reset logs = %#v", got.Lines)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reset logs were not refetched")
+	}
+	calls := daemon.recorded("logs.since")
+	if len(calls) < 3 {
+		t.Fatalf("logs.since calls = %d, want at least 3", len(calls))
+	}
+	for i, want := range []uint64{0, 5, 0} {
+		if got := calls[i].params.(api.LogsParams).Sequence; got != want {
+			t.Fatalf("logs.since call %d sequence = %d, want %d", i, got, want)
+		}
+	}
+	select {
+	case duplicate := <-appended:
+		t.Fatalf("duplicate logs emitted: %#v", duplicate)
+	case <-time.After(250 * time.Millisecond):
 	}
 }
 

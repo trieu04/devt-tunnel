@@ -18,6 +18,10 @@ type UpdateInfo struct {
 	Available bool   `json:"available"`
 }
 
+type httpDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 func (s *Service) SetShortcut(accel string) error {
 	if s.host == nil {
 		return errors.New("desktop is not attached")
@@ -40,6 +44,7 @@ func (s *Service) SetUpdateChecks(enabled bool) error {
 	}
 	s.mu.Lock()
 	s.settings.UpdateChecks = enabled
+	s.settingsLoaded = true
 	s.mu.Unlock()
 	return nil
 }
@@ -47,12 +52,12 @@ func (s *Service) SetUpdateChecks(enabled bool) error {
 func (s *Service) UpdateChecksEnabled() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.settings.UpdateChecks
+	return s.settingsLoaded && s.settings.UpdateChecks
 }
 
 func (s *Service) CheckForUpdate(force bool) (UpdateInfo, error) {
 	s.mu.Lock()
-	if !s.settings.UpdateChecks && !force {
+	if (!s.settingsLoaded || !s.settings.UpdateChecks) && !force {
 		info := UpdateInfo{Current: Version}
 		s.mu.Unlock()
 		return info, nil
@@ -62,11 +67,11 @@ func (s *Service) CheckForUpdate(force bool) (UpdateInfo, error) {
 		s.mu.Unlock()
 		return info, nil
 	}
+	client := s.updateClient
 	s.mu.Unlock()
 	request, _ := http.NewRequest(http.MethodGet, "https://api.github.com/repos/trieu04/devt-tunnel/releases/latest", nil)
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("User-Agent", "devt-tunnel/"+Version)
-	client := &http.Client{Timeout: 5 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
 		return UpdateInfo{Current: Version}, err
