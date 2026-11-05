@@ -81,21 +81,21 @@ func (s *Server) register() {
 	handle(s, api.DaemonShutdown, func(context.Context, api.ShutdownParams) (api.Empty, error) { return api.Empty{}, nil })
 	query(s, api.EventsSubscribe, func(api.Empty) api.Empty { return api.Empty{} })
 	read(s, "tunnel.list", func(ctx context.Context, _ api.Empty) ([]api.TunnelView, error) {
-		views := e.Overview().Tunnels
 		actor, _ := connectionActor(ctx)
+		views := e.TunnelViewsFor(actor)
 		if actor.Kind == "mcp" {
 			for i := range views {
-				views[i].Status = mcpStatus(views[i].Status)
+				views[i] = mcpTunnelView(views[i])
 			}
 		}
 		return views, nil
 	})
 	read(s, "tunnel.get", func(ctx context.Context, p api.IDParams) (api.TunnelView, error) {
-		for _, v := range e.Overview().Tunnels {
+		actor, _ := connectionActor(ctx)
+		for _, v := range e.TunnelViewsFor(actor) {
 			if v.Tunnel.ID == p.ID {
-				actor, _ := connectionActor(ctx)
 				if actor.Kind == "mcp" {
-					v.Status = mcpStatus(v.Status)
+					v = mcpTunnelView(v)
 				}
 				return v, nil
 			}
@@ -126,12 +126,18 @@ func (s *Server) register() {
 		}
 		return status, err
 	})
-	query(s, "tunnel.evaluateDraft", func(p api.TunnelParams) api.DraftResult { return e.EvaluateDraft(p.Tunnel) })
+	read(s, "tunnel.evaluateDraft", func(ctx context.Context, p api.TunnelParams) (api.DraftResult, error) {
+		actor, _ := connectionActor(ctx)
+		return e.EvaluateDraftFor(actor, p.Tunnel), nil
+	})
 	read(s, "tunnel.import", func(_ context.Context, p api.ImportParams) (importer.Result, error) { return e.ImportCommand(p.Line) })
 	query(s, "tunnel.newDraft", func(p api.NewDraftParams) model.Tunnel { return e.NewDraft(p.Kind) })
 	read(s, "tunnel.duplicateDraft", func(_ context.Context, p api.IDParams) (model.Tunnel, error) { return e.DuplicateDraft(p.ID) })
 	action(s, "tunnel.setFavorite", func(p api.FavoriteParams) error { return e.SetFavorite(p.ID, p.Favorite) })
-	query(s, "tunnel.findings", func(p api.IDParams) []checks.Finding { return e.Findings(p.ID) })
+	read(s, "tunnel.findings", func(ctx context.Context, p api.IDParams) ([]checks.Finding, error) {
+		actor, _ := connectionActor(ctx)
+		return e.FindingsFor(actor, p.ID), nil
+	})
 	action(s, "tunnel.recordUsed", func(p api.IDParams) error { e.RecordUsed(p.ID); return nil })
 	action(s, "tunnel.startOnLaunch", func(api.Empty) error { e.StartOnLaunch(); return nil })
 	read(s, "logs.read", func(ctx context.Context, p api.IDParams) ([]string, error) {
@@ -182,11 +188,18 @@ func (s *Server) register() {
 	action(s, "prompt.answer", func(p api.AnswerPromptParams) error { e.AnswerPrompt(p.ID, p.Value, p.Cancelled); return nil })
 	query(s, "ssh.hosts", func(p api.SSHParams) api.SSHHostList { return e.SSHHosts(p.ProfileID) })
 	read(s, "ssh.resolve", func(ctx context.Context, p api.SSHParams) (sshconfig.Resolved, error) {
-		actor, _ := connectionActor(ctx)
+		actor, session := connectionActor(ctx)
 		if actor.Kind == "mcp" {
 			t := model.Tunnel{Type: model.TypeSSH, SSH: &model.SSH{Host: p.Alias}}
-			if p.Alias == "" || len(checks.AgentSafe(t)) > 0 {
-				return sshconfig.Resolved{}, e.PolicyRefusal(actor)
+			known := false
+			for _, host := range e.SSHHosts(p.ProfileID).Hosts {
+				if host.Alias == p.Alias {
+					known = true
+					break
+				}
+			}
+			if p.Alias == "" || !known || len(checks.AgentSafe(t)) > 0 {
+				return sshconfig.Resolved{}, e.PolicyRefusalForSession(actor, session)
 			}
 		}
 		return e.ResolveSSHHost(p.Alias, p.ProfileID)
@@ -222,4 +235,26 @@ func mcpStatus(status supervisor.Status) supervisor.Status {
 		status.Error = "tunnel error; inspect redacted logs"
 	}
 	return status
+}
+
+// Construct a small endpoint-only definition instead of trying to blacklist all
+// present/future execution and credential fields. Person views stay verbatim.
+func mcpTunnelView(v api.TunnelView) api.TunnelView {
+	t := v.Tunnel
+	safe := model.Tunnel{ID: t.ID, Name: t.Name, Type: t.Type, Forwards: t.Forwards}
+	if c := t.SSH; c != nil {
+		safe.SSH = &model.SSH{Host: c.Host, Hostname: c.Hostname, User: c.User, Port: c.Port}
+	}
+	if c := t.Ngrok; c != nil {
+		safe.Ngrok = &model.Ngrok{Proto: c.Proto, Addr: c.Addr, Domain: c.Domain}
+	}
+	if c := t.Cloudflared; c != nil {
+		safe.Cloudflared = &model.Cloudflared{Name: c.Name, URL: c.URL, Hostname: c.Hostname}
+	}
+	v.Tunnel = safe
+	v.Preview = ""
+	v.ToolPath = ""
+	v.MissingSecrets = nil
+	v.Status = mcpStatus(v.Status)
+	return v
 }

@@ -149,3 +149,97 @@ func TestAgentSafeDeterministicAndDoesNotMutate(t *testing.T) {
 		t.Fatalf("mutated tunnel: before=%s after=%s err=%v", before, after, err)
 	}
 }
+
+func TestAgentSafePassphraseRequiresConfigAlias(t *testing.T) {
+	for _, tc := range []struct {
+		host, hostname string
+		safe           bool
+	}{
+		{"trusted", "", true}, {"", "evil.example", false}, {"trusted", "evil.example", false}, {"", "", false},
+	} {
+		tunnel := safeAgentSSH()
+		tunnel.SSH.Host, tunnel.SSH.Hostname, tunnel.SSH.PassphraseSecret = tc.host, tc.hostname, "key"
+		if tc.safe {
+			if got := AgentSafe(tunnel); len(got) != 0 {
+				t.Fatalf("alias rejected: %+v", got)
+			}
+		} else {
+			requireAgentError(t, tunnel, "ssh.passphraseSecret")
+		}
+	}
+}
+
+func TestAgentSafeForwardAddressGrammar(t *testing.T) {
+	for _, tc := range []struct {
+		address string
+		safe    bool
+	}{
+		{"24322", true}, {"127.0.0.1:24322", true}, {":24322", true}, {"localhost:24322", true}, {"*:24322", true},
+		{"[::1]:24322", true}, {"[2001:db8::1]:24322", true}, {"/tmp/forward.sock", true}, {"./forward.sock", true},
+		{"0.0.0.0:8081:x/y", false}, {"127.0.0.1:24322:host:5432", false}, {"[::1]:24322:x/y", false},
+		{"127.0.0.1:24322/part", false}, {"relative/socket", false}, {"/tmp/socket:24322", false},
+		{"[host]:24322", false}, {"[[::1]]:24322", false}, {"[::1%lo0]:24322", false}, {"::1:24322", false},
+		{"localhost]:24322", false}, {"[localhost:24322", false}, {"24322\n", false}, {"host name:24322", false},
+		{"host:0", false}, {"host:65536", false}, {"host:bad", false}, {"-bad:24322", false},
+	} {
+		for _, field := range []string{"bind", "target"} {
+			t.Run(field+"/"+tc.address, func(t *testing.T) {
+				tunnel := safeAgentSSH()
+				if field == "bind" {
+					tunnel.Forwards[0].Bind = tc.address
+				} else {
+					tunnel.Forwards[0].Target = tc.address
+				}
+				if tc.safe {
+					if got := AgentSafe(tunnel); len(got) != 0 {
+						t.Fatalf("valid address rejected: %+v", got)
+					}
+				} else {
+					requireAgentError(t, tunnel, "forwards."+field)
+				}
+			})
+		}
+	}
+}
+
+func TestAgentSafeToolArgumentsAndManualHostnames(t *testing.T) {
+	for _, value := range []string{"-option", "has space", "line\nbreak", "tab\targument", "nonbreaking space", "control\x01"} {
+		for _, field := range []string{"ngrok.addr", "ngrok.domain", "cloudflared.name", "cloudflared.url", "cloudflared.hostname"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				tunnel := model.Tunnel{Type: model.TypeNgrok, Ngrok: &model.Ngrok{Proto: "http", Addr: "3000"}, Cloudflared: &model.Cloudflared{URL: "http://localhost:3000"}}
+				switch field {
+				case "ngrok.addr":
+					tunnel.Ngrok.Addr = value
+				case "ngrok.domain":
+					tunnel.Ngrok.Domain = value
+				case "cloudflared.name":
+					tunnel.Cloudflared.Name = value
+				case "cloudflared.url":
+					tunnel.Cloudflared.URL = value
+				case "cloudflared.hostname":
+					tunnel.Cloudflared.Hostname = value
+				}
+				section := strings.Split(field, ".")[0]
+				requireAgentError(t, tunnel, section)
+			})
+		}
+	}
+	for _, tc := range []struct {
+		host string
+		safe bool
+	}{
+		{"host.example", true}, {"host_name", true}, {"127.0.0.1", true}, {"::1", true}, {"[::1]", true},
+		{"bad/path", false}, {"bad@host", false}, {"host;command", false}, {"host'quote", false}, {"[host]", false}, {"host name", false}, {"-option", false},
+	} {
+		tunnel := safeAgentSSH()
+		tunnel.SSH.Host = ""
+		tunnel.SSH.Hostname = tc.host
+		if tc.safe {
+			if got := AgentSafe(tunnel); len(got) != 0 {
+				t.Fatalf("safe hostname %s rejected: %+v", tc.host, got)
+			}
+		} else {
+			requireAgentError(t, tunnel, "ssh.hostname")
+		}
+	}
+}

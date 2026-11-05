@@ -278,7 +278,7 @@ func (c *connection) execute(req api.Request) {
 		return
 	}
 	if c.client.Kind == "mcp" && !mcpMethodAllowed(req.Method) {
-		c.respond(req.ID, nil, s.engine.PolicyRefusal(api.Actor{Kind: c.client.Kind, Name: c.client.Name}))
+		c.respond(req.ID, nil, s.engine.PolicyRefusalForSession(api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.session))
 		return
 	}
 	if !c.compatible && req.Method != api.DaemonStatusMethod && req.Method != api.DaemonShutdown {

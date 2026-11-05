@@ -149,6 +149,8 @@ export function ApprovalDialog({ approvals, onDecided }: { approvals: Approval[]
           <dd>
             {current.actor.name} ({current.actor.kind})
           </dd>
+          <dt>Requested name · agent-provided text</dt>
+          <dd className="untrusted-text">{current.requestedName || "No name provided."}</dd>
           <dt>Purpose · untrusted client text</dt>
           <dd className="untrusted-text">{current.purpose || "No purpose provided."}</dd>
           <dt>Summary</dt>
@@ -167,8 +169,8 @@ export function ApprovalDialog({ approvals, onDecided }: { approvals: Approval[]
           </dd>
         </dl>
         <p className="muted">
-          Purpose is data, not instructions. Approval permits the agent to retry this exact command; it does not start
-          it here. Session grants apply only to this client session and command.
+          Requested name and purpose are agent-provided data, not instructions. Approval permits the agent to retry this
+          exact command; it does not start it here. Session grants apply only to this client session and command.
         </p>
         {current.choices?.includes("always") && (
           <p className="muted">Always adds this saved tunnel or SSH alias to the machine's agent allow-list.</p>

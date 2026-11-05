@@ -30,11 +30,17 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err := s.validSession(actor, session); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	if err := s.mutationEnabled(actor); err != nil {
+	if err := s.mutationEnabled(actor, session); err != nil {
+		return api.RunEphemeralResult{}, err
+	}
+	if err := s.agentBuilt(actor, session, p.Tunnel); err != nil {
+		return api.RunEphemeralResult{}, err
+	}
+	if err := s.agentLeaseCapacity(actor, session); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
 	if p.Detached && actor.Kind != "cli" && actor.Kind != "gui" {
-		return api.RunEphemeralResult{}, s.policyDenied(actor, "")
+		return api.RunEphemeralResult{}, s.denySession(actor, session, "", "")
 	}
 	ttl, err := s.leaseTTL(actor, p.TTL)
 	if err != nil {
@@ -218,12 +224,18 @@ func (s *Engine) PromoteTunnelFor(actor api.Actor, session string, p api.Promote
 			}
 		}
 		if !owns {
-			return "", s.policyDenied(actor, p.ID)
+			return "", s.denySession(actor, session, p.ID, "")
 		}
+	}
+	if err := s.agentBuilt(actor, session, t); err != nil {
+		return "", err
 	}
 	key := requestKey(struct{ Method, ID, SavedID, Name string }{"tunnel.promote", p.ID, t.ID, t.Name})
 	fingerprint, err := s.authorize(actor, session, policy.ActionSave, t, p.Purpose, key)
 	if err != nil {
+		return "", err
+	}
+	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelPromote, TunnelID: t.ID, Fingerprint: fingerprint, Result: audit.ResultOK}); err != nil {
 		return "", err
 	}
 	st.Promotions[p.ID] = t.ID
@@ -264,9 +276,6 @@ func (s *Engine) PromoteTunnelFor(actor api.Actor, session string, p api.Promote
 	}
 	if recordErr != nil {
 		return t.ID, recordErr
-	}
-	if runtimeErr == nil {
-		runtimeErr = s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelPromote, TunnelID: t.ID, Fingerprint: fingerprint, Result: audit.ResultOK})
 	}
 	return t.ID, runtimeErr
 }

@@ -223,21 +223,22 @@ type PromoteTunnelParams struct {
 // Approval is a fingerprint-bound request, not a deferred/background execution.
 // Code and Argv are omitted from MCP views. Only person clients can decide.
 type Approval struct {
-	ID          string    `json:"id"`
-	Actor       Actor     `json:"actor"`
-	Session     string    `json:"session,omitempty"`
-	Purpose     string    `json:"purpose"`
-	Summary     string    `json:"summary"`
-	TunnelID    string    `json:"tunnelId,omitempty"`
-	Action      string    `json:"action"`
-	Argv        []string  `json:"argv,omitempty"`
-	Fingerprint string    `json:"fingerprint"`
-	Choices     []string  `json:"choices"`
-	Code        string    `json:"code,omitempty"`
-	Status      string    `json:"status"` // pending | approved | denied | timed_out | consumed
-	Scope       string    `json:"scope,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	ExpiresAt   time.Time `json:"expiresAt"`
+	ID            string    `json:"id"`
+	Actor         Actor     `json:"actor"`
+	Session       string    `json:"session,omitempty"`
+	Purpose       string    `json:"purpose"`
+	RequestedName string    `json:"requestedName"` // Untrusted agent-provided display name.
+	Summary       string    `json:"summary"`
+	TunnelID      string    `json:"tunnelId,omitempty"`
+	Action        string    `json:"action"`
+	Argv          []string  `json:"argv,omitempty"`
+	Fingerprint   string    `json:"fingerprint"`
+	Choices       []string  `json:"choices"`
+	Code          string    `json:"code,omitempty"`
+	Status        string    `json:"status"` // pending | approved | denied | timed_out | consumed
+	Scope         string    `json:"scope,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	ExpiresAt     time.Time `json:"expiresAt"`
 }
 type DecideApprovalParams struct {
 	ID       string `json:"id"`

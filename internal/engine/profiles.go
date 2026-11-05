@@ -141,6 +141,9 @@ func (s *Engine) SetProfileAutostart(id, tunnelID string, on bool) error {
 func (s *Engine) StartProfile(id string) error {
 	var failures []string
 	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
+		if strings.HasPrefix(tunnel.ID, "tmp-") {
+			continue
+		}
 		if err := s.Start(tunnel.ID); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", tunnel.Name, err))
 		}

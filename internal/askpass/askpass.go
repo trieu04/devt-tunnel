@@ -37,9 +37,9 @@ const (
 
 // Classify identifies an ssh prompt from its text.
 func Classify(prompt string) Kind {
-	p := strings.ToLower(prompt)
+	p := strings.ToLower(strings.TrimSpace(prompt))
 	switch {
-	case strings.Contains(p, "passphrase for"):
+	case strings.HasPrefix(p, "enter passphrase for key '") && strings.HasSuffix(p, "':") && len(p) > len("enter passphrase for key '':") && !strings.ContainsAny(p, "\r\n"):
 		return KindPassphrase
 	case strings.Contains(p, "continue connecting"), strings.Contains(p, "fingerprint"):
 		return KindHostKey

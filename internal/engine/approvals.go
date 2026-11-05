@@ -22,14 +22,17 @@ import (
 const ApprovalTimeout = 5 * time.Minute
 const MaxApprovalPurpose = 1024 // UTF-8 bytes, not a container for secrets.
 const maxApprovals = 1024
+const MaxPendingApprovalsPerSession = 16
+const ApprovalRetention = time.Minute
 
 // All queue access is serialized with configMu, including authorization and
 // consumption. A grant never schedules execution: the owning agent must retry.
 type approvalRequest struct {
-	view   api.Approval
-	key    string
-	action policy.Action
-	tunnel model.Tunnel // Prepared auto-port definition; never a client authority.
+	terminalAt time.Time
+	view       api.Approval
+	key        string
+	action     policy.Action
+	tunnel     model.Tunnel // Prepared auto-port definition; never a client authority.
 }
 
 func requestKey(value any) string {
@@ -49,9 +52,9 @@ func (s *Engine) agentSettings() settings.Settings {
 	return cfg
 }
 
-func (s *Engine) mutationEnabled(actor api.Actor) error {
+func (s *Engine) mutationEnabled(actor api.Actor, session string) error {
 	if actor.Kind == "mcp" && !s.agentSettings().AgentPolicy().Enabled {
-		return s.policyDenied(actor, "")
+		return s.denySession(actor, session, "", "")
 	}
 	return nil
 }
@@ -130,10 +133,15 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 	if err := validPurpose(purpose); err != nil {
 		return "", err
 	}
+	if action != policy.ActionOpenSaved && action != policy.ActionStartSaved {
+		if err := s.agentBuilt(actor, session, t); err != nil {
+			return "", err
+		}
+	}
 	cfg := s.agentSettings()
 	decision, reason := policy.Decide(actor, action, t, cfg)
 	if decision == policy.Deny {
-		return "", s.policyDenied(actor, t.ID)
+		return "", s.denySession(actor, session, t.ID, "")
 	}
 	spec, err := s.manager.BuildDraft(t)
 	if err != nil {
@@ -145,6 +153,9 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 		// merely t.Profiles[0] (the active profile may select another config).
 		aliasKnown = s.builtAliasExists(t.SSH.Host, spec)
 		if !aliasKnown {
+			if t.SSH.PassphraseSecret != "" && action != policy.ActionOpenSaved && action != policy.ActionStartSaved {
+				return "", s.denySession(actor, session, t.ID, "SSH passphrase secrets require a literal config alias")
+			}
 			cfg.Agent.AllowSSHHosts = nil
 			decision, reason = policy.Decide(actor, action, t, cfg)
 		}
@@ -168,10 +179,11 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 		case "pending":
 			return "", pendingApproval(r.view.ID)
 		case "denied", "timed_out":
-			return "", s.policyDenied(actor, t.ID)
+			return "", s.denySession(actor, session, t.ID, "")
 		case "approved":
 			if r.view.Scope != "session" {
 				r.view.Status = "consumed"
+				r.terminalAt = s.clock.Now()
 			}
 			return fingerprint, nil
 		}
@@ -180,8 +192,17 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 		return fingerprint, nil
 	}
 	// Bound memory and UI spam without dropping live grants/requests. Completed
-	// requests can be collected after the session disconnects; a full queue denies.
+	// requests expire after a short retention even for connected sessions.
 	s.pruneApprovalsLocked()
+	pending := 0
+	for _, r := range s.approvals {
+		if r.view.Session == session && r.view.Status == "pending" {
+			pending++
+		}
+	}
+	if pending >= MaxPendingApprovalsPerSession {
+		return "", s.denySession(actor, session, t.ID, "agent session has reached its limit of 16 pending approvals")
+	}
 	if len(s.approvals) >= maxApprovals {
 		return "", api.NewError(api.PolicyDenied, "approval queue is full")
 	}
@@ -193,7 +214,7 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 	snapshot := corestate.Runtime{Ephemeral: []model.Tunnel{t}}.Clone().Ephemeral[0]
 	r := &approvalRequest{key: key, action: action, tunnel: snapshot, view: api.Approval{
 		ID: randomID("ap_"), Actor: actor, Session: session, Purpose: purpose,
-		Summary: fmt.Sprintf("%s: %s (%s): %s", action, t.Name, t.ID, reason), TunnelID: t.ID, Action: string(action),
+		RequestedName: t.Name, Summary: approvalSummary(action, t, reason), TunnelID: t.ID, Action: string(action),
 		Argv: append([]string{spec.Tool}, spec.Args...), Fingerprint: fingerprint,
 		Choices: choices, Code: strings.ToUpper(randomID("")[:8]), Status: "pending", CreatedAt: now, ExpiresAt: now.Add(ApprovalTimeout),
 	}}
@@ -236,14 +257,16 @@ func (s *Engine) expireApprovalsLocked() error {
 			return err
 		}
 		r.view.Status = "timed_out"
+		r.terminalAt = r.view.ExpiresAt
 	}
+	s.pruneApprovalsLocked()
 	return nil
 }
 func (s *Engine) pruneApprovalsLocked() {
 	kept := s.approvalOrder[:0]
 	for _, id := range s.approvalOrder {
 		r := s.approvals[id]
-		if s.sessions[r.view.Session].Connections == 0 && r.view.Status != "pending" {
+		if (s.sessions[r.view.Session].Connections == 0 && r.view.Status != "pending") || (!r.terminalAt.IsZero() && !s.clock.Now().Before(r.terminalAt.Add(ApprovalRetention))) {
 			delete(s.approvals, id)
 		} else {
 			kept = append(kept, id)
@@ -370,10 +393,40 @@ func (s *Engine) DecideApproval(actor api.Actor, p api.DecideApprovalParams) (ap
 	r.view.Status = "approved"
 	if p.Decision == "deny" {
 		r.view.Status = "denied"
+		r.terminalAt = s.clock.Now()
 	}
 	return approvalView(r, actor), nil
 }
 
 func literalTunnelPattern(id string) string {
 	return strings.NewReplacer("\\", "\\\\", "*", "\\*", "?", "\\?", "[", "\\[").Replace(id)
+}
+
+// Summary contains only daemon-authored policy context and quoted execution
+// destinations/secret references. The agent's display name lives separately.
+func approvalSummary(action policy.Action, t model.Tunnel, reason string) string {
+	destination := ""
+	switch t.Type {
+	case model.TypeSSH:
+		if t.SSH != nil {
+			destination = t.SSH.Hostname
+			if t.SSH.Host != "" {
+				destination = t.SSH.Host
+			}
+		}
+	case model.TypeNgrok:
+		if t.Ngrok != nil {
+			destination = t.Ngrok.Addr
+			if t.Ngrok.Domain != "" {
+				destination += " (domain " + t.Ngrok.Domain + ")"
+			}
+		}
+	case model.TypeCloudflared:
+		if t.Cloudflared != nil {
+			destination = t.Cloudflared.Name + " " + t.Cloudflared.URL + " " + t.Cloudflared.Hostname
+		}
+	}
+	names := t.Secrets()
+	slices.Sort(names)
+	return fmt.Sprintf("%s: %s; destination %q; referenced secrets %q", action, reason, destination, names)
 }

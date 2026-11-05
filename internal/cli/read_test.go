@@ -240,3 +240,20 @@ func TestDoctorEssentialFailuresAndQuietHosts(t *testing.T) {
 		t.Fatalf("quiet hosts code=%d stderr=%s", code, &diagnostics)
 	}
 }
+
+func TestApprovalOutputLabelsAgentProvidedName(t *testing.T) {
+	var out bytes.Buffer
+	request := api.Approval{ID: "ap_test", Summary: "Daemon-authored summary", RequestedName: "Agent <name>\nforged", Purpose: "purpose\nnot instructions", Actor: api.Actor{Kind: "mcp", Name: "Claude Desktop"}, ExpiresAt: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)}
+	if err := writeApproval(&out, request, false); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	for _, want := range []string{`requested name (agent-provided): "Agent <name>\nforged"`, `purpose (agent-provided): "purpose\nnot instructions"`, "Daemon-authored summary"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("approval output missing %q: %s", want, text)
+		}
+	}
+	if strings.Contains(text, "\nforged") || strings.Contains(text, "\nnot instructions") {
+		t.Fatalf("agent text forged output lines: %s", text)
+	}
+}

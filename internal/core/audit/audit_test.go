@@ -454,7 +454,7 @@ func TestValidationRejectsFreeTextWithoutEchoingIt(t *testing.T) {
 	}
 	// This allowlist intentionally fails if Event gains an unreviewed field.
 	typ := reflect.TypeFor[Event]()
-	wantFields := []string{"Sequence", "Time", "Actor", "Action", "TunnelID", "LeaseID", "RequestID", "ApprovalID", "Fingerprint", "SecretNames", "Decision", "ApprovalScope", "Result"}
+	wantFields := []string{"Count", "Sequence", "Time", "Actor", "Action", "TunnelID", "LeaseID", "RequestID", "ApprovalID", "Fingerprint", "SecretNames", "Decision", "ApprovalScope", "Result"}
 	var fields []string
 	for i := 0; i < typ.NumField(); i++ {
 		fields = append(fields, typ.Field(i).Name)
@@ -543,5 +543,20 @@ func TestMissingDirectoryInvalidOptionsAndSymlinks(t *testing.T) {
 	}
 	if _, err := NewReader(dir).Read(0, Filter{}); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("reader followed audit symlink: %v", err)
+	}
+}
+
+func TestActorNamesAllowPrintableLabelsNotControlText(t *testing.T) {
+	for _, name := range []string{"Claude Desktop", "Local client (dev)", "a/b @ local", "日本語 client"} {
+		e := Event{Actor: Actor{Kind: ActorMCP, Name: name}, Action: PolicyDeny, Result: ResultDenied}
+		if err := e.Validate(); err != nil {
+			t.Errorf("printable actor %q rejected: %v", name, err)
+		}
+	}
+	for _, name := range []string{"", "   ", "bad\nname", "bad\tname", "bad\x1bname", "bad‮name", strings.Repeat("x", 257)} {
+		e := Event{Actor: Actor{Kind: ActorMCP, Name: name}, Action: PolicyDeny, Result: ResultDenied}
+		if err := e.Validate(); err == nil {
+			t.Errorf("invalid actor %q accepted", name)
+		}
 	}
 }

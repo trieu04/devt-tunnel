@@ -112,7 +112,7 @@ func writeApproval(out io.Writer, request api.Approval, showCode bool) error {
 	if len(request.Argv) > 0 {
 		argv = defineJoinArgs(request.Argv)
 	}
-	_, err := fmt.Fprintf(out, "%s: %s\n  argv: %s\n  actor: %s/%s\n  purpose: %s\n  scopes: %s\n  expires: %s\n", request.ID, request.Summary, argv, request.Actor.Kind, request.Actor.Name, request.Purpose, strings.Join(request.Choices, ", "), request.ExpiresAt.Format(time.RFC3339))
+	_, err := fmt.Fprintf(out, "%s: %s\n  argv: %s\n  actor: %s/%s\n  requested name (agent-provided): %q\n  purpose (agent-provided): %q\n  scopes: %s\n  expires: %s\n", request.ID, request.Summary, argv, request.Actor.Kind, request.Actor.Name, request.RequestedName, request.Purpose, strings.Join(request.Choices, ", "), request.ExpiresAt.Format(time.RFC3339))
 	if err == nil && showCode {
 		_, err = fmt.Fprintln(out, "  code: "+request.Code)
 	}

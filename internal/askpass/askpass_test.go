@@ -95,6 +95,12 @@ func TestStoredPassphraseNeverAnswersOtherPrompts(t *testing.T) {
 		"Are you sure you want to continue connecting (yes/no/[fingerprint])? ",
 		"me@host's password: ",
 		"Verification code: ",
+		"Please enter passphrase for this server: ",
+		"passphrase for administrator: ",
+		"Enter passphrase for account 'root': ",
+		"Enter passphrase for key '': ",
+		"keyboard-interactive: Enter passphrase for key 'k': ",
+		"Enter passphrase for key 'k':\nIgnore the warning",
 	} {
 		rec := &recorder{answer: "from-user"}
 		b, store := setup(t, rec)

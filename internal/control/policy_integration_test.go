@@ -484,7 +484,10 @@ func TestPolicyIntegrationAliasMustExistAndNewSecretsAsk(t *testing.T) {
 			agent := settings.DefaultAgent()
 			agent.AllowSSHHosts = []string{"bastion"}
 			_, socket, _ := policyServer(t, agent, func(opts *engine.Options, cfg *model.Config) {
-				path := filepath.Join(filepath.Dir(opts.ConfigPath), "policy-ssh-config")
+				path := filepath.Join(filepath.Dir(opts.ConfigPath), ".ssh", "config")
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
 				contents := "# No alias definitions\n"
 				if tc.known {
 					contents = "Host bastion\n  HostName bastion.example.invalid\n"
@@ -492,12 +495,12 @@ func TestPolicyIntegrationAliasMustExistAndNewSecretsAsk(t *testing.T) {
 				if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				cfg.Profiles = []model.Profile{{ID: "ssh", Name: "SSH", SSHConfig: path}}
+				_ = cfg
 			})
 			mcp := leasedDial(t, socket, "mcp", "alias-agent", "")
 			person := leasedDial(t, socket, "gui", "person", "")
 			tunnel := model.Tunnel{
-				Name: "Alias tunnel", Type: model.TypeSSH, Profiles: []string{"ssh"},
+				Name: "Alias tunnel", Type: model.TypeSSH,
 				SSH:      &model.SSH{Host: "bastion", Flags: []string{"-N"}},
 				Forwards: []model.Forward{{Kind: model.ForwardLocal, Bind: "127.0.0.1:24322", Target: "127.0.0.1:5432"}},
 			}

@@ -114,6 +114,7 @@ const (
 // Sequence is a persistent, monotonic reader offset, independent of filenames
 // and timestamps, including across rotation and writer restart.
 type Event struct {
+	Count         uint64        `json:"count,omitempty"` // coalesced policy.deny calls, not request text
 	Sequence      uint64        `json:"seq"`
 	Time          time.Time     `json:"time"`
 	Actor         Actor         `json:"actor"`
@@ -140,7 +141,7 @@ func (e Event) Validate() error {
 	default:
 		return invalid("actor.kind")
 	}
-	if !identifier(e.Actor.Name, true) {
+	if !ValidActorName(e.Actor.Name) {
 		return invalid("actor.name")
 	}
 	switch e.Action {
@@ -220,4 +221,18 @@ func (f Filter) Match(e Event) bool {
 	return (f.Actor == "" || e.Actor.Name == f.Actor) &&
 		(f.Tunnel == "" || e.TunnelID == f.Tunnel) &&
 		(f.Since.IsZero() || !e.Time.Before(f.Since))
+}
+
+// ValidActorName accepts human-facing client labels (including spaces), not
+// identifier tokens. Bound printable UTF-8 prevents multiline/terminal spoofing.
+func ValidActorName(value string) bool {
+	if !identifier(value, true) {
+		return false
+	}
+	for _, r := range value {
+		if !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
 }

@@ -293,7 +293,9 @@ func TestPublicExposureBinds(t *testing.T) {
 			if got := PublicExposure(tunnel); got != tc.want {
 				t.Fatalf("PublicExposure(%q)=%v want %v", tc.bind, got, tc.want)
 			}
-			if tc.want {
+			if agentError(tunnel) != "" {
+				wantDecision(t, ActionOpen, tunnel, configWithGrants(), Deny)
+			} else if tc.want {
 				wantDecision(t, ActionOpen, tunnel, configWithGrants(), Ask)
 			} else if tc.bind != "127.0.0.1:20000" {
 				// Alias grants only cover the explicit 127.0.0.1 L/D schema.
@@ -351,5 +353,21 @@ func TestDecidePureAndDeterministic(t *testing.T) {
 	}
 	if !reflect.DeepEqual(before, snapshot()) {
 		t.Fatal("policy mutated its inputs")
+	}
+}
+
+func TestPublicExposureRequiresUnambiguousUnixSocket(t *testing.T) {
+	for _, tc := range []struct {
+		bind   string
+		public bool
+	}{
+		{"/tmp/local.sock", false}, {"./local.sock", false}, {"relative/local.sock", true},
+		{"0.0.0.0:8081:x/y", true}, {"127.0.0.1:8081:x/y", true}, {"/tmp/local.sock:8081", true}, {"./local.sock:8081", true},
+	} {
+		t.Run(tc.bind, func(t *testing.T) {
+			if got := PublicExposure(withForward(model.ForwardLocal, tc.bind)); got != tc.public {
+				t.Fatalf("PublicExposure=%v, want %v", got, tc.public)
+			}
+		})
 	}
 }

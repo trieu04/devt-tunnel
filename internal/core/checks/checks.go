@@ -29,15 +29,16 @@ type Finding struct {
 }
 
 type Deps struct {
-	Resolve   func(tool string) (string, error)
-	Secrets   secret.Store
-	Shell     []string
-	Home      string
-	Dialect   command.Dialect
-	SSHConfig string
-	ProfileID string
-	Hosts     func(profileID string) ([]string, error)
-	Listening func(address string) bool
+	Resolve            func(tool string) (string, error)
+	SkipSecretPresence bool // MCP dry runs must never query the keychain.
+	Secrets            secret.Store
+	Shell              []string
+	Home               string
+	Dialect            command.Dialect
+	SSHConfig          string
+	ProfileID          string
+	Hosts              func(profileID string) ([]string, error)
+	Listening          func(address string) bool
 }
 
 // Run checks t against the rest of the config.
@@ -55,7 +56,9 @@ func Run(t model.Tunnel, cfg model.Config, d Deps) []Finding {
 	if t.Type == model.TypeSSH {
 		out = append(out, sshFindings(t, d)...)
 	}
-	out = append(out, secretFindings(t, d)...)
+	if !d.SkipSecretPresence {
+		out = append(out, secretFindings(t, d)...)
+	}
 	out = append(out, portFindings(t, cfg, d)...)
 	return out
 }

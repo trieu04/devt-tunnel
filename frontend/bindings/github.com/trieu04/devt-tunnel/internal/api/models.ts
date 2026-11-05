@@ -31,6 +31,11 @@ export interface Approval {
     "actor": Actor;
     "session"?: string;
     "purpose": string;
+
+    /**
+     * Untrusted agent-provided display name.
+     */
+    "requestedName": string;
     "summary": string;
     "tunnelId"?: string;
     "action": string;

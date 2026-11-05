@@ -266,7 +266,7 @@ func (s *Engine) OpenLeaseContext(ctx context.Context, actor api.Actor, session 
 	return s.openLeaseLocked(actor, session, p)
 }
 func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeaseParams) (api.Lease, error) {
-	if err := s.mutationEnabled(actor); err != nil {
+	if err := s.mutationEnabled(actor, session); err != nil {
 		return api.Lease{}, err
 	}
 	ttl, err := s.leaseTTL(actor, p.TTL)
@@ -278,6 +278,9 @@ func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeas
 	}
 	if !s.known(p.ID) {
 		return api.Lease{}, fmt.Errorf("unknown tunnel %q", p.ID)
+	}
+	if err := s.agentLeaseCapacity(actor, session); err != nil {
+		return api.Lease{}, err
 	}
 	var fingerprint string
 	if actor.Kind == "mcp" {
@@ -291,7 +294,7 @@ func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeas
 			}
 		}
 		if t.ID == "" {
-			return api.Lease{}, s.policyDenied(actor, p.ID)
+			return api.Lease{}, s.denySession(actor, session, p.ID, "")
 		}
 		fingerprint, err = s.authorize(actor, session, policy.ActionOpenSaved, t, p.Purpose, requestKey(struct{ Method, ID string }{"lease.open", p.ID}))
 		if err != nil {
@@ -337,7 +340,7 @@ func ownsLease(l api.Lease, actor api.Actor, session string) bool {
 }
 
 func (s *Engine) RenewLease(actor api.Actor, session string, p api.RenewLeaseParams) (api.Lease, error) {
-	if err := s.mutationEnabled(actor); err != nil {
+	if err := s.mutationEnabled(actor, session); err != nil {
 		return api.Lease{}, err
 	}
 	s.configMu.Lock()
@@ -366,16 +369,19 @@ func (s *Engine) RenewLease(actor api.Actor, session string, p api.RenewLeasePar
 		}
 		l.ExpiresAt = s.clock.Now().Add(ttl)
 		out := *l
+		if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseRenew, TunnelID: l.TunnelID, LeaseID: l.ID, Result: audit.ResultOK}); err != nil {
+			return api.Lease{}, err
+		}
 		if err := s.commitRuntime(st); err != nil {
 			return api.Lease{}, err
 		}
-		return out, s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseRenew, TunnelID: l.TunnelID, LeaseID: l.ID, Result: audit.ResultOK})
+		return out, nil
 	}
 	return api.Lease{}, fmt.Errorf("unknown lease %q", p.ID)
 }
 
 func (s *Engine) CloseLease(actor api.Actor, session, id string) error {
-	if err := s.mutationEnabled(actor); err != nil {
+	if err := s.mutationEnabled(actor, session); err != nil {
 		return err
 	}
 	s.configMu.Lock()
@@ -478,8 +484,8 @@ func (s *Engine) ConnectSession(actor api.Actor, session string) (string, error)
 	if actor.Kind != "cli" && actor.Kind != "gui" && actor.Kind != "mcp" {
 		return "", errors.New("client kind must be cli, gui or mcp")
 	}
-	if actor.Name == "" {
-		return "", errors.New("client name is required")
+	if !audit.ValidActorName(actor.Name) {
+		return "", errors.New("client name must be nonempty printable UTF-8 and at most 256 bytes")
 	}
 	if session == "" {
 		session = randomID("ss_")
@@ -537,6 +543,7 @@ func (s *Engine) DisconnectSession(actor api.Actor, session string) error {
 		return nil
 	}
 	delete(s.sessions, session)
+	auditErr := s.flushDenials(session, true)
 	st := s.runtimeSnapshot()
 	changed := false
 	until := s.clock.Now().Add(DisconnectGrace)
@@ -548,9 +555,9 @@ func (s *Engine) DisconnectSession(actor api.Actor, session string) error {
 		}
 	}
 	if changed {
-		return s.commitRuntime(st)
+		return errors.Join(auditErr, s.commitRuntime(st))
 	}
-	return nil
+	return auditErr
 }
 
 func (s *Engine) managerChanged() {
@@ -582,7 +589,8 @@ func (s *Engine) ExpireLeases() error {
 	if err := s.lifetimeError(); err != nil {
 		return err
 	}
-	auditErr := s.expireApprovalsLocked()
+	auditErr := errors.Join(s.expireApprovalsLocked(), s.flushDenials("", false))
+	s.pruneApprovalsLocked()
 	if s.orphanCount.Load() > 0 {
 		s.refreshOrphans()
 	}

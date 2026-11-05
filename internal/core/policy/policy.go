@@ -218,7 +218,7 @@ func PublicExposure(t model.Tunnel) bool {
 		if f.Kind != model.ForwardLocal && f.Kind != model.ForwardDynamic {
 			return true
 		}
-		if strings.Contains(f.Bind, "/") { // OpenSSH Unix socket bind.
+		if (strings.HasPrefix(f.Bind, "/") || strings.HasPrefix(f.Bind, "./")) && !strings.Contains(f.Bind, ":") { // OpenSSH Unix socket bind.
 			continue
 		}
 		if validPort(f.Bind) {

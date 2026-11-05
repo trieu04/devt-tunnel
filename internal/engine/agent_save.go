@@ -13,11 +13,9 @@ import (
 // Editing and starting saved definitions remain separate person-only operations.
 func (s *Engine) SaveTunnelFor(actor api.Actor, session string, p api.SaveTunnelParams) (string, error) {
 	if actor.Kind != "mcp" {
-		id, err := s.SaveTunnel(p.Tunnel, p.Start)
-		if err == nil {
-			err = s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelSave, TunnelID: id, Result: audit.ResultOK})
-		}
-		return id, err
+		return s.saveTunnel(p.Tunnel, p.Start, func(id string) error {
+			return s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelSave, TunnelID: id, Result: audit.ResultOK})
+		})
 	}
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
@@ -25,9 +23,12 @@ func (s *Engine) SaveTunnelFor(actor api.Actor, session string, p api.SaveTunnel
 		return "", err
 	}
 	if p.Tunnel.ID != "" || p.Start {
-		return "", s.policyDenied(actor, p.Tunnel.ID)
+		return "", s.denySession(actor, session, p.Tunnel.ID, "")
 	}
 	t := p.Tunnel
+	if err := s.agentBuilt(actor, session, t); err != nil {
+		return "", err
+	}
 	key := requestKey(struct {
 		Method string
 		Tunnel model.Tunnel
@@ -46,7 +47,10 @@ func (s *Engine) SaveTunnelFor(actor api.Actor, session string, p api.SaveTunnel
 			t.ID = model.NewID("saved-"+t.Name, taken)
 		}
 		cfg.Tunnels = append(cfg.Tunnels, t)
-		return s.merged(*cfg).Validate()
+		if err := s.merged(*cfg).Validate(); err != nil {
+			return err
+		}
+		return s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelSave, TunnelID: t.ID, Fingerprint: fingerprint, Result: audit.ResultOK})
 	})
 	if err != nil {
 		return "", err
@@ -54,5 +58,5 @@ func (s *Engine) SaveTunnelFor(actor api.Actor, session string, p api.SaveTunnel
 	if err := s.applyWhileAlive(func() { s.setManagerConfig(s.merged(cfg)) }); err != nil {
 		return "", err
 	}
-	return t.ID, s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelSave, TunnelID: t.ID, Fingerprint: fingerprint, Result: audit.ResultOK})
+	return t.ID, nil
 }

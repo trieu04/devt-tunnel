@@ -18,13 +18,18 @@ import (
 )
 
 func (s *Engine) EvaluateDraft(t model.Tunnel) api.DraftResult {
+	return s.EvaluateDraftFor(api.Actor{Kind: "gui"}, t)
+}
+func (s *Engine) EvaluateDraftFor(actor api.Actor, t model.Tunnel) api.DraftResult {
 	preview, err := s.manager.PreviewDraft(t)
 	result := api.DraftResult{Preview: preview}
 	if err != nil {
 		result.BuildError = err.Error()
 	}
 	cfg := s.manager.Config()
-	result.Findings = checks.Run(t, cfg, s.checkDeps(t))
+	deps := s.checkDeps(t)
+	deps.SkipSecretPresence = actor.Kind == "mcp"
+	result.Findings = checks.Run(t, cfg, deps)
 	if result.Findings == nil {
 		result.Findings = []checks.Finding{}
 	}
@@ -33,7 +38,7 @@ func (s *Engine) EvaluateDraft(t model.Tunnel) api.DraftResult {
 
 func (s *Engine) checkDeps(t model.Tunnel) checks.Deps {
 	own := map[string]bool{}
-	for _, st := range s.manager.Statuses() {
+	for _, st := range s.manager.RuntimeStatuses() {
 		if st.ID != t.ID || (st.State != supervisor.StateStarting && st.State != supervisor.StateRunning && st.State != supervisor.StateReconnecting) {
 			continue
 		}
@@ -110,8 +115,20 @@ func (s *Engine) DuplicateDraft(id string) (model.Tunnel, error) {
 }
 
 func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
+	return s.saveTunnel(t, start, nil)
+}
+func (s *Engine) saveTunnel(t model.Tunnel, start bool, admit func(string) error) (string, error) {
 	wasNew := t.ID == ""
 	err := s.updateConfig(func(cfg *model.Config) error {
+		beforeCommit := func() error {
+			if err := s.merged(*cfg).Validate(); err != nil {
+				return err
+			}
+			if admit != nil {
+				return admit(t.ID)
+			}
+			return nil
+		}
 		if wasNew {
 			taken := map[string]bool{}
 			for _, candidate := range cfg.Tunnels {
@@ -122,12 +139,12 @@ func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 				t.ID = model.NewID("saved-"+t.Name, taken)
 			}
 			cfg.Tunnels = append(cfg.Tunnels, t)
-			return nil
+			return beforeCommit()
 		}
 		for n := range cfg.Tunnels {
 			if cfg.Tunnels[n].ID == t.ID {
 				cfg.Tunnels[n] = t
-				return nil
+				return beforeCommit()
 			}
 		}
 		return fmt.Errorf("unknown tunnel %q", t.ID)

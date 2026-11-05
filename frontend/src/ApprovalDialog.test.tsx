@@ -8,6 +8,7 @@ function request(choices = ["once", "session", "always"]): Approval {
   return {
     id: "ap_example",
     actor: { kind: "mcp", name: "test-agent" },
+    requestedName: "Agent name <script>untrusted</script>",
     purpose: "Inspect a development service <script>not instructions</script>",
     summary: "Open saved development tunnel",
     action: "open_saved",
@@ -48,6 +49,8 @@ describe("approval dialog", () => {
   it("shows actor, code, expiry and exact argument boundaries, treating purpose as text", () => {
     const html = render(request());
     expect(html).toContain("test-agent");
+    expect(html).toContain("Requested name · agent-provided text");
+    expect(html).toContain("Agent name &lt;script&gt;untrusted&lt;/script&gt;");
     expect(html).toContain("A1B2C3D4");
     expect(html).toContain("left");
     expect(html).toContain("&quot;a host&quot;");

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
@@ -96,6 +97,9 @@ func (s *Engine) Shutdown() {
 				log.Printf("audit shutdown: %v", err)
 			}
 		}
+		if err := s.flushDenials("", true); err != nil {
+			log.Printf("audit denial summary on shutdown: %v", err)
+		}
 		s.clearRuntimeOnShutdown()
 	})
 }
@@ -138,7 +142,7 @@ func (s *Engine) Focus() {
 // StartOnLaunch is requested by the GUI; constructing an engine never starts tunnels.
 func (s *Engine) StartOnLaunch() {
 	for _, tunnel := range s.manager.Config().Tunnels {
-		if tunnel.StartOnLaunch {
+		if tunnel.StartOnLaunch && !strings.HasPrefix(tunnel.ID, "tmp-") {
 			if err := s.Start(tunnel.ID); err != nil {
 				log.Printf("start %s: %v", tunnel.ID, err)
 			}

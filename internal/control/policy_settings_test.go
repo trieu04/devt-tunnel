@@ -93,15 +93,18 @@ func TestPolicyAlwaysAliasAndPurposeBound(t *testing.T) {
 	var path string
 	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, cfg *model.Config) {
 		path = o.SettingsPath
-		sshPath := filepath.Join(filepath.Dir(o.ConfigPath), "alias-config")
+		sshPath := filepath.Join(filepath.Dir(o.ConfigPath), ".ssh", "config")
+		if err := os.MkdirAll(filepath.Dir(sshPath), 0700); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(sshPath, []byte("Host bastion\n HostName example.invalid\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		cfg.Profiles = []model.Profile{{ID: "p", Name: "Profile", SSHConfig: sshPath}}
+		_ = cfg
 	})
 	mcp := leasedDial(t, socket, "mcp", "alias-agent", "")
 	person := leasedDial(t, socket, "gui", "person", "")
-	tunnel := model.Tunnel{Name: "Alias", Type: model.TypeSSH, Profiles: []string{"p"}, SSH: &model.SSH{Host: "bastion", Flags: []string{"-N"}}, Forwards: []model.Forward{{Kind: model.ForwardDynamic, Bind: "127.0.0.1:31237"}}}
+	tunnel := model.Tunnel{Name: "Alias", Type: model.TypeSSH, SSH: &model.SSH{Host: "bastion", Flags: []string{"-N"}}, Forwards: []model.Forward{{Kind: model.ForwardDynamic, Bind: "127.0.0.1:31237"}}}
 	p := api.RunEphemeralParams{Tunnel: tunnel, Purpose: strings.Repeat("x", engine.MaxApprovalPurpose+1)}
 	if err := policyCall(t, mcp, "tunnel.runEphemeral", p, nil); err == nil {
 		t.Fatal("unbounded purpose accepted")

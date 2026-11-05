@@ -47,6 +47,8 @@ type Options struct {
 }
 
 type Engine struct {
+	denialMu            sync.Mutex
+	denials             map[string]*denialWindow
 	redactionMu         sync.Mutex
 	redactions          map[string]*tunnelRedaction
 	audit               *audit.Writer
@@ -385,8 +387,12 @@ func (s *Engine) Overview() api.Overview {
 	return o
 }
 
-func (s *Engine) views() []api.TunnelView {
-	statuses := s.manager.Statuses()
+func (s *Engine) views() []api.TunnelView { return s.TunnelViewsFor(api.Actor{Kind: "gui"}) }
+func (s *Engine) TunnelViewsFor(actor api.Actor) []api.TunnelView {
+	statuses := s.manager.RuntimeStatuses()
+	if actor.Kind != "mcp" {
+		statuses = s.manager.Statuses()
+	}
 	byID := map[string]supervisor.Status{}
 	for _, status := range statuses {
 		byID[status.ID] = status
@@ -398,18 +404,23 @@ func (s *Engine) views() []api.TunnelView {
 		if !ok {
 			continue
 		} // config changed between snapshots; the next event resyncs it
-		preview, err := s.manager.Preview(t.ID)
-		if err != nil {
-			preview = err.Error()
-		}
+		preview, toolPath := "", ""
 		missing := []string{}
-		for _, name := range t.Secrets() {
-			if _, err := secret.Has(s.secrets, name); err != nil {
-				missing = append(missing, name)
+		if actor.Kind != "mcp" {
+			var err error
+			preview, err = s.manager.Preview(t.ID)
+			if err != nil {
+				preview = err.Error()
 			}
+
+			for _, name := range t.Secrets() {
+				if _, err := secret.Has(s.secrets, name); err != nil {
+					missing = append(missing, name)
+				}
+			}
+			spec, _ := command.Build(t, command.Options{Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect()})
+			toolPath, _ = s.tools.Resolve(spec.Tool)
 		}
-		spec, _ := command.Build(t, command.Options{Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect()})
-		toolPath, _ := s.tools.Resolve(spec.Tool)
 		owner := s.owner(t.ID)
 		status.Owner = owner
 		views = append(views, api.TunnelView{Owner: owner, Tunnel: t, Status: status, Endpoints: endpoints(t, status), Preview: preview, MissingSecrets: missing, ToolPath: toolPath})
@@ -456,10 +467,15 @@ func (s *Engine) Logs(id string) []string {
 }
 
 func (s *Engine) Findings(id string) []checks.Finding {
+	return s.FindingsFor(api.Actor{Kind: "gui"}, id)
+}
+func (s *Engine) FindingsFor(actor api.Actor, id string) []checks.Finding {
 	cfg := s.manager.Config()
 	for _, t := range cfg.Tunnels {
 		if t.ID == id {
-			found := checks.Run(t, cfg, s.checkDeps(t))
+			deps := s.checkDeps(t)
+			deps.SkipSecretPresence = actor.Kind == "mcp"
+			found := checks.Run(t, cfg, deps)
 			if found == nil {
 				return []checks.Finding{}
 			}
