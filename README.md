@@ -11,16 +11,16 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Area | State |
 |---|---|
 | Tunnel model, safe persistence, command builder and paste import | Implemented and unit tested |
-| Supervisor: readiness, reconnect, wake recovery, stop and crash recovery | Implemented; real sleep/wake acceptance remains |
+| Supervisor: readiness, reconnect, wake recovery, stop and crash recovery | Implemented; native macOS sleep/wake acceptance passed |
 | SSH prompts through the askpass helper | Done |
-| Secrets and Vault metadata | Implemented; macOS reveal policy was corrected after native authentication failed, and rebuilt-app verification remains pending |
-| Main window, editor, quick launch, profiles, Vault and Settings | Implemented; frontend tests cover only filtering, shortcuts and quick-launch results, and native visual acceptance remains |
+| Secrets and Vault metadata | Implemented; native macOS authentication and reveal passed after correcting the device-owner policy |
+| Main window, editor, quick launch, profiles, Vault and Settings | Implemented; phase 17 native macOS acceptance passed, while Windows and Linux remain pending |
 | SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
 | Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
 | Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; the daemon now owns the engine; native-window regression check pending |
 | Typed readiness errors, endpoint lists and live port checks (phase 15) | Implemented and unit tested; editor/native-window warning acceptance pending |
 | Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
-| GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; native checks 1–9 passed on macOS, while check 10 awaits reveal retest after its authentication-policy fix |
+| GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; all native macOS checks passed |
 | Full `dtt` CLI and MCP | Planned for phases 18–20 |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.

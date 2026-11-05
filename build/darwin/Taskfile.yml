@@ -185,6 +185,7 @@ tasks:
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/dtt" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - cp "{{.BIN_DIR}}/devt-tunnel-askpass" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
@@ -194,6 +195,7 @@ tasks:
     internal: true
     cmds:
       - xattr -cr "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+      - codesign --force --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/dtt"
       - codesign --force --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/devt-tunnel-askpass"
       - codesign --force --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
       - codesign --verify --strict "{{.BIN_DIR}}/{{.APP_NAME}}.app"
@@ -216,6 +218,8 @@ tasks:
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/dtt" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/devt-tunnel-askpass" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
       - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"
       - xattr -cr "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"

@@ -2,11 +2,11 @@
 
 **Goal:** the desktop app holds no tunnel state. Every `host.Service` method reaches the daemon over the API, with no visible change for a user who only uses the app.
 
-**Implementation:** typed forwarding, connection cache/backoff, event resubscription, lifecycle forwarding and the host-to-engine boundary are implemented with automated tests; native checks 1–9 passed on macOS, while check 10 remains pending after fixing its reveal authentication policy.
+**Implementation:** typed forwarding, connection cache/backoff, event resubscription, lifecycle forwarding and the host-to-engine boundary are implemented with automated tests; all native macOS checks passed.
 
 **Automated evidence (2026-11-05, macOS arm64):** host race tests, full internal/command Go tests including daemon e2e, frontend tests/typecheck/build, binding regeneration without contract changes, dependency audits and the Wails native shell build passed. These commands alone do not count as native-window evidence; the separately recorded manual run below does.
 
-**Native evidence (2026-11-05, macOS arm64):** a person reported checks 1–9 passed. Check 10, covering Vault, missing-secret retry and reveal, stopped at reveal with `RuntimeError: device owner authentication is not configured`; the implementation incorrectly requested biometric-only policy value 1 instead of `LAPolicyDeviceOwnerAuthentication` value 2. The code is corrected, but check 10 is not accepted until the rebuilt app shows the OS authentication prompt and reveals the value.
+**Native evidence (2026-11-05, macOS arm64):** a person reported checks 1–9 passed. The first check 10 run stopped at reveal with `RuntimeError: device owner authentication is not configured`; the implementation incorrectly requested biometric-only policy value 1 instead of `LAPolicyDeviceOwnerAuthentication` value 2. After rebuilding with the corrected policy, the person reported check 10 passed, completing the native checklist.
 
 **Depends on:** 16. This is the riskiest phase: `go test` cannot show that the tray, dialogs and quit still work.
 
