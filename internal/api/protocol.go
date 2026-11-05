@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
@@ -40,10 +42,13 @@ const (
 	Incompatible       ErrorKind = "incompatible"
 	Timeout            ErrorKind = "timeout"
 	LeaseRevoked       ErrorKind = "lease_revoked"
+	PolicyDenied       ErrorKind = "policy_denied"
+	PendingApproval    ErrorKind = "pending_approval"
 )
 
 type ErrorData struct {
-	Kind ErrorKind `json:"kind"`
+	Kind       ErrorKind `json:"kind"`
+	ApprovalID string    `json:"approvalId,omitempty"`
 }
 type Error struct {
 	Code    int       `json:"code"`
@@ -93,8 +98,9 @@ type TunnelParams struct {
 	Tunnel model.Tunnel `json:"tunnel"`
 }
 type SaveTunnelParams struct {
-	Tunnel model.Tunnel `json:"tunnel"`
-	Start  bool         `json:"start"`
+	Purpose string       `json:"purpose,omitempty"`
+	Tunnel  model.Tunnel `json:"tunnel"`
+	Start   bool         `json:"start"`
 }
 type NewDraftParams struct {
 	Kind model.TunnelType `json:"kind"`
@@ -171,6 +177,7 @@ const (
 
 var Methods = []string{
 	DaemonHello, DaemonStatusMethod, DaemonShutdown, EventsSubscribe,
+	"approval.list", "approval.get", "approval.decide", "audit.read",
 	"tunnel.promote", "tunnel.runEphemeral", "lease.open", "lease.renew", "lease.close", "lease.list", "lease.revoke",
 	"tunnel.list", "tunnel.get", "tunnel.save", "tunnel.delete", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.waitReady", "tunnel.evaluateDraft", "tunnel.import", "tunnel.newDraft", "tunnel.duplicateDraft", "tunnel.setFavorite", "tunnel.findings", "tunnel.recordUsed", "tunnel.startOnLaunch",
 	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate", "profile.activate", "profile.setAutostart", "profile.start", "profile.stop",
@@ -178,25 +185,68 @@ var Methods = []string{
 	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
 }
 
-// TTL is a Go duration string (for example "30m"); empty selects 30 minutes.
+// TTL is a Go duration string (for example "30m"). Empty uses agent.default_ttl
+// for MCP callers and 30 minutes for person clients.
 type OpenLeaseParams struct {
-	ID  string `json:"id"`
-	TTL string `json:"ttl,omitempty"`
+	Purpose string `json:"purpose,omitempty"`
+	ID      string `json:"id"`
+	TTL     string `json:"ttl,omitempty"`
 }
 type RenewLeaseParams struct {
 	ID  string `json:"id"`
 	TTL string `json:"ttl,omitempty"`
 }
 type RunEphemeralParams struct {
-	Tunnel model.Tunnel `json:"tunnel"`
-	TTL    string       `json:"ttl,omitempty"`
+	Purpose string       `json:"purpose,omitempty"`
+	Tunnel  model.Tunnel `json:"tunnel"`
+	TTL     string       `json:"ttl,omitempty"`
 }
 type RunEphemeralResult struct {
 	ID    string `json:"id"`
 	Lease Lease  `json:"lease"`
 }
 type PromoteTunnelParams struct {
+	Purpose string `json:"purpose,omitempty"`
 	ID      string `json:"id"`
 	SavedID string `json:"savedId,omitempty"`
 	Name    string `json:"name,omitempty"`
+}
+
+// Approval is a fingerprint-bound request, not a deferred/background execution.
+// Code and Argv are omitted from MCP views. Only person clients can decide.
+type Approval struct {
+	ID          string    `json:"id"`
+	Actor       Actor     `json:"actor"`
+	Session     string    `json:"session,omitempty"`
+	Purpose     string    `json:"purpose"`
+	Summary     string    `json:"summary"`
+	TunnelID    string    `json:"tunnelId,omitempty"`
+	Action      string    `json:"action"`
+	Argv        []string  `json:"argv,omitempty"`
+	Fingerprint string    `json:"fingerprint"`
+	Choices     []string  `json:"choices"`
+	Code        string    `json:"code,omitempty"`
+	Status      string    `json:"status"` // pending | approved | denied | timed_out | consumed
+	Scope       string    `json:"scope,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+type DecideApprovalParams struct {
+	ID       string `json:"id"`
+	Decision string `json:"decision"` // approve | deny
+	Scope    string `json:"scope"`    // once | session | always
+	Code     string `json:"code"`
+}
+type AuditReadParams struct {
+	Limit  int       `json:"limit,omitempty"`
+	After  uint64    `json:"after"`
+	Actor  string    `json:"actor,omitempty"`
+	Tunnel string    `json:"tunnel,omitempty"`
+	Since  time.Time `json:"since,omitempty"`
+}
+type AuditReadResult struct {
+	Events []audit.Event `json:"events"`
+	Next   uint64        `json:"next"`
+	Oldest uint64        `json:"oldest"`
+	Lost   bool          `json:"lost"`
 }

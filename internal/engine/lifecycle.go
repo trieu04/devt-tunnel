@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
@@ -76,6 +77,23 @@ func (s *Engine) Shutdown() {
 		for _, orphan := range orphans {
 			if err := s.StopOrphan(orphan.PID); err != nil {
 				log.Printf("shutdown orphan %d: %v", orphan.PID, err)
+			}
+		}
+		snapshot := s.runtimeSnapshot()
+		for _, lease := range snapshot.Leases {
+			if !lease.Revoked {
+				if err := s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.LeaseRevoke, TunnelID: lease.TunnelID, LeaseID: lease.ID, Result: audit.ResultRevoked}); err != nil {
+					log.Printf("audit shutdown: %v", err)
+				}
+			}
+		}
+		for _, tunnel := range snapshot.Ephemeral {
+			result := audit.ResultOK
+			if s.hasOrphan(tunnel.ID) {
+				result = audit.ResultFailed
+			}
+			if err := s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.TunnelStopEphemeral, TunnelID: tunnel.ID, Result: result}); err != nil {
+				log.Printf("audit shutdown: %v", err)
 			}
 		}
 		s.clearRuntimeOnShutdown()

@@ -217,3 +217,21 @@ func TestConcurrentRedactorUse(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestWithSecretsPreservesHistoryAndIsImmutable(t *testing.T) {
+	old := New(map[string]string{"token": "old-secret-value", "z": "duplicate-value"})
+	next := old.WithSecrets(map[string]string{"token": "new-secret-value", "a": "duplicate-value"})
+	if got := next.Redact("old-secret-value new-secret-value duplicate-value"); got != "[secret:token] [secret:token] [secret:a]" {
+		t.Fatal(got)
+	}
+	if got := old.Redact("new-secret-value duplicate-value"); got != "new-secret-value [secret:z]" {
+		t.Fatalf("mutated old redactor: %s", got)
+	}
+	stream := next.NewStream()
+	if got := push(t, stream, 1, "old-secret-"); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := push(t, stream, 2, "value new-secret-value"); len(got) != 2 || got[0].Line != "[secret:token]" || got[1].Line != " [secret:token]" {
+		t.Fatal(got)
+	}
+}

@@ -129,6 +129,7 @@ type connection struct {
 	apiVersion int
 	client     api.ClientInfo
 	session    string
+	logs       *engine.MCPLogReader
 }
 
 func (c *connection) close() { c.cancel(); c.conn.Close() }
@@ -178,7 +179,7 @@ func (c *connection) serve() {
 		return
 	}
 	var hello api.HelloParams
-	if json.Unmarshal(req.Params, &hello) != nil || hello.APIVersion < 1 || hello.Client.Kind == "" || hello.Client.Name == "" {
+	if json.Unmarshal(req.Params, &hello) != nil || hello.APIVersion < 1 || !knownClientKind(hello.Client.Kind) || hello.Client.Name == "" {
 		c.respond(req.ID, nil, api.NewError(api.Incompatible, "invalid daemon.hello"))
 		return
 	}
@@ -191,6 +192,7 @@ func (c *connection) serve() {
 		return
 	}
 	c.session = session
+	c.logs = engine.NewMCPLogReader()
 	defer func() {
 		// OS work already in flight must not block server/connection shutdown.
 		go func() {
@@ -238,6 +240,14 @@ func (c *connection) serve() {
 }
 
 func (c *connection) enqueue(event api.Event) {
+	if c.client.Kind == "mcp" && event.Prompt != nil {
+		prompt := *event.Prompt
+		prompt.Prompt.Text = ""
+		event.Prompt = &prompt
+	}
+	if c.client.Kind == "mcp" && event.Type == api.EventApprovalAdded {
+		return
+	}
 	if !c.subscribed.Load() {
 		return
 	}
@@ -267,6 +277,10 @@ func (c *connection) execute(req api.Request) {
 		c.respond(req.ID, nil, api.NewError(api.Stopped, "daemon is shutting down"))
 		return
 	}
+	if c.client.Kind == "mcp" && !mcpMethodAllowed(req.Method) {
+		c.respond(req.ID, nil, s.engine.PolicyRefusal(api.Actor{Kind: c.client.Kind, Name: c.client.Name}))
+		return
+	}
 	if !c.compatible && req.Method != api.DaemonStatusMethod && req.Method != api.DaemonShutdown {
 		c.respond(req.ID, nil, api.NewError(api.Incompatible, fmt.Sprintf("client API %d is incompatible with daemon API %d; run dtt daemon restart (stops all tunnels)", c.apiVersion, api.Version)))
 		return
@@ -281,10 +295,6 @@ func (c *connection) execute(req api.Request) {
 		return
 	}
 	if req.Method == api.DaemonShutdown {
-		if c.client.Kind == "mcp" {
-			c.respond(req.ID, nil, api.NewError(api.Unknown, "MCP clients cannot shut down the daemon; release their own leases instead"))
-			return
-		}
 		var p api.ShutdownParams
 		if len(req.Params) > 0 && json.Unmarshal(req.Params, &p) != nil {
 			c.respond(req.ID, nil, api.NewError(api.Unknown, "invalid parameters"))
@@ -330,10 +340,6 @@ func (c *connection) execute(req api.Request) {
 		}()
 	}
 	s.operations.Unlock()
-	if c.client.Kind == "mcp" && personOnlyMethod(req.Method) {
-		c.respond(req.ID, nil, api.NewError(api.Unknown, "MCP clients must use their own leases; person-only operation"))
-		return
-	}
 	h, ok := s.handlers[req.Method]
 	if !ok {
 		c.respond(req.ID, nil, &api.Error{Code: -32601, Message: "method not found", Data: api.ErrorData{Kind: api.Unknown}})
@@ -373,11 +379,19 @@ func wireError(err error) *api.Error {
 
 type connectionKey struct{}
 
-func personOnlyMethod(method string) bool {
+// Only "mcp" is restricted, so an unrecognized kind such as "MCP" must not
+// slip past the allow-list as an unrestricted client.
+func knownClientKind(kind string) bool { return kind == "gui" || kind == "cli" || kind == "mcp" }
+
+// This deliberately constant allow-list is the MCP security boundary. Never
+// derive it from handler registration or readOnly (new methods default-deny).
+func mcpMethodAllowed(method string) bool {
 	switch method {
-	case "prompt.answer", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.startOnLaunch",
-		"profile.start", "profile.stop", "profile.activate", "lease.revoke", "orphan.stop",
-		"tunnel.delete", "tunnel.save", "tunnel.promote":
+	case api.DaemonHello, api.DaemonStatusMethod, api.EventsSubscribe,
+		"tunnel.list", "tunnel.get", "tunnel.waitReady", "tunnel.findings", "tunnel.evaluateDraft",
+		"ssh.hosts", "ssh.resolve", "tool.list", "prompt.list",
+		"lease.open", "lease.renew", "lease.close", "lease.list", "tunnel.runEphemeral",
+		"approval.list", "approval.get", "logs.read", "logs.since", "tunnel.promote", "tunnel.save":
 		return true
 	}
 	return false

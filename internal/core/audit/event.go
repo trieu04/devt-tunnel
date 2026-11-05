@@ -37,35 +37,39 @@ type Actor struct {
 type Action string
 
 const (
-	TunnelStart     Action = "tunnel.start"
-	TunnelStop      Action = "tunnel.stop"
-	TunnelRestart   Action = "tunnel.restart"
-	TunnelSave      Action = "tunnel.save"
-	TunnelDelete    Action = "tunnel.delete"
-	TunnelPromote   Action = "tunnel.promote"
-	TunnelImport    Action = "tunnel.import"
-	LeaseOpen       Action = "lease.open"
-	LeaseRenew      Action = "lease.renew"
-	LeaseClose      Action = "lease.close"
-	LeaseExpire     Action = "lease.expire"
-	LeaseRevoke     Action = "lease.revoke"
-	ApprovalRequest Action = "approval.request"
-	ApprovalDecide  Action = "approval.decide"
-	SecretSet       Action = "secret.set"
-	SecretRename    Action = "secret.rename"
-	SecretDelete    Action = "secret.delete"
-	SecretForget    Action = "secret.forget"
-	PromptAnswer    Action = "prompt.answer"
-	SettingsUpdate  Action = "settings.update"
-	PolicyUpdate    Action = "policy.update"
-	ProfileSave     Action = "profile.save"
-	ProfileDelete   Action = "profile.delete"
-	ProfileActivate Action = "profile.activate"
-	ProfileStart    Action = "profile.start"
-	ProfileStop     Action = "profile.stop"
-	ConfigReload    Action = "config.reload"
-	OrphanStop      Action = "orphan.stop"
-	DaemonShutdown  Action = "daemon.shutdown"
+	TunnelStart         Action = "tunnel.start"
+	TunnelStop          Action = "tunnel.stop"
+	TunnelRestart       Action = "tunnel.restart"
+	TunnelSave          Action = "tunnel.save"
+	TunnelDelete        Action = "tunnel.delete"
+	TunnelPromote       Action = "tunnel.promote"
+	TunnelImport        Action = "tunnel.import"
+	LeaseOpen           Action = "lease.open"
+	LeaseRenew          Action = "lease.renew"
+	LeaseClose          Action = "lease.close"
+	LeaseExpire         Action = "lease.expire"
+	LeaseRevoke         Action = "lease.revoke"
+	ApprovalRequest     Action = "approval.request"
+	ApprovalTimeout     Action = "approval.timeout"
+	PolicyDeny          Action = "policy.deny"
+	TunnelRunEphemeral  Action = "tunnel.runEphemeral"
+	TunnelStopEphemeral Action = "tunnel.stopEphemeral"
+	ApprovalDecide      Action = "approval.decide"
+	SecretSet           Action = "secret.set"
+	SecretRename        Action = "secret.rename"
+	SecretDelete        Action = "secret.delete"
+	SecretForget        Action = "secret.forget"
+	PromptAnswer        Action = "prompt.answer"
+	SettingsUpdate      Action = "settings.update"
+	PolicyUpdate        Action = "policy.update"
+	ProfileSave         Action = "profile.save"
+	ProfileDelete       Action = "profile.delete"
+	ProfileActivate     Action = "profile.activate"
+	ProfileStart        Action = "profile.start"
+	ProfileStop         Action = "profile.stop"
+	ConfigReload        Action = "config.reload"
+	OrphanStop          Action = "orphan.stop"
+	DaemonShutdown      Action = "daemon.shutdown"
 )
 
 type Decision string
@@ -142,7 +146,7 @@ func (e Event) Validate() error {
 	switch e.Action {
 	case TunnelStart, TunnelStop, TunnelRestart, TunnelSave, TunnelDelete, TunnelPromote,
 		TunnelImport, LeaseOpen, LeaseRenew, LeaseClose, LeaseExpire, LeaseRevoke,
-		ApprovalRequest, ApprovalDecide, SecretSet, SecretRename, SecretDelete, SecretForget,
+		ApprovalRequest, ApprovalTimeout, PolicyDeny, TunnelRunEphemeral, TunnelStopEphemeral, ApprovalDecide, SecretSet, SecretRename, SecretDelete, SecretForget,
 		PromptAnswer, SettingsUpdate, PolicyUpdate, ProfileSave, ProfileDelete,
 		ProfileActivate, ProfileStart, ProfileStop, ConfigReload, OrphanStop, DaemonShutdown:
 	default:

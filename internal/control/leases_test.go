@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -54,7 +55,23 @@ func leasedDial(t *testing.T, socket, kind, name, session string) *client.Client
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() {
+		// Drain live claims before removing temporary state. Production disconnect
+		// cleanup is intentionally asynchronous so a blocked store cannot hang exit.
+		if kind == "mcp" {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			var leases []api.Lease
+			if c.Call(ctx, "lease.list", api.Empty{}, &leases) == nil {
+				for _, l := range leases {
+					if !l.Revoked {
+						_ = c.Call(ctx, "lease.close", api.IDParams{ID: l.ID}, nil)
+					}
+				}
+			}
+		}
+		c.Close()
+	})
 	return c
 }
 func rpcLease(t *testing.T, c *client.Client) api.Lease {
@@ -62,7 +79,22 @@ func rpcLease(t *testing.T, c *client.Client) api.Lease {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var l api.Lease
-	if err := c.Call(ctx, "lease.open", api.OpenLeaseParams{ID: "t"}, &l); err != nil {
+	err := c.Call(ctx, "lease.open", api.OpenLeaseParams{ID: "t"}, &l)
+	var rpc *api.Error
+	if errors.As(err, &rpc) && rpc.Data.Kind == api.PendingApproval {
+		// This legacy fixture is a human-authored command tunnel: approve it before
+		// exercising the independent lease/reconnect semantics below.
+		person := leasedDial(t, os.Getenv("DTT_SOCKET"), "cli", "person", "")
+		var a api.Approval
+		if err := person.Call(ctx, "approval.get", api.IDParams{ID: rpc.Data.ApprovalID}, &a); err != nil {
+			t.Fatal(err)
+		}
+		if err := person.Call(ctx, "approval.decide", api.DecideApprovalParams{ID: a.ID, Decision: "approve", Scope: "once", Code: a.Code}, nil); err != nil {
+			t.Fatal(err)
+		}
+		err = c.Call(ctx, "lease.open", api.OpenLeaseParams{ID: "t"}, &l)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Call(ctx, "tunnel.waitReady", api.IDParams{ID: "t"}, nil); err != nil {

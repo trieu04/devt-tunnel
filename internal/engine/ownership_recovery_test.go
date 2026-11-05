@@ -40,7 +40,7 @@ func TestDaemonRestartRepairsPromotionIntent(t *testing.T) {
 		tunnel := commandTunnel()
 		tunnel.ID = "tmp-old"
 		now := o.Clock.Now()
-		st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{tunnel}, Leases: []model.Lease{{ID: "ls_old", TunnelID: tunnel.ID, Holder: api.Actor{Kind: "mcp", Name: "adapter"}, Session: "token", ExpiresAt: now.Add(time.Hour), CreatedAt: now, StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{tunnel.ID: {LeaseStarted: true}}, Promotions: map[string]string{tunnel.ID: "promoted"}}
+		st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{tunnel}, Leases: []model.Lease{{ID: "ls_old", TunnelID: tunnel.ID, Holder: api.Actor{Kind: "cli", Name: "adapter"}, Session: "token", ExpiresAt: now.Add(time.Hour), CreatedAt: now, StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{tunnel.ID: {LeaseStarted: true}}, Promotions: map[string]string{tunnel.ID: "promoted"}}
 		if err := (corestate.RuntimeStore{Path: filepath.Join(o.StateDir, "runtime.json")}).Save(st); err != nil {
 			t.Fatal(err)
 		}

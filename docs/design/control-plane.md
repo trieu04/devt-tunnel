@@ -138,7 +138,7 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 - **Authorization:** directory permissions and, on Unix, a peer UID check (`SO_PEERCRED`, `LOCAL_PEERCRED`). On Windows, the per-user ACL of the directory under `%LOCALAPPDATA%`. Whether that is enough on Windows needs testing in phase 12.
 - **Handshake:** `daemon.hello {apiVersion, client: {kind, name, version, session?}}` returns `{apiVersion, daemonVersion, pid, session}`. A client retains the opaque session token and supplies it on reconnect; omitting it creates a new session. Overlapping connections with the same token count as one lease holder, and grace begins only when the last closes. `kind` selects the policy and is recorded in the audit log. A client declares it itself, see [Threat model](#threat-model).
 - **Version recovery:** an incompatible hello still returns version metadata and permits only `daemon.status` and `daemon.shutdown`; normal client dialing rejects it. `Ensure` uses these recovery methods to implement the upgrade rule.
-- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, `timeout`, or `lease_revoked` (renewing/closing a person-revoked claim). Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged. `daemon.shutdown` accepts the handshake PID as `expectedPid` and rejects a different daemon identity, so a lost response cannot make a retry stop a replacement process.
+- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, `timeout`, `lease_revoked` (renewing/closing a person-revoked claim), `policy_denied`, or `pending_approval` (with `data.approvalId`). Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged. `daemon.shutdown` accepts the handshake PID as `expectedPid` and rejects a different daemon identity, so a lost response cannot make a retry stop a replacement process.
 - **Types:** one package, `internal/api`, used by every client. New fields are additive, and a breaking change raises `apiVersion`.
 
 | Group | Methods |
@@ -149,12 +149,13 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 | `profile.*` | `list` `save` `delete` `duplicate` `activate` `setAutostart` `start` `stop` |
 | `secret.*` | `list` `set` `delete` `rename` `forget`. Values go in only |
 | `prompt.*` | `list` `answer` |
-| `approval.*` | `list` `decide` |
+| `approval.*` | `list` `get` `decide` (person only) |
+| `audit.*` | `read` (person only; filters and sequence cursor) |
 | `ssh.*`, `tool.*`, `settings.*`, `orphan.*`, `config.*` | The rest of today's `host.Service`, excluding window and OS auth methods |
 | `events.subscribe` | Stream: `tunnels.changed`, `prompt.added`, `approval.added`, `lease.expiring` |
 | `daemon.*`, `system.*` | `hello` `status` `shutdown`; `wake` |
 
-Phase 16 also exposes `tunnel.waitReady`, `tunnel.findings`, `tunnel.recordUsed`, `tunnel.startOnLaunch`, `config.overview`, `system.focus` and the current engine settings methods. `internal/api.Methods` is the tested registry. `tunnel.promote`, leases and approvals arrive in phase 19. Each connection handles concurrent requests, cancels their contexts on disconnect, and drops slow event consumers; clients subscribe then resync from `config.overview` after reconnect.
+Phase 16 also exposes `tunnel.waitReady`, `tunnel.findings`, `tunnel.recordUsed`, `tunnel.startOnLaunch`, `config.overview`, `system.focus` and the current engine settings methods. `internal/api.Methods` is the tested registry. `tunnel.promote`, leases, approvals and audit reads are implemented in phase 19. Each connection handles concurrent requests, cancels their contexts on disconnect, and drops slow event consumers; clients subscribe then resync from `config.overview` after reconnect.
 
 The response for a tunnel adds fields to today's `TunnelView`:
 
@@ -218,18 +219,41 @@ public = "ask"                     # ask | deny
 | Create or edit `command` tunnels, `flags`, `options`, `extra_args`, `identity` | **Deny**; not in the schema | No |
 | Read, set, rename or delete secret values; answer prompts; edit policy; edit or delete saved tunnels; stop tunnels without a lease | **Deny**; no tool exists | No |
 
+The daemon uses a **constant allow-list**, independent of handler registration and read-only annotations. For a `kind: "mcp"` connection it permits only:
+
+- `daemon.hello` (initial handshake only), `daemon.status`, `events.subscribe`;
+- `tunnel.list`, `tunnel.get`, `tunnel.waitReady`, `tunnel.findings`, `tunnel.evaluateDraft`;
+- `ssh.hosts`, `ssh.resolve`, `tool.list`, `prompt.list`;
+- `lease.open`, `lease.renew`, `lease.close`, `lease.list`, `tunnel.runEphemeral`;
+- `approval.list`, `approval.get`, `logs.read`, `logs.since`;
+- `tunnel.save`, `tunnel.promote`, both behind approval.
+
+Every other method, including unknown/new methods, returns `policy_denied`. In particular, no `secret.*`, `settings.*`, `profile.*`, `orphan.*`, `config.*`, direct start/stop/restart, prompt answer, tool-path change or shutdown is available. `ssh.resolve` rejects option-shaped aliases. Lease renew/close/list are restricted to the caller's actor **and session**, and MCP `lease.open` resolves only daemon-loaded saved definitions, never a client-provided saved classification. `tunnel.save` can add a new definition only (`id` empty, `start` false); promote requires a live lease belonging to the caller. Editing an existing saved definition is refused.
+
+The engine reads `[agent]` from its loaded `settings.toml`. `enabled = false` denies every MCP mutation while keeping inspection/polling available. The configured `default_ttl` and `max_ttl` apply to MCP opens and renewals; person clients retain the ordinary lease defaults. `port_range` supplies the engine's allocator range unless an embedding caller explicitly overrides `Options.PortRange`. Alias allow-list grants require an actual alias in the selected SSH config; a manual hostname disguised as an alias cannot acquire an "always" grant. Public exposure is derived from the actual definition, not a request label.
+
 `checks.AgentSafe` also validates every agent-built tunnel on the daemon side, including a saved tunnel when it is opened. The MCP schema alone is not trusted. A saved `command` tunnel, or a saved tunnel whose options include `ProxyCommand`, `LocalCommand` or `PermitLocalCommand`, always needs approval even when its id matches `allow_tunnels`, because its command runs on open. Aliases in the user's own `ssh_config` are trusted, since the owner wrote them.
 
 ### Approvals
 
 A request that needs approval returns `pending_approval` at once. Long-blocking tool calls are not used because clients time them out.
 
-1. The daemon records the actor, the summary, the exact argv from `command.Build`, and `Spec.Fingerprint()`.
-2. The GUI shows a dialog, and `dtt approvals` lists it. If nobody decides within 5 minutes, it is denied.
-3. The choices are **once**, **for this session**, and **always**, which adds the tunnel id or alias to the allow-list. "Always" is not offered for public exposure.
-4. On approval, the daemon runs only the recorded fingerprint. A changed spec needs a new approval.
+1. The engine records the actor and owning session, client-provided `purpose` (valid UTF-8, at most 1024 bytes), summary, exact argv from `command.Build`, and `Spec.Fingerprint()`. Purposes are untrusted display text, not instructions, and must not contain secrets.
+2. Person clients inspect/decide through the approval RPCs; the GUI dialog and `dtt approvals` commands are later tasks. If nobody decides within 5 minutes, it is denied.
+3. The choices are **once**, **for this session**, and **always**, which adds the tunnel id or alias to the allow-list. "Always" is offered only when `policy.CanAlwaysAllow` permits it: safe saved IDs or safe loopback alias forwards, never public exposure, unsafe saved execution, manual hosts, new secret references, or save/promote. Saved IDs are escaped as literal allow-list patterns.
+4. The agent retries the original operation; approval never starts background execution. The daemon rebuilds the spec and matches the fingerprint, actor, session and operation target. A changed spec needs a new request. "Once" is consumed atomically during admission; "session" can be reused only with the same session token and matching operation/spec. A persistent grant does not bypass the fingerprint check on its first retry.
 
-`dtt approvals approve` requires an interactive terminal and a short code shown by the request. That only slows an agent with shell access; see the next section.
+The concrete RPC flow is nonblocking:
+
+```json
+{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"a person must approve this request; poll approval.get and retry","data":{"kind":"pending_approval","approvalId":"ap_<32 lowercase hex digits>"}}}
+```
+
+`approval.list {}` and `approval.get {id}` expose `id`, actor, purpose, summary, tunnel/action, fingerprint, `choices`, status, scope and creation/expiry timestamps. Status is `pending`, `approved`, `denied`, `timed_out` or `consumed`. MCP callers can see only their own actor/session's requests; they do **not** receive the code, argv or session token. Person clients additionally see exact argv and the code. `approval.decide {id, decision: "approve" | "deny", scope: "once" | "session" | "always", code}` is person-only; wrong codes, disallowed scopes and decisions on completed/expired requests return `policy_denied`. Approval codes are **eight uppercase hexadecimal characters**, generated with OS randomness. Request IDs use the `ap_` prefix plus 128 random bits. Requests time out at the exact five-minute boundary, using the engine's injectable clock; retrying a timed-out/denied request is denied rather than silently enqueueing it again.
+
+`approval.added` carries only `approvalId` and is delivered to subscribed person clients; MCP polls its own requests. MCP prompt listing/events expose the waiting prompt's kind and tunnel, not its free-form text. "Always" writes the literal saved ID or config alias atomically to `settings.toml` and updates the in-memory policy. Pending requests are memory-only; a daemon restart requires fresh approval. Auto-allocated ephemeral definitions retain their chosen ID/port while awaiting a retry. Fingerprint-bound MCP starts do not defer execution until missing secrets arrive and do not silently reallocate a port on forward failure: obtain the missing secret or retry a new definition for a new approval. Person-controlled auto-port retry behavior is unchanged.
+
+The planned `dtt approvals approve` command requires an interactive terminal and a short code shown by the request. That only slows an agent with shell access; see the next section.
 
 ## Threat model
 
@@ -247,7 +271,13 @@ A request that needs approval returns `pending_approval` at once. Long-blocking 
 
 ## Audit
 
-`audit.jsonl` in the state directory, rotating like the app log. One line per state-changing call and approval decision: time, actor, action, tunnel id, fingerprint, decision, result. No secret values and no log content. `dtt audit` reads it. It is a record, not tamper-proof.
+The daemon opens one `audit.Writer` in the state directory while holding its lifecycle lock. `audit.jsonl` is synced on append and rotates at 1 MiB, keeping the active file plus four archives. Events contain time, actor, action, tunnel/lease/approval IDs, fingerprint, decision, scope and result; never argv, purpose, summary, arbitrary errors, log content or secret values. The implemented ownership/policy flow records `lease.open`, `lease.renew`, `lease.close`, `lease.expire`, `lease.revoke` (including terminal ephemeral cleanup and daemon shutdown), `tunnel.runEphemeral`, `tunnel.stopEphemeral`, `tunnel.stop` (including person stops that revoke claims), `tunnel.save`, `tunnel.promote`, `approval.request`, `approval.decide`, `approval.timeout`, `policy.update` (persistent-grant admission) and `policy.deny`. Lease/ephemeral admission is audited before any spawn; an audit failure refuses that spawn. Audit errors are reported but never prevent lease-release/expiry or person-stop cleanup. Standalone embedded engines can omit the writer; the daemon cannot.
+
+`audit.read {after?, actor?, tunnel?, since?, limit?}` is person-only. `after` is an exclusive persistent sequence cursor; `actor` and `tunnel` are exact filters and `since` is an inclusive RFC3339 timestamp. The response is `{events, next, oldest, lost}`; `next` advances over filtered-out records too, and `lost` warns that rotation discarded history after a nonzero cursor. Responses default to 200 matching records (optional `limit` from 1 to 1000) and are additionally byte-bounded below the RPC message limit; when a page fills, `next` ends at its last returned record so subsequent matches are not skipped. This is the API for the later `dtt audit` command. The audit trail is an owner-readable operational record, not tamper-proof.
+
+For MCP `logs.read` and `logs.since`, the daemon fetches values **only for secret names referenced by that tunnel**. A keychain read failure fails the whole log read closed. Each connection keeps a per-tunnel `redact.Stream`, accepted source cursor, emitted cursor and bounded redacted history. Only emitted records advance the wire `sequence`; a buffered possible secret prefix cannot be skipped by a client-supplied cursor. A retention gap flushes conservatively and starts a new stream; an idle poll after 250 ms flushes an ambiguous suffix as a marker. Successful named-secret reads are observed before values reach process environments or askpass. The daemon retains the union of those values for the lifetime of each raw log ring, including former definition references, rotations, promotions and reconnects; no unrelated vault entries are fetched. Named-value changes rebuild connection-local redaction from retained input. Immutable matcher identity distinguishes a deleted/recreated tunnel ID from an older ring, preventing stale cursor/matcher reuse. Matcher and raw-log snapshots are taken together with secret delivery serialized, so a new value cannot enter the captured output before its matcher. Person clients keep raw logs. Status errors (which can contain process output) are replaced by a generic message for MCP inspection/wait calls, preventing a raw-log side channel.
+
+Redaction catches byte-exact known values, including values split across writes/records, and emits `[secret:name]`. Values shorter than four bytes, unknown/transformed values, input lost to retention and matches spanning an idle flush are not protected. An idle flush may over-redact innocent prefixes. Redacted output remains untrusted data.
 
 ## GUI changes
 

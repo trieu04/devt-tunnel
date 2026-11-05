@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/config"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
+	"github.com/trieu04/devt-tunnel/internal/core/policy"
 	corestate "github.com/trieu04/devt-tunnel/internal/core/state"
 )
 
@@ -28,26 +30,48 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err := s.validSession(actor, session); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	ttl, err := leaseTTL(p.TTL)
+	if err := s.mutationEnabled(actor); err != nil {
+		return api.RunEphemeralResult{}, err
+	}
+	ttl, err := s.leaseTTL(actor, p.TTL)
 	if err != nil {
 		return api.RunEphemeralResult{}, err
 	}
+	key := requestKey(struct {
+		Method string
+		Tunnel model.Tunnel
+	}{"tunnel.runEphemeral", p.Tunnel})
 	t := p.Tunnel
+	prepared := false
+	if actor.Kind == "mcp" {
+		if previous, ok := s.preparedEphemeral(actor, session, key); ok {
+			t = previous
+			prepared = true
+		}
+	}
 	// Copy the caller's mutable nested fields before port allocation.
 	copy := corestate.Runtime{Ephemeral: []model.Tunnel{t}}.Clone()
 	t = copy.Ephemeral[0]
 	if t.ID == "" {
 		t.ID = randomID("tmp-")
 	}
+	defer func() {
+		if !s.known(t.ID) {
+			delete(s.portHistory, t.ID)
+		}
+	}()
 	if !strings.HasPrefix(t.ID, "tmp-") {
 		return api.RunEphemeralResult{}, errors.New("ephemeral ids must start with tmp-")
 	}
 	if s.known(t.ID) {
 		return api.RunEphemeralResult{}, fmt.Errorf("duplicate tunnel id %q", t.ID)
 	}
-	auto, err := s.allocatePorts(&t, nil)
-	if err != nil {
-		return api.RunEphemeralResult{}, err
+	var auto []int
+	if !prepared {
+		auto, err = s.allocatePorts(&t, nil)
+		if err != nil {
+			return api.RunEphemeralResult{}, err
+		}
 	}
 	cfg := s.manager.Config()
 	cfg.Tunnels = append(append([]model.Tunnel(nil), cfg.Tunnels...), t)
@@ -55,6 +79,14 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 		return api.RunEphemeralResult{}, err
 	}
 	if _, err := s.manager.PreviewDraft(t); err != nil {
+		return api.RunEphemeralResult{}, err
+	}
+	action := policy.ActionCreate
+	if policy.PublicExposure(t) {
+		action = policy.ActionExpose
+	}
+	fingerprint, err := s.authorize(actor, session, action, t, p.Purpose, key)
+	if err != nil {
 		return api.RunEphemeralResult{}, err
 	}
 	st := s.runtimeSnapshot()
@@ -68,10 +100,18 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err := s.commitRuntime(st); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	if err := s.applyWhileAlive(func() { s.manager.SetConfig(cfg) }); err != nil {
+	if err := s.applyWhileAlive(func() { s.setManagerConfig(cfg) }); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	if err := s.manager.Start(t.ID); err != nil {
+	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelRunEphemeral, TunnelID: t.ID, LeaseID: l.ID, Fingerprint: fingerprint, Decision: audit.Allow, Result: audit.ResultOK}); err != nil {
+		_ = s.removeEphemeralLocked(t.ID)
+		return api.RunEphemeralResult{}, err
+	}
+	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseOpen, TunnelID: t.ID, LeaseID: l.ID, Fingerprint: fingerprint, Result: audit.ResultOK}); err != nil {
+		_ = s.removeEphemeralLocked(t.ID)
+		return api.RunEphemeralResult{}, err
+	}
+	if err := s.startAuthorized(t.ID, fingerprint); err != nil {
 		_ = s.removeEphemeralLocked(t.ID)
 		return api.RunEphemeralResult{}, err
 	}
@@ -96,8 +136,12 @@ func (s *Engine) removeEphemeralLocked(id string) error {
 	delete(s.portHistory, id)
 	delete(st.AutoPorts, id)
 	delete(st.Owners, id)
+	var revocations []audit.Event
 	for i := range st.Leases {
 		if st.Leases[i].TunnelID == id {
+			if !st.Leases[i].Revoked {
+				revocations = append(revocations, audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.LeaseRevoke, TunnelID: id, LeaseID: st.Leases[i].ID, Result: audit.ResultRevoked})
+			}
 			st.Leases[i].Revoked = true
 		}
 	}
@@ -105,12 +149,22 @@ func (s *Engine) removeEphemeralLocked(id string) error {
 		return err
 	}
 	cfg := s.savedConfig()
-	return s.applyWhileAlive(func() { s.manager.SetConfig(s.merged(cfg)) })
+	if err := s.applyWhileAlive(func() { s.setManagerConfig(s.merged(cfg)) }); err != nil {
+		return err
+	}
+	var auditErr error
+	for _, event := range revocations {
+		auditErr = errors.Join(auditErr, s.recordAudit(event))
+	}
+	return errors.Join(auditErr, s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.TunnelStopEphemeral, TunnelID: id, Result: audit.ResultOK}))
 }
 
 // PromoteTunnel renames the supervisor entry in place, preserving process,
 // fingerprint and leases. A write-ahead intent repairs crashes between files.
 func (s *Engine) PromoteTunnel(p api.PromoteTunnelParams) (string, error) {
+	return s.PromoteTunnelFor(api.Actor{Kind: "gui", Name: "person"}, "", p)
+}
+func (s *Engine) PromoteTunnelFor(actor api.Actor, session string, p api.PromoteTunnelParams) (string, error) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	if err := s.lifetimeError(); err != nil {
@@ -147,6 +201,25 @@ func (s *Engine) PromoteTunnel(p api.PromoteTunnelParams) (string, error) {
 	if taken[t.ID] {
 		return "", fmt.Errorf("duplicate tunnel id %q", t.ID)
 	}
+	if actor.Kind == "mcp" {
+		if err := s.validSession(actor, session); err != nil {
+			return "", err
+		}
+		owns := false
+		for _, l := range st.Leases {
+			if l.TunnelID == p.ID && ownsLease(l, actor, session) && leaseAlive(l, s.clock.Now()) {
+				owns = true
+			}
+		}
+		if !owns {
+			return "", s.policyDenied(actor, p.ID)
+		}
+	}
+	key := requestKey(struct{ Method, ID, SavedID, Name string }{"tunnel.promote", p.ID, t.ID, t.Name})
+	fingerprint, err := s.authorize(actor, session, policy.ActionSave, t, p.Purpose, key)
+	if err != nil {
+		return "", err
+	}
 	st.Promotions[p.ID] = t.ID
 	if err := s.commitRuntime(st); err != nil {
 		return "", err
@@ -162,7 +235,7 @@ func (s *Engine) PromoteTunnel(p api.PromoteTunnelParams) (string, error) {
 	}
 	// Publish the rename even if final runtime cleanup fails: the intent makes it
 	// recoverable, and the saved file is now committed. No process is restarted.
-	if err := s.applyWhileAlive(func() { s.manager.Rename(p.ID, t.ID) }); err != nil {
+	if err := s.applyWhileAlive(func() { s.renameRedaction(p.ID, t.ID); s.manager.Rename(p.ID, t.ID) }); err != nil {
 		return t.ID, err
 	}
 	// Recovery records must be renamed before clearing the write-ahead intent.
@@ -180,11 +253,14 @@ func (s *Engine) PromoteTunnel(p api.PromoteTunnelParams) (string, error) {
 		s.runtime = st
 		s.runtimeMu.Unlock()
 	}
-	if err := s.applyWhileAlive(func() { s.manager.SetConfig(s.merged(cfg)) }); err != nil {
+	if err := s.applyWhileAlive(func() { s.setManagerConfig(s.merged(cfg)) }); err != nil {
 		return t.ID, err
 	}
 	if recordErr != nil {
 		return t.ID, recordErr
+	}
+	if runtimeErr == nil {
+		runtimeErr = s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelPromote, TunnelID: t.ID, Fingerprint: fingerprint, Result: audit.ResultOK})
 	}
 	return t.ID, runtimeErr
 }
@@ -460,7 +536,7 @@ func (s *Engine) retryForward(ctx context.Context, t model.Tunnel, failure error
 		return t, false, err
 	}
 	cfg := s.savedConfig()
-	if err := s.applyWhileAlive(func() { s.manager.SetConfig(s.merged(cfg)) }); err != nil {
+	if err := s.applyWhileAlive(func() { s.setManagerConfig(s.merged(cfg)) }); err != nil {
 		return t, false, err
 	}
 	return t, true, nil

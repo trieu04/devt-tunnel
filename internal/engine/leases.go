@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
+	"github.com/trieu04/devt-tunnel/internal/core/policy"
 	corestate "github.com/trieu04/devt-tunnel/internal/core/state"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
@@ -53,6 +55,25 @@ func leaseTTL(value string) (time.Duration, error) {
 		return 0, fmt.Errorf("TTL must be positive and at most %s", MaxLeaseTTL)
 	}
 	return d, nil
+}
+
+func (s *Engine) leaseTTL(actor api.Actor, value string) (time.Duration, error) {
+	if actor.Kind != "mcp" {
+		return leaseTTL(value)
+	}
+	a := s.agentSettings().AgentPolicy()
+	if err := a.Validate(); err != nil {
+		return 0, api.NewError(api.PolicyDenied, "invalid agent policy")
+	}
+	if value == "" {
+		value = a.DefaultTTL
+	}
+	ttl, err := time.ParseDuration(value)
+	max, _ := time.ParseDuration(a.MaxTTL)
+	if err != nil || ttl <= 0 || ttl > max {
+		return 0, fmt.Errorf("TTL must be positive and at most %s", max)
+	}
+	return ttl, nil
 }
 
 func (s *Engine) runtimeSnapshot() corestate.Runtime {
@@ -175,6 +196,12 @@ func (s *Engine) personStart(id string, restart bool) error {
 
 // StopTunnel is the person-only stop: persist revocation before stopping children.
 func (s *Engine) StopTunnel(id string) error {
+	return s.StopTunnelFor(api.Actor{Kind: "gui", Name: "person"}, id)
+}
+func (s *Engine) StopTunnelFor(actor api.Actor, id string) error {
+	if actor.Kind == "mcp" {
+		return s.policyDenied(actor, id)
+	}
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	if err := s.lifetimeError(); err != nil {
@@ -183,9 +210,13 @@ func (s *Engine) StopTunnel(id string) error {
 	if !s.known(id) {
 		return fmt.Errorf("unknown tunnel %q", id)
 	}
+	var auditErr error
 	st := s.runtimeSnapshot()
 	for i := range st.Leases {
 		if st.Leases[i].TunnelID == id {
+			if !st.Leases[i].Revoked {
+				auditErr = errors.Join(auditErr, s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseRevoke, TunnelID: id, LeaseID: st.Leases[i].ID, Result: audit.ResultRevoked}))
+			}
 			st.Leases[i].Revoked = true
 		}
 	}
@@ -201,7 +232,7 @@ func (s *Engine) StopTunnel(id string) error {
 	if err := s.commitRuntime(st); err != nil {
 		return err
 	}
-	return s.removeEphemeralLocked(id)
+	return errors.Join(auditErr, s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelStop, TunnelID: id, Result: audit.ResultOK}), s.removeEphemeralLocked(id))
 }
 
 func (s *Engine) stopProcesses(id string) error {
@@ -231,7 +262,10 @@ func (s *Engine) OpenLeaseContext(ctx context.Context, actor api.Actor, session 
 	return s.openLeaseLocked(actor, session, p)
 }
 func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeaseParams) (api.Lease, error) {
-	ttl, err := leaseTTL(p.TTL)
+	if err := s.mutationEnabled(actor); err != nil {
+		return api.Lease{}, err
+	}
+	ttl, err := s.leaseTTL(actor, p.TTL)
 	if err != nil {
 		return api.Lease{}, err
 	}
@@ -240,6 +274,25 @@ func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeas
 	}
 	if !s.known(p.ID) {
 		return api.Lease{}, fmt.Errorf("unknown tunnel %q", p.ID)
+	}
+	var fingerprint string
+	if actor.Kind == "mcp" {
+		var t model.Tunnel
+		// Opening an ephemeral ID is not an OpenSaved allow-list grant. Agents
+		// acquire it only when it belongs to this session.
+		for _, candidate := range s.savedConfig().Tunnels {
+			if candidate.ID == p.ID {
+				t = candidate
+				break
+			}
+		}
+		if t.ID == "" {
+			return api.Lease{}, s.policyDenied(actor, p.ID)
+		}
+		fingerprint, err = s.authorize(actor, session, policy.ActionOpenSaved, t, p.Purpose, requestKey(struct{ Method, ID string }{"lease.open", p.ID}))
+		if err != nil {
+			return api.Lease{}, err
+		}
 	}
 	st := s.runtimeSnapshot()
 	started := !s.running(p.ID)
@@ -251,8 +304,12 @@ func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeas
 	if err := s.commitRuntime(st); err != nil {
 		return api.Lease{}, err
 	}
+	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseOpen, TunnelID: p.ID, LeaseID: l.ID, Fingerprint: fingerprint, Decision: audit.Allow, Result: audit.ResultOK}); err != nil {
+		_ = s.closeLeaseLocked(actor, session, l.ID, false)
+		return api.Lease{}, err
+	}
 	if started {
-		if err := s.manager.Start(p.ID); err != nil {
+		if err := s.startAuthorized(p.ID, fingerprint); err != nil {
 			_ = s.closeLeaseLocked(actor, session, l.ID, false)
 			return api.Lease{}, err
 		}
@@ -276,12 +333,15 @@ func ownsLease(l api.Lease, actor api.Actor, session string) bool {
 }
 
 func (s *Engine) RenewLease(actor api.Actor, session string, p api.RenewLeaseParams) (api.Lease, error) {
+	if err := s.mutationEnabled(actor); err != nil {
+		return api.Lease{}, err
+	}
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	if err := s.validSession(actor, session); err != nil {
 		return api.Lease{}, err
 	}
-	ttl, err := leaseTTL(p.TTL)
+	ttl, err := s.leaseTTL(actor, p.TTL)
 	if err != nil {
 		return api.Lease{}, err
 	}
@@ -302,12 +362,18 @@ func (s *Engine) RenewLease(actor api.Actor, session string, p api.RenewLeasePar
 		}
 		l.ExpiresAt = s.clock.Now().Add(ttl)
 		out := *l
-		return out, s.commitRuntime(st)
+		if err := s.commitRuntime(st); err != nil {
+			return api.Lease{}, err
+		}
+		return out, s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseRenew, TunnelID: l.TunnelID, LeaseID: l.ID, Result: audit.ResultOK})
 	}
 	return api.Lease{}, fmt.Errorf("unknown lease %q", p.ID)
 }
 
 func (s *Engine) CloseLease(actor api.Actor, session, id string) error {
+	if err := s.mutationEnabled(actor); err != nil {
+		return err
+	}
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	if err := s.validSession(actor, session); err != nil {
@@ -316,9 +382,15 @@ func (s *Engine) CloseLease(actor api.Actor, session, id string) error {
 	return s.closeLeaseLocked(actor, session, id, false)
 }
 func (s *Engine) RevokeLease(id string) error {
+	return s.RevokeLeaseFor(api.Actor{Kind: "gui", Name: "person"}, id)
+}
+func (s *Engine) RevokeLeaseFor(actor api.Actor, id string) error {
+	if actor.Kind == "mcp" {
+		return s.policyDenied(actor, "")
+	}
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
-	return s.closeLeaseLocked(api.Actor{}, "", id, true)
+	return s.closeLeaseLocked(actor, "", id, true)
 }
 func (s *Engine) closeLeaseLocked(actor api.Actor, session, id string, revoke bool) error {
 	st := s.runtimeSnapshot()
@@ -347,7 +419,13 @@ func (s *Engine) closeLeaseLocked(actor api.Actor, session, id string, revoke bo
 	if err := s.commitRuntime(st); err != nil {
 		return err
 	}
-	return s.stopUnownedLocked(tunnelID)
+	auditAction, result := audit.LeaseClose, audit.ResultOK
+	if revoke {
+		auditAction, result = audit.LeaseRevoke, audit.ResultRevoked
+	}
+	auditErr := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: auditAction, TunnelID: tunnelID, LeaseID: id, Result: result})
+	// An audit failure must not leave lease-owned exposure running after release.
+	return errors.Join(auditErr, s.stopUnownedLocked(tunnelID))
 }
 
 func (s *Engine) ListLeases(actor api.Actor, session string, ownOnly bool) []api.Lease {
@@ -500,6 +578,7 @@ func (s *Engine) ExpireLeases() error {
 	if err := s.lifetimeError(); err != nil {
 		return err
 	}
+	auditErr := s.expireApprovalsLocked()
 	if s.orphanCount.Load() > 0 {
 		s.refreshOrphans()
 	}
@@ -510,6 +589,9 @@ func (s *Engine) ExpireLeases() error {
 	for _, l := range st.Leases {
 		// Retain revocation tombstones until their original TTL for the next call.
 		if !s.clock.Now().Before(l.ExpiresAt) || (!l.Revoked && !leaseAlive(l, s.clock.Now())) {
+			if !l.Revoked {
+				auditErr = errors.Join(auditErr, s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.LeaseExpire, TunnelID: l.TunnelID, LeaseID: l.ID, Result: audit.ResultExpired}))
+			}
 			affected[l.TunnelID] = true
 			changed = true
 		} else {
@@ -530,18 +612,14 @@ func (s *Engine) ExpireLeases() error {
 		}
 	}
 	for id := range affected {
-		if err := s.stopUnownedLocked(id); err != nil {
-			return err
-		}
+		auditErr = errors.Join(auditErr, s.stopUnownedLocked(id))
 	}
 	for _, t := range s.runtimeSnapshot().Ephemeral {
 		if !s.running(t.ID) && !s.manager.WaitingForSecret(t.ID) {
-			if err := s.removeEphemeralLocked(t.ID); err != nil {
-				return err
-			}
+			auditErr = errors.Join(auditErr, s.removeEphemeralLocked(t.ID))
 		}
 	}
-	return nil
+	return auditErr
 }
 
 func (s *Engine) clearRuntimeOnShutdown() {
@@ -576,4 +654,11 @@ func (s *Engine) clearRuntimeOnShutdown() {
 	s.runtimeMu.Lock()
 	s.runtime = st
 	s.runtimeMu.Unlock()
+}
+
+func (s *Engine) startAuthorized(id, fingerprint string) error {
+	if fingerprint != "" {
+		return s.manager.StartFingerprint(id, fingerprint)
+	}
+	return s.manager.Start(id)
 }

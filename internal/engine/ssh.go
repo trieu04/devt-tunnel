@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/core/command"
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/sshconfig"
 	"github.com/trieu04/devt-tunnel/internal/platform"
@@ -120,4 +121,24 @@ func (s *Engine) SetToolPath(tool, path string) ([]api.ToolInfo, error) {
 	}
 	s.notify()
 	return s.Tools(), nil
+}
+
+// Safe SSH definitions put a profile's -F first; AgentSafe rejects agent-
+// supplied -F options. Inspect the built argv so active-profile selection and
+// fallback through multiple memberships exactly match actual execution.
+func (s *Engine) builtAliasExists(alias string, spec command.Spec) bool {
+	path := filepath.Join(platform.Home(), ".ssh", "config")
+	if len(spec.Args) >= 2 && spec.Args[0] == "-F" {
+		path = spec.Args[1]
+	}
+	hosts, _, err := sshconfig.Scan(path, osFS{})
+	if err != nil {
+		return false
+	}
+	for _, host := range hosts {
+		if host.Alias == alias {
+			return true
+		}
+	}
+	return false
 }

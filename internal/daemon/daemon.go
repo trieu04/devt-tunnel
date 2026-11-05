@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/control"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/engine"
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
@@ -77,6 +78,16 @@ func Run(ctx context.Context, opts Options) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	auditOptions := audit.Options{}
+	if opts.Engine.Clock != nil {
+		auditOptions.Clock = opts.Engine.Clock.Now
+	}
+	trail, err := audit.Open(opts.Engine.StateDir, auditOptions)
+	if err != nil {
+		return err
+	}
+	defer trail.Close()
+	opts.Engine.Audit = trail
 	opts.Engine.Version = opts.Version
 	e, err := engine.New(opts.Engine)
 	if err != nil {

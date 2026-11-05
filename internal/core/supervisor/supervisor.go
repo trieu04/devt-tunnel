@@ -283,8 +283,22 @@ func (m *Manager) PreviewDraft(t model.Tunnel) (string, error) {
 	return spec.Preview(m.deps.Dialect), nil
 }
 
+// BuildDraft uses exactly the command options used for execution.
+func (m *Manager) BuildDraft(t model.Tunnel) (command.Spec, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return command.Build(t, m.optionsLocked(t))
+}
+
+// StartFingerprint refuses deferred secret starts and port-changing retries.
+// An approval must never silently authorize a different execution spec.
+func (m *Manager) StartFingerprint(id, fingerprint string) error {
+	return m.start(id, fingerprint)
+}
+
 // Start launches a tunnel. Starting an active tunnel does nothing.
-func (m *Manager) Start(id string) error {
+func (m *Manager) Start(id string) error { return m.start(id, "") }
+func (m *Manager) start(id, fingerprint string) error {
 	m.mu.Lock()
 	t, ok := m.findLocked(id)
 	m.mu.Unlock()
@@ -303,6 +317,9 @@ func (m *Manager) Start(id string) error {
 		return nil
 	}
 	if missing != "" {
+		if fingerprint != "" {
+			return ErrNeedsSecret
+		}
 		m.pendingStart[id] = true
 		e.status = Status{ID: id, State: StateStopped}
 		go m.changed()
@@ -314,6 +331,9 @@ func (m *Manager) Start(id string) error {
 		go m.changed()
 		return err
 	}
+	if fingerprint != "" && spec.Fingerprint() != fingerprint {
+		return errors.New("approved command fingerprint changed")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.done = make(chan struct{})
@@ -321,7 +341,7 @@ func (m *Manager) Start(id string) error {
 	e.fingerprint = spec.Fingerprint()
 	delete(m.pendingStart, id)
 	e.status = Status{ID: id, State: StateStarting}
-	go m.loop(ctx, t, spec, e)
+	go m.loop(ctx, t, spec, e, fingerprint != "")
 	go m.changed()
 	return nil
 }
@@ -571,7 +591,7 @@ func (m *Manager) update(e *entry, f func(*Status)) {
 }
 
 // loop runs one tunnel from Start until it is stopped or gives up.
-func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e *entry) {
+func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e *entry, fingerprintBound bool) {
 	defer func() {
 		m.mu.Lock()
 		e.cancel = nil
@@ -598,7 +618,7 @@ func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e
 			m.update(e, func(s *Status) { *s = Status{ID: t.ID, State: state, Error: err.Error()} })
 			return
 		}
-		if !wasRunning && forwardRetries < 3 && m.deps.RetryForward != nil && forwardFailure(err) {
+		if !fingerprintBound && !wasRunning && forwardRetries < 3 && m.deps.RetryForward != nil && forwardFailure(err) {
 			m.mu.Lock()
 			t.ID = e.id
 			m.mu.Unlock()

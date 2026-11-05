@@ -38,6 +38,13 @@ func (s *Engine) ActivateProfile(id string) error {
 			_ = s.Start(tunnelID)
 		}
 	}
+	// Serialize the selected SSH configuration with fingerprint authorization
+	// and StartFingerprint; profile changes must not slip between the two builds.
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	if err := s.lifetimeError(); err != nil {
+		return err
+	}
 	if err := s.stateStore.Update(func(st *state.State) { st.ActiveProfile = id }); err != nil {
 		return err
 	}

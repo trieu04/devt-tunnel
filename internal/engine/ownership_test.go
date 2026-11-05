@@ -83,9 +83,12 @@ func savedCommand() model.Config {
 	t.ID = "service"
 	return model.Config{Tunnels: []model.Tunnel{t}}
 }
+
+// session uses a person actor so lifecycle and allocation tests exercise ownership,
+// connection grace, and port retries independently of MCP approval policy.
 func session(t *testing.T, e *Engine, name string) (api.Actor, string) {
 	t.Helper()
-	a := api.Actor{Kind: "mcp", Name: name}
+	a := api.Actor{Kind: "cli", Name: name}
 	s, err := e.ConnectSession(a, "")
 	if err != nil {
 		t.Fatal(err)
@@ -305,7 +308,7 @@ func TestLeasesDaemonRestartRecovery(t *testing.T) {
 				if tc.expired {
 					expiry = now.Add(-time.Second)
 				}
-				st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Leases: []model.Lease{{ID: "ls_old", TunnelID: "service", Holder: api.Actor{Kind: "mcp", Name: "adapter"}, Session: "old-session", CreatedAt: now.Add(-time.Hour), ExpiresAt: expiry, StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{"service": {Pinned: tc.pinned, LeaseStarted: true}}}
+				st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Leases: []model.Lease{{ID: "ls_old", TunnelID: "service", Holder: api.Actor{Kind: "cli", Name: "adapter"}, Session: "old-session", CreatedAt: now.Add(-time.Hour), ExpiresAt: expiry, StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{"service": {Pinned: tc.pinned, LeaseStarted: true}}}
 				if err := (corestate.RuntimeStore{Path: filepath.Join(opts.StateDir, "runtime.json")}).Save(st); err != nil {
 					t.Fatal(err)
 				}
@@ -334,7 +337,7 @@ func TestLeasesDaemonRestartRecovery(t *testing.T) {
 			default:
 			}
 			if !tc.expired && tc.alive {
-				if _, err := e.ConnectSession(api.Actor{Kind: "mcp", Name: "adapter"}, "old-session"); err != nil {
+				if _, err := e.ConnectSession(api.Actor{Kind: "cli", Name: "adapter"}, "old-session"); err != nil {
 					t.Fatal(err)
 				}
 				c.Advance(time.Hour)

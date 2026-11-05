@@ -16,6 +16,7 @@ import (
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/askpass"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
 	"github.com/trieu04/devt-tunnel/internal/core/command"
 	"github.com/trieu04/devt-tunnel/internal/core/config"
@@ -30,6 +31,7 @@ import (
 const notifyDelay = 50 * time.Millisecond
 
 type Options struct {
+	Audit           *audit.Writer // Owned and closed by the daemon under its lifecycle lock.
 	Version         string
 	ConfigPath      string
 	SettingsPath    string
@@ -45,6 +47,12 @@ type Options struct {
 }
 
 type Engine struct {
+	redactionMu         sync.Mutex
+	redactions          map[string]*tunnelRedaction
+	audit               *audit.Writer
+	auditReader         *audit.Reader
+	approvals           map[string]*approvalRequest
+	approvalOrder       []string
 	runtimeMu           sync.RWMutex
 	runtime             corestate.Runtime
 	runtimeStore        corestate.RuntimeStore
@@ -119,7 +127,7 @@ func (s *Engine) updateConfig(change func(*model.Config) error) error {
 		return stopped
 	}
 	if err == nil {
-		return s.applyWhileAlive(func() { s.manager.SetConfig(s.merged(cfg)) })
+		return s.applyWhileAlive(func() { s.setManagerConfig(s.merged(cfg)) })
 	}
 	return err
 }
@@ -166,7 +174,7 @@ func New(opts Options) (*Engine, error) {
 		opts.Clock = realClock{}
 	}
 	if opts.PortRange == "" {
-		opts.PortRange = "20000-20999"
+		opts.PortRange = appSettings.AgentPolicy().PortRange
 	}
 	first, last, err := parsePortRange(opts.PortRange)
 	if err != nil {
@@ -190,6 +198,7 @@ func New(opts Options) (*Engine, error) {
 	done := make(chan struct{})
 	cachedSecrets := &secret.Cached{Inner: &lifetimeSecrets{inner: opts.Secrets, done: done}}
 	s := &Engine{
+		audit: opts.Audit, auditReader: audit.NewReader(opts.StateDir), approvals: map[string]*approvalRequest{},
 		configPath: opts.ConfigPath,
 		runtime:    runtimeState, runtimeStore: runtimeStore, clock: opts.Clock,
 		portFirst: first, portLast: last, listening: opts.Listening, portHistory: map[string]map[int]bool{},
@@ -210,6 +219,7 @@ func New(opts Options) (*Engine, error) {
 		done:         done,
 	}
 	cachedSecrets.Used = s.markSecretUsed
+	cachedSecrets.Inner.(*lifetimeSecrets).observe = s.observeRedactionSecret
 	s.tools.SetOverrides(appSettings.Tools)
 	s.broker, err = askpass.NewBroker(opts.AskpassHelper, s.secrets, s.askUser)
 	if err != nil {
@@ -294,7 +304,7 @@ func (s *Engine) loadConfig() error {
 		s.mu.Lock()
 		s.configError = ""
 		s.mu.Unlock()
-		s.manager.SetConfig(s.merged(cfg))
+		s.setManagerConfig(s.merged(cfg))
 		s.manager.SetActiveProfile(active)
 	})
 }

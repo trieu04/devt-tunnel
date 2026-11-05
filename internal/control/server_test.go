@@ -13,6 +13,7 @@ import (
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/client"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/config"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
@@ -45,6 +46,14 @@ func testServerWithOptions(t *testing.T, prepare func(*engine.Options)) (*Server
 	if prepare != nil {
 		prepare(&opts)
 	}
+	if opts.Audit == nil {
+		trail, err := audit.Open(opts.StateDir, audit.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { trail.Close() })
+		opts.Audit = trail
+	}
 	e, err := engine.New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +84,9 @@ func TestMethodContract(t *testing.T) {
 		params any
 	}{
 		{api.DaemonStatusMethod, api.Empty{}}, {api.EventsSubscribe, api.Empty{}},
+		{"approval.list", api.Empty{}}, {"approval.get", api.IDParams{ID: "absent"}},
+		{"approval.decide", api.DecideApprovalParams{ID: "absent", Decision: "deny", Scope: "once"}},
+		{"audit.read", api.AuditReadParams{}},
 		{"tunnel.promote", api.PromoteTunnelParams{ID: "absent"}},
 		{"tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: model.Tunnel{ID: "invalid"}}},
 		{"lease.open", api.OpenLeaseParams{ID: "absent"}}, {"lease.renew", api.RenewLeaseParams{ID: "absent"}},
@@ -108,7 +120,7 @@ func TestMethodContract(t *testing.T) {
 		if err != nil && (!errors.As(err, &rpc) || rpc.Code == -32601 || rpc.Code == -32602) {
 			t.Errorf("%s: %v", tc.method, err)
 		}
-		if err != nil && tc.method != "tunnel.promote" && tc.method != "tunnel.runEphemeral" && tc.method != "lease.open" && tc.method != "lease.renew" && tc.method != "lease.close" && tc.method != "lease.revoke" && tc.method != "tunnel.start" && tc.method != "tunnel.stop" && tc.method != "tunnel.restart" && tc.method != "tunnel.waitReady" && tc.method != "ssh.resolve" && tc.method != "orphan.stop" {
+		if err != nil && tc.method != "approval.get" && tc.method != "approval.decide" && tc.method != "tunnel.promote" && tc.method != "tunnel.runEphemeral" && tc.method != "lease.open" && tc.method != "lease.renew" && tc.method != "lease.close" && tc.method != "lease.revoke" && tc.method != "tunnel.start" && tc.method != "tunnel.stop" && tc.method != "tunnel.restart" && tc.method != "tunnel.waitReady" && tc.method != "ssh.resolve" && tc.method != "orphan.stop" {
 			t.Errorf("%s unexpectedly failed: %v", tc.method, err)
 		}
 		seen[tc.method] = true

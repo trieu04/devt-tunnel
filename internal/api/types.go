@@ -90,9 +90,11 @@ type SecretView struct {
 const (
 	EventTunnelsChanged = "tunnels.changed"
 	EventPromptAdded    = "prompt.added"
+	EventApprovalAdded  = "approval.added"
 )
 
 type Event struct {
-	Type   string         `json:"type"`
-	Prompt *PendingPrompt `json:"prompt,omitempty"`
+	Type       string         `json:"type"`
+	ApprovalID string         `json:"approvalId,omitempty"`
+	Prompt     *PendingPrompt `json:"prompt,omitempty"`
 }

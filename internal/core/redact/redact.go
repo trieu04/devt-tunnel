@@ -60,6 +60,45 @@ type Redactor struct {
 
 func New(secrets map[string]string) *Redactor {
 	r := &Redactor{}
+	r.add(secrets)
+	return r
+}
+
+// WithSecrets returns an independent redactor containing both previously known
+// values and new values. Rotating a named credential must not reveal that
+// credential's old value when retained historical logs are read again.
+func (r *Redactor) WithSecrets(secrets map[string]string) *Redactor {
+	next := &Redactor{root: cloneNode(r.root), ignored: append([]IgnoredSecret(nil), r.ignored...)}
+	next.add(secrets)
+	sort.Slice(next.ignored, func(i, j int) bool {
+		if next.ignored[i].Name == next.ignored[j].Name {
+			return next.ignored[i].Reason < next.ignored[j].Reason
+		}
+		return next.ignored[i].Name < next.ignored[j].Name
+	})
+	kept := next.ignored[:0]
+	for _, item := range next.ignored {
+		if len(kept) == 0 || kept[len(kept)-1] != item {
+			kept = append(kept, item)
+		}
+	}
+	next.ignored = kept
+	return next
+}
+
+func cloneNode(n node) node {
+	copy := n
+	if n.children != nil {
+		copy.children = make(map[byte]*node, len(n.children))
+		for b, child := range n.children {
+			cloned := cloneNode(*child)
+			copy.children[b] = &cloned
+		}
+	}
+	return copy
+}
+
+func (r *Redactor) add(secrets map[string]string) {
 	names := make([]string, 0, len(secrets))
 	for name := range secrets {
 		names = append(names, name)
@@ -84,15 +123,14 @@ func New(secrets map[string]string) *Redactor {
 				n.children[value[i]] = &node{}
 			}
 			n = n.children[value[i]]
-			if len(value) > n.length {
+			if len(value) > n.length || (len(value) == n.length && name < n.candidate) {
 				n.candidate, n.length = name, len(value)
 			}
 		}
-		if !n.terminal { // Names were sorted, so identical values are deterministic.
+		if !n.terminal || name < n.name { // Identical values remain deterministic.
 			n.name, n.terminal = name, true
 		}
 	}
-	return r
 }
 
 // Ignored returns a copy of the sorted inventory of unprotected short secrets.

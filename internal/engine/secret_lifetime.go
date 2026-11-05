@@ -8,8 +8,9 @@ import (
 
 // Native credential calls cannot be cancelled; stop their engine continuations when the engine shuts down.
 type lifetimeSecrets struct {
-	inner secret.Store
-	done  <-chan struct{}
+	observe func(string, string)
+	inner   secret.Store
+	done    <-chan struct{}
 }
 
 func (s *lifetimeSecrets) call(fn func() (string, error)) (string, error) {
@@ -41,7 +42,11 @@ func (s *lifetimeSecrets) call(fn func() (string, error)) (string, error) {
 }
 
 func (s *lifetimeSecrets) Get(name string) (string, error) {
-	return s.call(func() (string, error) { return s.inner.Get(name) })
+	value, err := s.call(func() (string, error) { return s.inner.Get(name) })
+	if err == nil && s.observe != nil {
+		s.observe(name, value)
+	}
+	return value, err
 }
 func (s *lifetimeSecrets) Set(name, value string) error {
 	_, err := s.call(func() (string, error) { return "", s.inner.Set(name, value) })

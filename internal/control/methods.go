@@ -24,7 +24,23 @@ func query[P, R any](s *Server, method string, fn func(P) R) {
 
 func (s *Server) register() {
 	e := s.engine
-	handle(s, "tunnel.promote", func(_ context.Context, p api.PromoteTunnelParams) (string, error) { return e.PromoteTunnel(p) })
+	handle(s, "tunnel.promote", func(ctx context.Context, p api.PromoteTunnelParams) (string, error) {
+		actor, session := connectionActor(ctx)
+		return e.PromoteTunnelFor(actor, session, p)
+	})
+	read(s, "approval.list", func(ctx context.Context, _ api.Empty) ([]api.Approval, error) {
+		actor, session := connectionActor(ctx)
+		return e.ListApprovals(actor, session)
+	})
+	read(s, "approval.get", func(ctx context.Context, p api.IDParams) (api.Approval, error) {
+		actor, session := connectionActor(ctx)
+		return e.GetApproval(actor, session, p.ID)
+	})
+	handle(s, "approval.decide", func(ctx context.Context, p api.DecideApprovalParams) (api.Approval, error) {
+		actor, _ := connectionActor(ctx)
+		return e.DecideApproval(actor, p)
+	})
+	read(s, "audit.read", func(_ context.Context, p api.AuditReadParams) (api.AuditReadResult, error) { return e.ReadAudit(p) })
 	handle(s, "tunnel.runEphemeral", func(ctx context.Context, p api.RunEphemeralParams) (api.RunEphemeralResult, error) {
 		actor, session := connectionActor(ctx)
 		return e.RunEphemeralContext(ctx, actor, session, p)
@@ -45,31 +61,70 @@ func (s *Server) register() {
 		actor, session := connectionActor(ctx)
 		return e.ListLeases(actor, session, actor.Kind == "mcp"), nil
 	})
-	action(s, "lease.revoke", func(p api.IDParams) error { return e.RevokeLease(p.ID) })
+	handle(s, "lease.revoke", func(ctx context.Context, p api.IDParams) (api.Empty, error) {
+		actor, _ := connectionActor(ctx)
+		return api.Empty{}, e.RevokeLeaseFor(actor, p.ID)
+	})
 	query(s, api.DaemonHello, func(api.HelloParams) api.HelloResult { return s.Hello() })
-	query(s, api.DaemonStatusMethod, func(api.Empty) api.DaemonStatus {
-		return api.DaemonStatus{HelloResult: s.Hello(), Active: e.Active(), Connections: s.Connections(), Tunnels: e.Statuses()}
+	read(s, api.DaemonStatusMethod, func(ctx context.Context, _ api.Empty) (api.DaemonStatus, error) {
+		statuses := e.Statuses()
+		actor, _ := connectionActor(ctx)
+		if actor.Kind == "mcp" {
+			for i := range statuses {
+				statuses[i] = mcpStatus(statuses[i])
+			}
+		}
+		return api.DaemonStatus{HelloResult: s.Hello(), Active: e.Active(), Connections: s.Connections(), Tunnels: statuses}, nil
 	})
 	// These methods need connection state or must reply before the process exits.
 	handle(s, api.DaemonShutdown, func(context.Context, api.ShutdownParams) (api.Empty, error) { return api.Empty{}, nil })
 	query(s, api.EventsSubscribe, func(api.Empty) api.Empty { return api.Empty{} })
-	query(s, "tunnel.list", func(api.Empty) []api.TunnelView { return e.Overview().Tunnels })
-	read(s, "tunnel.get", func(_ context.Context, p api.IDParams) (api.TunnelView, error) {
+	read(s, "tunnel.list", func(ctx context.Context, _ api.Empty) ([]api.TunnelView, error) {
+		views := e.Overview().Tunnels
+		actor, _ := connectionActor(ctx)
+		if actor.Kind == "mcp" {
+			for i := range views {
+				views[i].Status = mcpStatus(views[i].Status)
+			}
+		}
+		return views, nil
+	})
+	read(s, "tunnel.get", func(ctx context.Context, p api.IDParams) (api.TunnelView, error) {
 		for _, v := range e.Overview().Tunnels {
 			if v.Tunnel.ID == p.ID {
+				actor, _ := connectionActor(ctx)
+				if actor.Kind == "mcp" {
+					v.Status = mcpStatus(v.Status)
+				}
 				return v, nil
 			}
 		}
 		return api.TunnelView{}, api.NewError(api.Unknown, "unknown tunnel")
 	})
-	handle(s, "tunnel.save", func(_ context.Context, p api.SaveTunnelParams) (string, error) {
-		return e.SaveTunnel(p.Tunnel, p.Start)
+	handle(s, "tunnel.save", func(ctx context.Context, p api.SaveTunnelParams) (string, error) {
+		actor, session := connectionActor(ctx)
+		return e.SaveTunnelFor(actor, session, p)
 	})
 	action(s, "tunnel.delete", func(p api.IDParams) error { return e.DeleteTunnel(p.ID) })
 	action(s, "tunnel.start", func(p api.IDParams) error { return e.Start(p.ID) })
-	action(s, "tunnel.stop", func(p api.IDParams) error { return e.StopTunnel(p.ID) })
+	handle(s, "tunnel.stop", func(ctx context.Context, p api.IDParams) (api.Empty, error) {
+		actor, _ := connectionActor(ctx)
+		return api.Empty{}, e.StopTunnelFor(actor, p.ID)
+	})
 	action(s, "tunnel.restart", func(p api.IDParams) error { return e.Restart(p.ID) })
-	read(s, "tunnel.waitReady", func(ctx context.Context, p api.IDParams) (supervisor.Status, error) { return e.WaitReady(ctx, p.ID) })
+	read(s, "tunnel.waitReady", func(ctx context.Context, p api.IDParams) (supervisor.Status, error) {
+		status, err := e.WaitReady(ctx, p.ID)
+		actor, _ := connectionActor(ctx)
+		if actor.Kind == "mcp" {
+			status = mcpStatus(status)
+			if err != nil {
+				rpc := wireError(err)
+				rpc.Message = "tunnel did not become ready; inspect redacted logs"
+				err = rpc
+			}
+		}
+		return status, err
+	})
 	query(s, "tunnel.evaluateDraft", func(p api.TunnelParams) api.DraftResult { return e.EvaluateDraft(p.Tunnel) })
 	read(s, "tunnel.import", func(_ context.Context, p api.ImportParams) (importer.Result, error) { return e.ImportCommand(p.Line) })
 	query(s, "tunnel.newDraft", func(p api.NewDraftParams) model.Tunnel { return e.NewDraft(p.Kind) })
@@ -78,10 +133,25 @@ func (s *Server) register() {
 	query(s, "tunnel.findings", func(p api.IDParams) []checks.Finding { return e.Findings(p.ID) })
 	action(s, "tunnel.recordUsed", func(p api.IDParams) error { e.RecordUsed(p.ID); return nil })
 	action(s, "tunnel.startOnLaunch", func(api.Empty) error { e.StartOnLaunch(); return nil })
-	query(s, "logs.read", func(p api.IDParams) []string { return e.Logs(p.ID) })
-	query(s, "logs.since", func(p api.LogsParams) api.LogsResult {
+	read(s, "logs.read", func(ctx context.Context, p api.IDParams) ([]string, error) {
+		c := ctx.Value(connectionKey{}).(*connection)
+		if c.client.Kind != "mcp" {
+			return e.Logs(p.ID), nil
+		}
+		result, err := e.RedactedLogsSince(c.logs, p.ID, 0)
+		out := []string{}
+		for _, line := range result.Lines {
+			out = append(out, line.Line)
+		}
+		return out, err
+	})
+	read(s, "logs.since", func(ctx context.Context, p api.LogsParams) (api.LogsResult, error) {
+		c := ctx.Value(connectionKey{}).(*connection)
+		if c.client.Kind == "mcp" {
+			return e.RedactedLogsSince(c.logs, p.ID, p.Sequence)
+		}
 		sequence, lines := e.LogsSince(p.ID, p.Sequence)
-		return api.LogsResult{Sequence: sequence, Lines: lines}
+		return api.LogsResult{Sequence: sequence, Lines: lines}, nil
 	})
 	query(s, "profile.list", func(api.Empty) []model.Profile { return e.Overview().Profiles })
 	handle(s, "profile.save", func(_ context.Context, p api.SaveProfileParams) (string, error) {
@@ -98,10 +168,26 @@ func (s *Server) register() {
 	action(s, "secret.delete", func(p api.SecretNameParams) error { return e.DeleteSecret(p.Name) })
 	action(s, "secret.rename", func(p api.RenameSecretParams) error { return e.RenameSecret(p.From, p.To) })
 	action(s, "secret.forget", func(api.Empty) error { e.ForgetSecrets(); return nil })
-	query(s, "prompt.list", func(api.Empty) []api.PendingPrompt { return e.Overview().Prompts })
+	read(s, "prompt.list", func(ctx context.Context, _ api.Empty) ([]api.PendingPrompt, error) {
+		prompts := e.Overview().Prompts
+		actor, _ := connectionActor(ctx)
+		if actor.Kind == "mcp" {
+			for i := range prompts {
+				prompts[i].Prompt.Text = ""
+			}
+		}
+		return prompts, nil
+	})
 	action(s, "prompt.answer", func(p api.AnswerPromptParams) error { e.AnswerPrompt(p.ID, p.Value, p.Cancelled); return nil })
 	query(s, "ssh.hosts", func(p api.SSHParams) api.SSHHostList { return e.SSHHosts(p.ProfileID) })
-	read(s, "ssh.resolve", func(_ context.Context, p api.SSHParams) (sshconfig.Resolved, error) {
+	read(s, "ssh.resolve", func(ctx context.Context, p api.SSHParams) (sshconfig.Resolved, error) {
+		actor, _ := connectionActor(ctx)
+		if actor.Kind == "mcp" {
+			t := model.Tunnel{Type: model.TypeSSH, SSH: &model.SSH{Host: p.Alias}}
+			if p.Alias == "" || len(checks.AgentSafe(t)) > 0 {
+				return sshconfig.Resolved{}, e.PolicyRefusal(actor)
+			}
+		}
 		return e.ResolveSSHHost(p.Alias, p.ProfileID)
 	})
 	action(s, "ssh.reload", func(api.Empty) error { e.ReloadSSHHosts(); return nil })
@@ -121,4 +207,13 @@ func (s *Server) register() {
 	action(s, "config.reload", func(api.Empty) error { return e.Reload() })
 	action(s, "system.wake", func(api.Empty) error { e.Wake(); return nil })
 	action(s, "system.focus", func(api.Empty) error { e.Focus(); return nil })
+}
+
+// Status errors can be copied from process output. Do not let inspection or
+// waitReady become a raw-log side channel around the streaming log redactor.
+func mcpStatus(status supervisor.Status) supervisor.Status {
+	if status.Error != "" {
+		status.Error = "tunnel error; inspect redacted logs"
+	}
+	return status
 }

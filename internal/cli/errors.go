@@ -27,10 +27,10 @@ var ExitCodes = []struct {
 	Kinds []api.ErrorKind
 }{
 	{0, "", nil},
-	{1, "failed", []api.ErrorKind{api.Stopped, api.Internal, api.LeaseRevoked}},
+	{1, "failed", []api.ErrorKind{api.Stopped, api.Internal, api.LeaseRevoked, api.PolicyDenied}},
 	{2, "usage", []api.ErrorKind{api.Unknown}},
 	{3, "needs_secret", []api.ErrorKind{api.NeedsSecret, api.KeyringUnavailable}},
-	{4, "needs_user", []api.ErrorKind{api.NeedsUser}},
+	{4, "needs_user", []api.ErrorKind{api.NeedsUser, api.PendingApproval}},
 	{5, "conflict", []api.ErrorKind{api.Conflict}},
 	{6, "timeout", []api.ErrorKind{api.Timeout}},
 	{7, "daemon", []api.ErrorKind{api.Incompatible}},
