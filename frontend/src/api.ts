@@ -16,6 +16,10 @@ export function onTunnelsChanged(callback: () => void): () => void {
   return Events.On("tunnels:changed", callback);
 }
 
+export function onApprovalsChanged(callback: () => void): () => void {
+  return Events.On("approvals:changed", callback);
+}
+
 export function onSettingsChanged(callback: () => void): () => void {
   return Events.On("settings:changed", callback);
 }

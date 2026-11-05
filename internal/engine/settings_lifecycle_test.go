@@ -15,7 +15,7 @@ import (
 )
 
 func TestSettingsIOCannotHoldLifecycle(t *testing.T) {
-	for _, method := range []string{"shortcut", "updates", "tool"} {
+	for _, method := range []string{"shortcut", "updates", "tool", "agent"} {
 		t.Run(method, func(t *testing.T) {
 			e, _, _ := newTestEngine(t, model.Config{})
 			initial := settings.Settings{Shortcut: "old", Tools: map[string]string{"ssh": "/disposable/old-ssh"}}
@@ -36,6 +36,8 @@ func TestSettingsIOCannotHoldLifecycle(t *testing.T) {
 			finished := make(chan error, 1)
 			go func() {
 				switch method {
+				case "agent":
+					finished <- e.SetAgentSettingsFor(api.Actor{Kind: "gui", Name: "person"}, settings.DefaultAgent())
 				case "shortcut":
 					finished <- e.SetShortcut("new")
 				case "updates":
@@ -115,5 +117,28 @@ func TestConcurrentSettingsSnapshotsPreserveUpdates(t *testing.T) {
 	}
 	if saved.Shortcut != "new" || saved.CheckUpdates == nil || *saved.CheckUpdates || !reflect.DeepEqual(saved, e.settings) {
 		t.Fatalf("lost settings update: %+v / %+v", saved, e.settings)
+	}
+}
+
+func TestAgentSettingsSnapshotsDoNotShareAllowLists(t *testing.T) {
+	e, _, _ := newTestEngine(t, model.Config{})
+	person := api.Actor{Kind: "gui", Name: "person"}
+	policy := settings.DefaultAgent()
+	policy.AllowTunnels = []string{"dev-*"}
+	policy.AllowSSHHosts = []string{"staging"}
+	if err := e.SetAgentSettingsFor(person, policy); err != nil {
+		t.Fatal(err)
+	}
+	policy.AllowTunnels[0] = "*"
+	policy.AllowSSHHosts[0] = "production"
+	snapshot := e.AgentSettings()
+	if snapshot.AllowTunnels[0] != "dev-*" || snapshot.AllowSSHHosts[0] != "staging" {
+		t.Fatal("setter retained caller's allow-list storage")
+	}
+	snapshot.AllowTunnels[0] = "*"
+	snapshot.AllowSSHHosts[0] = "production"
+	next := e.AgentSettings()
+	if next.AllowTunnels[0] != "dev-*" || next.AllowSSHHosts[0] != "staging" {
+		t.Fatal("getter exposed mutable allow-list storage")
 	}
 }

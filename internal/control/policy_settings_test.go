@@ -157,3 +157,45 @@ func TestApprovalOnceConcurrentRetryCannotDoubleSpend(t *testing.T) {
 	}
 	policyOK(t, first, "lease.close", api.IDParams{ID: leases[0].ID}, nil)
 }
+
+func TestAgentSettingsPersonOnlyAndValidated(t *testing.T) {
+	var path string
+	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, _ *model.Config) { path = o.SettingsPath })
+	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := leasedDial(t, socket, "mcp", "settings-agent", "")
+	var initial settings.Agent
+	policyOK(t, person, "settings.getAgent", api.Empty{}, &initial)
+	if initial.Public != "ask" || !initial.Enabled || len(initial.AllowTunnels) != 0 {
+		t.Fatalf("unexpected default policy: %+v", initial)
+	}
+	next := initial
+	next.Enabled = false
+	next.Public = "deny"
+	next.AllowTunnels = []string{"dev-*"}
+	next.AllowSSHHosts = []string{"staging"}
+	next.PortRange = "31000-31010"
+	next.DefaultTTL, next.MaxTTL = "15m", "1h"
+	policyOK(t, person, "settings.setAgent", api.AgentSettingsParams{Agent: next}, nil)
+	var got settings.Agent
+	policyOK(t, person, "settings.getAgent", api.Empty{}, &got)
+	if got.Enabled || got.Public != "deny" || got.PortRange != next.PortRange || !slices.Equal(got.AllowTunnels, next.AllowTunnels) || !slices.Equal(got.AllowSSHHosts, next.AllowSSHHosts) || got.DefaultTTL != "15m" || got.MaxTTL != "1h" {
+		t.Fatalf("policy did not round trip: %+v", got)
+	}
+	saved, err := settings.Load(path)
+	if err != nil || saved.AgentPolicy().Public != "deny" || saved.AgentPolicy().Enabled {
+		t.Fatalf("policy did not persist: %+v / %v", saved, err)
+	}
+	invalid := next
+	invalid.Public = "allow"
+	if err := policyCall(t, person, "settings.setAgent", api.AgentSettingsParams{Agent: invalid}, nil); err == nil {
+		t.Fatal("invalid public policy accepted")
+	}
+	// Both methods must stay outside mcpMethodAllowed, even read access.
+	for _, method := range []string{"settings.getAgent", "settings.setAgent"} {
+		policyError(t, policyCall(t, mcp, method, api.AgentSettingsParams{Agent: initial}, nil), api.PolicyDenied)
+	}
+	policyOK(t, person, "settings.getAgent", api.Empty{}, &got)
+	if got.Public != "deny" || got.Enabled {
+		t.Fatalf("refused changes mutated policy: %+v", got)
+	}
+}

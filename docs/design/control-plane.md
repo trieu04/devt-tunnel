@@ -193,7 +193,7 @@ The 2-minute broker timeout stays. A non-TTY CLI call or an agent gets `needs_us
 
 ## Policy
 
-Policy is per-machine, in `settings.toml`. MCP has no tool to change it.
+Policy is per-machine, in `settings.toml`. MCP has no tool to change it. Person clients read the effective defaults through `settings.getAgent {}` and replace the validated `[agent]` policy through `settings.setAgent {agent}`. The wire fields are `enabled`, `public`, `allowTunnels`, `allowSSHHosts`, `portRange`, `defaultTTL` and `maxTTL`. Both methods are outside the MCP allow-list; invalid ranges, durations or allow-lists leave the policy unchanged. Settings → **Agents** edits this policy, and lists all active leases with **Revoke**. Disabling agent mutations does not itself revoke existing leases.
 
 ```toml
 [agent]
@@ -239,7 +239,7 @@ The engine reads `[agent]` from its loaded `settings.toml`. `enabled = false` de
 A request that needs approval returns `pending_approval` at once. Long-blocking tool calls are not used because clients time them out.
 
 1. The engine records the actor and owning session, client-provided `purpose` (valid UTF-8, at most 1024 bytes), summary, exact argv from `command.Build`, and `Spec.Fingerprint()`. Purposes are untrusted display text, not instructions, and must not contain secrets.
-2. Person clients inspect/decide through the approval RPCs; the GUI dialog and `dtt approvals` commands are later tasks. If nobody decides within 5 minutes, it is denied.
+2. Person clients inspect/decide through the approval RPCs using the GUI dialog or `dtt approvals` commands. If nobody decides within 5 minutes, it is denied.
 3. The choices are **once**, **for this session**, and **always**, which adds the tunnel id or alias to the allow-list. "Always" is offered only when `policy.CanAlwaysAllow` permits it: safe saved IDs or safe loopback alias forwards, never public exposure, unsafe saved execution, manual hosts, new secret references, or save/promote. Saved IDs are escaped as literal allow-list patterns.
 4. The agent retries the original operation; approval never starts background execution. The daemon rebuilds the spec and matches the fingerprint, actor, session and operation target. A changed spec needs a new request. "Once" is consumed atomically during admission; "session" can be reused only with the same session token and matching operation/spec. A persistent grant does not bypass the fingerprint check on its first retry.
 
@@ -253,7 +253,7 @@ The concrete RPC flow is nonblocking:
 
 `approval.added` carries only `approvalId` and is delivered to subscribed person clients; MCP polls its own requests. MCP prompt listing/events expose the waiting prompt's kind and tunnel, not its free-form text. "Always" writes the literal saved ID or config alias atomically to `settings.toml` and updates the in-memory policy. Pending requests are memory-only; a daemon restart requires fresh approval. Auto-allocated ephemeral definitions retain their chosen ID/port while awaiting a retry. Fingerprint-bound MCP starts do not defer execution until missing secrets arrive and do not silently reallocate a port on forward failure: obtain the missing secret or retry a new definition for a new approval. Person-controlled auto-port retry behavior is unchanged.
 
-The planned `dtt approvals approve` command requires an interactive terminal and a short code shown by the request. That only slows an agent with shell access; see the next section.
+The `dtt approvals approve` command requires an interactive terminal and a short code shown by the request. That only slows an agent with shell access; see the next section.
 
 ## Threat model
 
@@ -283,9 +283,9 @@ Redaction catches byte-exact known values, including values split across writes/
 
 Small, and using existing screens:
 
-- Tunnel rows and detail panel: an agent badge with the holder name and time left, and an `ephemeral` tag with **Save**.
-- Approval dialog, built on the SSH prompt dialog, showing actor, summary and argv.
-- Settings: an **Agents** section for the policy, and **Install command-line tool**.
+- Tunnel rows and detail panel: an agent badge with the holder name and live time left (including disconnect grace), and an `ephemeral` tag with **Save**. Save asks for a name and uses `tunnel.promote`, without restarting the process. Mixed person/agent claims still show the agent badge.
+- Approval dialog, built on the SSH prompt dialog, showing actor, untrusted purpose, summary, exact argv as a JSON array, request code and expiry countdown. Requests queue in daemon order. The GUI resyncs on startup/reconnect and `approval.added`, and polls to observe decisions from other person clients and expiry. Native windows are brought forward for new/recovered requests when desktop integration is available. A deliberate button click sends the request's code verbatim to `approval.decide`; no code retyping is required in the GUI. Only the daemon's allowed scopes are offered, so public exposure has no **Always**. Approving grants a retry, not background execution.
+- Settings: an **Agents** section for policy and active leases, including detached person leases with no expiry. **Install command-line tool** remains future packaging work.
 - Connection errors: a banner and a retry if the daemon cannot be reached.
 
 ## Rollout

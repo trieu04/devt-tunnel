@@ -17,6 +17,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/config"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
+	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 	"github.com/trieu04/devt-tunnel/internal/engine"
 )
@@ -109,6 +110,7 @@ func TestMethodContract(t *testing.T) {
 		{"prompt.list", api.Empty{}}, {"prompt.answer", api.AnswerPromptParams{ID: "absent", Cancelled: true}},
 		{"ssh.hosts", api.SSHParams{}}, {"ssh.resolve", api.SSHParams{Alias: ""}}, {"ssh.reload", api.Empty{}},
 		{"tool.list", api.Empty{}}, {"tool.setPath", api.ToolPathParams{Tool: "ssh", Path: ""}},
+		{"settings.getAgent", api.Empty{}}, {"settings.setAgent", api.AgentSettingsParams{Agent: settings.DefaultAgent()}},
 		{"settings.get", api.Empty{}}, {"settings.setShortcut", api.ShortcutParams{Shortcut: "Alt+Space"}}, {"settings.setUpdateChecks", api.UpdateChecksParams{Enabled: false}},
 		{"orphan.list", api.Empty{}}, {"orphan.stop", api.OrphanParams{PID: -1}},
 		{"config.overview", api.Empty{}}, {"config.path", api.Empty{}}, {"config.reload", api.Empty{}}, {"system.wake", api.Empty{}}, {"system.focus", api.Empty{}},

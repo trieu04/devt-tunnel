@@ -162,7 +162,11 @@ func (s *Engine) owner(id string) api.TunnelOwner {
 		if l.GraceUntil != nil && l.GraceUntil.Before(expiry) {
 			expiry = *l.GraceUntil
 		}
-		if o.Expiry == nil || expiry.Before(*o.Expiry) {
+		if o.Holder == nil {
+			holder := l.Holder
+			o.Holder = &holder
+		}
+		if !expiry.IsZero() && (o.Expiry == nil || expiry.Before(*o.Expiry)) {
 			holder := l.Holder
 			o.Holder = &holder
 			o.Expiry = &expiry
@@ -442,7 +446,7 @@ func (s *Engine) ListLeases(actor api.Actor, session string, ownOnly bool) []api
 }
 
 func leaseAlive(l api.Lease, now time.Time) bool {
-	return !l.Revoked && now.Before(l.ExpiresAt) && (l.GraceUntil == nil || now.Before(*l.GraceUntil))
+	return !l.Revoked && ((l.Detached && l.ExpiresAt.IsZero()) || now.Before(l.ExpiresAt)) && (l.GraceUntil == nil || now.Before(*l.GraceUntil))
 }
 
 func (s *Engine) stopUnownedLocked(id string) error {
@@ -538,7 +542,7 @@ func (s *Engine) DisconnectSession(actor api.Actor, session string) error {
 	until := s.clock.Now().Add(DisconnectGrace)
 	for i := range st.Leases {
 		l := &st.Leases[i]
-		if ownsLease(*l, actor, session) && !l.Revoked {
+		if ownsLease(*l, actor, session) && !l.Revoked && !l.Detached {
 			l.GraceUntil = &until
 			changed = true
 		}
@@ -588,7 +592,7 @@ func (s *Engine) ExpireLeases() error {
 	affected := map[string]bool{}
 	for _, l := range st.Leases {
 		// Retain revocation tombstones until their original TTL for the next call.
-		if !s.clock.Now().Before(l.ExpiresAt) || (!l.Revoked && !leaseAlive(l, s.clock.Now())) {
+		if (!l.ExpiresAt.IsZero() && !s.clock.Now().Before(l.ExpiresAt)) || (l.Revoked && l.ExpiresAt.IsZero()) || (!l.Revoked && !leaseAlive(l, s.clock.Now())) {
 			if !l.Revoked {
 				auditErr = errors.Join(auditErr, s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.LeaseExpire, TunnelID: l.TunnelID, LeaseID: l.ID, Result: audit.ResultExpired}))
 			}

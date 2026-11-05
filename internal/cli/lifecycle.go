@@ -114,8 +114,16 @@ func stopCommand(a *app) *cobra.Command {
 					}
 				}
 			}
-			if err := a.refreshLifecycleTunnels(cmd.Context(), views); err != nil {
-				return err
+			// Stopping removes ephemeral definitions immediately. Keep their final
+			// stopped result rather than failing a successful stop during refresh.
+			for i := range views {
+				if views[i].Owner.Ephemeral {
+					views[i].Status = supervisor.Status{ID: views[i].Tunnel.ID, State: supervisor.StateStopped}
+					views[i].Owner = api.TunnelOwner{Ephemeral: true}
+					views[i].Endpoints = nil
+				} else if err := a.refreshLifecycleTunnels(cmd.Context(), views[i:i+1]); err != nil {
+					return err
+				}
 			}
 			return a.writeLifecycleTunnels(views)
 		},

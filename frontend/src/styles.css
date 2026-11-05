@@ -554,3 +554,22 @@ dd { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Ownership and person-only agent controls. */
+.agent-badge, .ephemeral-tag { display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; overflow-wrap: anywhere; padding: var(--space-1) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--selected); color: var(--text); font-size: var(--text-sm); }
+.ephemeral-tag { background: var(--surface); color: var(--muted); white-space: nowrap; }
+.ownership-tags { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.approval-overlay { z-index: 40; }
+.approval-dialog { width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; }
+.approval-facts { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; }
+.approval-facts dt { color: var(--muted); font-size: var(--text-sm); font-weight: 600; }
+.approval-facts dd { margin: 0 0 var(--space-3); overflow-wrap: anywhere; white-space: pre-wrap; }
+.approval-facts .command { max-height: 240px; margin: 0; overflow: auto; white-space: pre-wrap; }
+.approval-dialog .dialog-actions { flex-wrap: wrap; }
+.approval-dialog p { margin: 0; }
+.agents-settings, .agent-policy, .agent-policy-fields { display: flex; flex-direction: column; gap: var(--space-7); }
+.agent-policy-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.agent-policy h2, .agent-leases h2 { margin: 0; }
+.agent-policy p, .agent-leases p { margin: 0; }
+.agent-policy textarea { resize: vertical; }
+.agent-leases { display: flex; flex-direction: column; gap: var(--space-6); }

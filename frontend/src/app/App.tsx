@@ -2,6 +2,7 @@ import { useEffect, useReducer, useState } from "react";
 import { Service, onNavigation, onSettingsChanged } from "../api";
 import { isActive } from "../lib/filter";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { ApprovalDialog, useApprovals } from "../ApprovalDialog";
 import { PromptDialog } from "../PromptDialog";
 import { QuickPalette } from "../quick/QuickPalette";
 import { EditorScreen } from "../screens/EditorScreen";
@@ -15,6 +16,7 @@ type Navigation = { screen: "tunnels" | "editor" | "profiles" | "settings"; para
 
 export function App() {
   const { overview, refresh } = useOverview();
+  const approvalQueue = useApprovals();
   const [nav, navigate] = useReducer((_state: Navigation, next: Navigation) => next, { screen: "tunnels" });
   const [selected, setSelected] = useState<string | null>(null);
   const [quick, setQuick] = useState(false);
@@ -39,6 +41,7 @@ export function App() {
   }, []);
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (document.querySelector('[aria-modal="true"]')) return;
       const action = shortcutAction(event, navigator.platform.startsWith("Mac"));
       if (!action) return;
       const input =
@@ -73,6 +76,11 @@ export function App() {
           <button aria-label="Dismiss update notice" onClick={() => setUpdateDismissed(true)}>
             ×
           </button>
+        </div>
+      )}
+      {approvalQueue.error && (
+        <div className="banner banner-error" role="alert">
+          Cannot load agent approvals: {approvalQueue.error} <button onClick={approvalQueue.refresh}>Retry</button>
         </div>
       )}
       {nav.screen === "tunnels" && (
@@ -116,7 +124,14 @@ export function App() {
           <QuickPalette embedded onClose={() => setQuick(false)} onNavigate={open} />
         </div>
       )}
-      <PromptDialog prompts={overview.prompts ?? []} tunnels={overview.tunnels ?? []} />
+      {!approvalQueue.approvals.length && (
+        <PromptDialog prompts={overview.prompts ?? []} tunnels={overview.tunnels ?? []} />
+      )}
+      <ApprovalDialog
+        key={approvalQueue.approvals[0]?.id ?? "none"}
+        approvals={approvalQueue.approvals}
+        onDecided={approvalQueue.refresh}
+      />
       <ConfirmDialog
         open={quitCount > 0}
         title="Quit devt-tunnel?"

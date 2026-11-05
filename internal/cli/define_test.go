@@ -25,7 +25,7 @@ import (
 
 // Use the real daemon control server and engine, not RPC fixtures, so persistence,
 // editor defaults, importer parsing and command previews are exercised together.
-func defineDaemon(t *testing.T) *engine.Engine {
+func defineDaemon(t *testing.T, prepare ...func(*engine.Options)) *engine.Engine {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell fixture")
@@ -65,7 +65,11 @@ func defineDaemon(t *testing.T) *engine.Engine {
 	if err := store.Set("test-auth", "never-print-this-value"); err != nil {
 		t.Fatal(err)
 	}
-	e, err := engine.New(engine.Options{Secrets: store, AskpassHelper: "unused"})
+	opts := engine.Options{Secrets: store, AskpassHelper: "unused"}
+	for _, f := range prepare {
+		f(&opts)
+	}
+	e, err := engine.New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}

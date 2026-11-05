@@ -1,12 +1,12 @@
 # `dtt` command line
 
-Status: **accepted 2026-11-04; phase 18 implemented except phase-19-dependent commands; native/Linux headless exit test not yet run.** Saved-tunnel read, lifecycle, prompts, define, organize and setup commands are available, including shell completion, embedded guides and deterministic generated reference/man pages. `run`, `forward`, `expose`, `save`, `leases`, `approvals` and `audit` wait for phase 19; daemon login installation and MCP remain future work. `daemon run` supports `--idle-exit` (default 5m, 0 disables). Architecture and rationale are in [control-plane.md](control-plane.md).
+Status: **accepted 2026-11-04; phases 18–19 CLI commands implemented; native/Linux headless exit test not yet run.** Saved and ephemeral tunnel commands, leases, approvals, audit, shell completion, embedded guides and deterministic generated reference/man pages are available. Daemon login installation and MCP remain future work. `daemon run` supports `--idle-exit` (default 5m, 0 disables). Architecture and rationale are in [control-plane.md](control-plane.md).
 
 This file is the interface contract. User-facing guides and the generated reference are in [docs/cli](../cli/quickstart.md); see [Documentation plan](#documentation-plan) for generation and CI enforcement.
 
 ## User guides
 
-- [Quick start](../cli/quickstart.md): install, saved tunnels, planned one-off commands, completion and offline help.
+- [Quick start](../cli/quickstart.md): install, saved tunnels, one-off commands, completion and offline help.
 - [Replacing traditional commands](../cli/replacing.md).
 - [Scripts](../cli/scripts.md).
 - [Troubleshooting and exit codes](../cli/troubleshooting.md).
@@ -53,9 +53,11 @@ Port maps use the form `listen:target`:
 | `0.0.0.0:5433:db:5432` | Listen on all interfaces. Prints a warning |
 | `auto:5432` | Pick a free local port, and print it |
 
-`dtt expose` has no default for `--via` unless `default_expose` is set in `settings.toml`, because the two services differ in cost and in who can reach the URL. It always prints a line saying the service will be public.
+`dtt expose` requires `--via`: `internal/core/settings` does not yet implement `default_expose`. The two services differ in cost and in who can reach the URL. It always prints a stderr line saying the service will be public, including with `--quiet` or `--dry-run`. `--secret` names an existing keychain secret. For cloudflared, `--secret` selects a token-based named tunnel; `--domain` then describes an already-routed hostname and does not configure routing. Quick Cloudflare tunnels cannot choose a domain.
 
-`--detach` and background forms return once the tunnel is ready, or exit with an error. `--ttl` stops the tunnel after that time. Ctrl-C in the foreground stops the tunnel.
+`--detach` and background forms return once the tunnel is ready, or exit with an error. They retain a detached person lease, not a pin, so CLI exit does not apply connection grace. Without `--ttl`, detached leases have no expiry: stop with `dtt stop` or `dtt leases revoke`. An explicit `--ttl` is positive and at most 8h, and stops the tunnel after that time. Foreground leases default to 30m; Ctrl-C closes the lease and stops the tunnel. Promoting with `--save` or `dtt save` preserves the process and lease, including its expiry.
+
+`--dry-run` uses `tunnel.evaluateDraft` to print the exact command and findings without starting. Auto ports are allocated only by `tunnel.runEphemeral`, so a dry run with `auto` exits 2 with a concrete-port hint rather than inventing an address.
 
 ### Define
 
@@ -67,7 +69,7 @@ Port maps use the form `listen:target`:
 | `dtt add cloudflared <name> --url U` / `--tunnel-name N --hostname H --secret S` | Save a quick or named tunnel |
 | `dtt add command <name> --line L [--dir D] [--ready-log RE] [--secret-env K=S]` | Save any command |
 | `dtt import [--name N] -- <cmd>` | Save from a traditional command, showing warnings |
-| `dtt save <tmp-id> --name N` | Turn an ephemeral tunnel into a saved one |
+| `dtt save <tmp-id> --name N [--profile P]` | Turn an ephemeral tunnel into a saved one |
 | `dtt edit <t>` | Open a TOML fragment in `$EDITOR`, then validate it |
 | `dtt set <t> key=value...` | Change fields without an editor, e.g. `favorite=true reconnect=false` |
 | `dtt dup <t> --name N` | Copy a tunnel |
@@ -112,8 +114,8 @@ There is no `reveal`. It requires OS authentication, which the desktop app provi
 | Command | Purpose |
 |---|---|
 | `dtt prompts` / `dtt prompts answer <id>` | SSH questions waiting for a person |
-| `dtt approvals` / `approve <id>` / `deny <id>` | Agent requests. `approve` needs a TTY and the code shown in the request |
-| `dtt leases` / `dtt leases revoke <id>` | Which clients hold which tunnels, until when |
+| `dtt approvals` / `dtt approvals approve <id>` / `dtt approvals deny <id>` | Pending agent requests: summary, argv, actor, purpose, scopes, expiry and code. `approve` needs a TTY and the code shown in the request. Top-level `dtt approve` / `dtt deny` are aliases |
+| `dtt leases` / `dtt leases revoke <id>` | Lease ID, tunnel, holder, effective expiry, started-it and detached state |
 | `dtt audit` | History of changes. `--actor A` `--tunnel T` `--since D` `-f` |
 | `dtt orphans` / `dtt orphans stop <pid>` | Processes left by a crash |
 
@@ -199,7 +201,7 @@ On a TTY, `dtt start`, `run` and `forward` show SSH questions for their own tunn
 | Source | Used for |
 |---|---|
 | `tunnels.toml` | Saved tunnels and profiles |
-| `settings.toml` | Per-machine tool paths, the `[agent]` policy, `default_expose` |
+| `settings.toml` | Per-machine tool paths and the `[agent]` policy (`default_expose` is not implemented) |
 | `DTT_SOCKET` | Use a different daemon socket. For tests |
 | `NO_COLOR` | Turn off color |
 
@@ -225,8 +227,8 @@ Documentation comes from the command definitions where possible, so that it cann
 Enforcement in CI:
 
 - **Drift:** regenerate the reference, and fail if `git diff` is not empty.
-- **Examples work:** a test parses shell blocks and inline `dtt ...` examples in `docs/cli/*.md` against the command tree without executing them. Future `run`, `forward`, `expose` and `save` examples are explicitly marked `phase19` and available after phase 19; only those unavailable calls are skipped. A renamed flag fails the build.
+- **Examples work:** a test parses shell blocks and inline `dtt ...` examples in `docs/cli/*.md` against the command tree without executing them. All one-off examples are validated too, including the `auto:5432` script and its JSON ID lookup. A renamed flag fails the build.
 - **Exit codes:** a test confirms the tables above and in the embedded troubleshooting guide match `ExitCodes`, which must cover every `internal/api` error kind.
 - **Completeness:** a test fails when a command has no `Long` text or `Example`.
 
-The README links the install/usage guide. Reference Markdown is committed; man pages are generated at package time. Automatic date/history tags are disabled and the man header date is fixed to 2026-11-04, so output is deterministic. The guides retain future examples rather than silently dropping the phase-19 migration path.
+The README links the install/usage guide. Reference Markdown is committed; man pages are generated at package time. Automatic date/history tags are disabled and the man header date is fixed to 2026-11-04, so output is deterministic. All guide examples use implemented commands.

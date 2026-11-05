@@ -10,13 +10,16 @@ type Actor struct {
 }
 
 type Lease struct {
-	ID         string     `json:"id"`
-	TunnelID   string     `json:"tunnelId"`
-	Holder     Actor      `json:"holder"`
-	Session    string     `json:"session"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	ExpiresAt  time.Time  `json:"expiresAt"`
-	StartedIt  bool       `json:"startedIt"`
+	ID        string    `json:"id"`
+	TunnelID  string    `json:"tunnelId"`
+	Holder    Actor     `json:"holder"`
+	Session   string    `json:"session"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	StartedIt bool      `json:"startedIt"`
+	// Detached person leases survive client disconnect. A zero ExpiresAt means
+	// no TTL; they remain revocable and never pin the tunnel.
+	Detached   bool       `json:"detached,omitempty"`
 	GraceUntil *time.Time `json:"graceUntil,omitempty"`
 	Revoked    bool       `json:"revoked,omitempty"`
 }

@@ -1,5 +1,8 @@
+import type { Lease } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/model";
 import { useEffect, useMemo, useState } from "react";
 import { Overview, Service, TunnelView, onLogsAppended, openURL } from "../api";
+import { AgentBadge, EphemeralTag } from "../AgentBadge";
+import { SaveTunnelDialog } from "../SaveTunnelDialog";
 import { applyLogUpdate } from "../lib/logs";
 import { TypeFilter, ViewFilter, filterTunnels, isActive } from "../lib/filter";
 import {
@@ -28,6 +31,8 @@ export function TunnelsScreen({
   onNavigate: (screen: string, param?: string) => void;
   refresh: () => void;
 }) {
+  const [leases, setLeases] = useState<Lease[] | undefined>();
+  const [saving, setSaving] = useState<TunnelView | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
   const [type, setType] = useState<TypeFilter>("all");
@@ -38,6 +43,19 @@ export function TunnelsScreen({
     hosts: [],
   });
   const tunnels = overview.tunnels ?? [];
+  useEffect(() => {
+    let mounted = true;
+    Service.ListLeases()
+      .then((items) => {
+        if (mounted) setLeases(items ?? []);
+      })
+      .catch(() => {
+        if (mounted) setLeases(undefined);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [overview]);
   const profileNames = useMemo(
     () => new Map((overview.profiles ?? []).map((profile) => [profile.id, profile.name])),
     [overview.profiles],
@@ -73,6 +91,7 @@ export function TunnelsScreen({
   }, [overview.activeProfile]);
   useEffect(() => {
     const moveSelection = (event: KeyboardEvent) => {
+      if (document.querySelector('[aria-modal="true"]')) return;
       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
       if (
         event.target instanceof HTMLInputElement ||
@@ -217,6 +236,7 @@ export function TunnelsScreen({
               <TunnelRow
                 key={item.tunnel.id}
                 view={item}
+                leases={leases}
                 selected={selected?.tunnel.id === item.tunnel.id}
                 profileNames={profileNames}
                 now={now}
@@ -225,12 +245,26 @@ export function TunnelsScreen({
                 onFavorite={() => run(Service.SetFavorite(item.tunnel.id, !item.tunnel.favorite))}
                 onVault={() => onNavigate("settings", "vault")}
                 onEdit={() => onNavigate("editor", `edit:${item.tunnel.id}`)}
+                onSave={() => setSaving(item)}
               />
             ))
           )}
         </main>
-        {selected && <Detail view={selected} profileNames={profileNames} now={now} onNavigate={onNavigate} run={run} />}
+        {selected && (
+          <Detail
+            view={selected}
+            leases={leases}
+            profileNames={profileNames}
+            now={now}
+            onNavigate={onNavigate}
+            run={run}
+            onSave={() => setSaving(selected)}
+          />
+        )}
       </div>
+      {saving && (
+        <SaveTunnelDialog key={saving.tunnel.id} view={saving} onClose={() => setSaving(null)} onSaved={refresh} />
+      )}
       <footer className="statusbar">
         <span>{running} running</span>
         <span>
@@ -282,6 +316,7 @@ function Empty({
 
 function TunnelRow({
   view,
+  leases,
   selected,
   profileNames,
   now,
@@ -290,8 +325,10 @@ function TunnelRow({
   onFavorite,
   onVault,
   onEdit,
+  onSave,
 }: {
   view: TunnelView;
+  leases?: Lease[];
   selected: boolean;
   profileNames: Map<string, string>;
   now: number;
@@ -300,6 +337,7 @@ function TunnelRow({
   onFavorite: () => void;
   onVault: () => void;
   onEdit: () => void;
+  onSave: () => void;
 }) {
   const forwards = displayForwards(view);
   const [expanded, setExpanded] = useState(forwards.length > 0 || !!view.status.error);
@@ -330,9 +368,11 @@ function TunnelRow({
                 {flag}
               </span>
             ))}
+            <AgentBadge owner={view.owner} now={now} tunnelID={view.tunnel.id} leases={leases} />
             {view.status.stale && <span className="stale-pill">Restart to apply changes</span>}
           </span>
         </button>
+        {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
         <div className="row-profiles">
           {(view.tunnel.profiles ?? []).map((profile) => (
             <span className="profile-chip" key={profile}>
@@ -409,16 +449,20 @@ function TunnelRow({
 
 function Detail({
   view,
+  leases,
   profileNames,
   now,
   onNavigate,
   run,
+  onSave,
 }: {
   view: TunnelView;
+  leases?: Lease[];
   profileNames: Map<string, string>;
   now: number;
   onNavigate: (screen: string, param?: string) => void;
   run: (operation: Promise<unknown>) => void;
+  onSave: () => void;
 }) {
   const [logs, setLogs] = useState<{ seq: number; line: string }[]>([]);
   const active = isActive(view.status.state);
@@ -476,6 +520,10 @@ function Detail({
         <span className={`state-pill state-pill-${view.status.state}`}>
           <StateBadge state={view.status.state} />
         </span>
+      </div>
+      <div className="ownership-tags">
+        <AgentBadge owner={view.owner} now={now} tunnelID={view.tunnel.id} leases={leases} />
+        {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
       </div>
       {view.status.error && <p className="error-text">{view.status.error}</p>}
       {view.status.address && (

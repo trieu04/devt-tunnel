@@ -121,17 +121,19 @@ func TestGuideExamples(t *testing.T) {
 				t.Fatal(err)
 			}
 			var block strings.Builder
-			var inFence, shell, phase19 bool
+			var inFence, shell bool
 			checked := 0
 			for _, line := range strings.Split(string(guide), "\n") {
 				if strings.HasPrefix(line, "```") {
 					if inFence && shell {
-						checked += checkShellExamples(t, block.String(), phase19)
+						checked += checkShellExamples(t, block.String())
 					}
 					inFence = !inFence
 					language := strings.TrimSpace(strings.TrimPrefix(line, "```"))
 					shell = strings.HasPrefix(language, "bash") || strings.HasPrefix(language, "sh")
-					phase19 = strings.Contains(language, "phase19")
+					if strings.Contains(language, "phase19") {
+						t.Error("obsolete phase19 fence: all commands are implemented")
+					}
 					block.Reset()
 					continue
 				}
@@ -144,10 +146,13 @@ func TestGuideExamples(t *testing.T) {
 				// Table cells contain executable replacements/fixes. Inline prose
 				// such as "use `dtt secret set --stdin`" is a command mention,
 				// not a complete invocation, and is not treated as an example.
+				if strings.Contains(line, "<!-- phase19 -->") {
+					t.Error("obsolete phase19 row marker")
+				}
 				if strings.HasPrefix(line, "|") {
 					for _, match := range inlineCode.FindAllStringSubmatch(line, -1) {
 						if strings.HasPrefix(match[1], "dtt ") {
-							checked += checkShellExamples(t, match[1], strings.Contains(line, "<!-- phase19 -->"))
+							checked += checkShellExamples(t, match[1])
 						}
 					}
 				}
@@ -159,7 +164,7 @@ func TestGuideExamples(t *testing.T) {
 	}
 }
 
-func checkShellExamples(t *testing.T, source string, phase19 bool) int {
+func checkShellExamples(t *testing.T, source string) int {
 	t.Helper()
 	program, err := syntax.NewParser().Parse(strings.NewReader(source), "guide")
 	if err != nil {
@@ -175,14 +180,7 @@ func checkShellExamples(t *testing.T, source string, phase19 bool) int {
 		for _, word := range call.Args[1:] {
 			args = append(args, exampleWord(word.Parts))
 		}
-		if len(args) > 0 && phase19 {
-			switch args[0] {
-			case "run", "forward", "expose", "save":
-				// Only the explicitly unavailable calls are skipped. Other dtt
-				// calls in a phase19 script are still checked (including $()).
-				return true
-			}
-		}
+
 		if err := parseExample(args); err != nil {
 			t.Errorf("dtt %s: %v", strings.Join(args, " "), err)
 		}
@@ -229,7 +227,7 @@ func parseExample(args []string) error {
 }
 
 func TestGuideParserRejectsDriftWithoutExecuting(t *testing.T) {
-	for _, args := range [][]string{{"unknown"}, {"ls", "--removed-flag"}, {"secret", "ls", "extra"}, {"profile", "removed"}, {"run", "--", "ssh"}} {
+	for _, args := range [][]string{{"unknown"}, {"ls", "--removed-flag"}, {"secret", "ls", "extra"}, {"profile", "removed"}, {"run"}} {
 		if err := parseExample(args); err == nil {
 			t.Errorf("accepted invalid example %v", args)
 		}
@@ -239,12 +237,12 @@ func TestGuideParserRejectsDriftWithoutExecuting(t *testing.T) {
 		`op read op://dev/token | dtt secret set token --kind env --stdin`,
 		`dtt show 'Production DB' --json > output.json`,
 	} {
-		if checked := checkShellExamples(t, source, false); checked == 0 {
+		if checked := checkShellExamples(t, source); checked == 0 {
 			t.Errorf("missed example %q", source)
 		}
 	}
-	if checked := checkShellExamples(t, "dtt forward staging auto:5432\ndtt addr db --port", true); checked != 1 {
-		t.Fatalf("phase19 skip hid current commands: checked %d", checked)
+	if checked := checkShellExamples(t, "dtt forward staging auto:5432\ndtt addr db --port"); checked != 2 {
+		t.Fatalf("one-off examples were not all checked: checked %d", checked)
 	}
 }
 

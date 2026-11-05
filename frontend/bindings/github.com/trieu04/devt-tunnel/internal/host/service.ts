@@ -22,6 +22,9 @@ import * as model$0 from "../core/model/models.js";
 import * as secret$0 from "../core/secret/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as settings$0 from "../core/settings/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as sshconfig$0 from "../core/sshconfig/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -35,6 +38,10 @@ export function ActivateProfile(id: string): $CancellablePromise<void> {
     return $Call.ByID(1135488226, id);
 }
 
+export function AgentSettings(): $CancellablePromise<settings$0.Agent> {
+    return $Call.ByID(1688787100);
+}
+
 export function AnswerPrompt(id: string, value: string, cancelled: boolean): $CancellablePromise<void> {
     return $Call.ByID(1992270408, id, value, cancelled);
 }
@@ -45,6 +52,10 @@ export function AppVersion(): $CancellablePromise<string> {
 
 export function CheckForUpdate(force: boolean): $CancellablePromise<$models.UpdateInfo> {
     return $Call.ByID(1607546054, force);
+}
+
+export function DecideApproval(params: api$0.DecideApprovalParams): $CancellablePromise<api$0.Approval> {
+    return $Call.ByID(3956075075, params);
 }
 
 export function DeleteProfile(id: string): $CancellablePromise<void> {
@@ -83,6 +94,14 @@ export function ImportCommand(line: string): $CancellablePromise<importer$0.Resu
     return $Call.ByID(2915497514, line);
 }
 
+export function ListApprovals(): $CancellablePromise<api$0.Approval[] | null> {
+    return $Call.ByID(1156993896);
+}
+
+export function ListLeases(): $CancellablePromise<api$0.Lease[] | null> {
+    return $Call.ByID(117251279);
+}
+
 export function ListSecrets(): $CancellablePromise<api$0.SecretView[] | null> {
     return $Call.ByID(4286835157);
 }
@@ -101,6 +120,10 @@ export function OpenIn(screen: string, param: string): $CancellablePromise<void>
 
 export function Overview(): $CancellablePromise<api$0.Overview> {
     return $Call.ByID(886523795);
+}
+
+export function PromoteTunnel(id: string, name: string): $CancellablePromise<string> {
+    return $Call.ByID(1772156158, id, name);
 }
 
 export function Quit(): $CancellablePromise<void> {
@@ -135,6 +158,10 @@ export function RevealSecret(name: string): $CancellablePromise<string> {
     return $Call.ByID(3165671985, name);
 }
 
+export function RevokeLease(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1212115140, id);
+}
+
 export function SSHHosts(profileID: string): $CancellablePromise<api$0.SSHHostList> {
     return $Call.ByID(2010502573, profileID);
 }
@@ -145,6 +172,10 @@ export function SaveProfile(profile: model$0.Profile, members: string[] | null):
 
 export function SaveTunnel(t: model$0.Tunnel, start: boolean): $CancellablePromise<string> {
     return $Call.ByID(4172880143, t, start);
+}
+
+export function SetAgentSettings(agent: settings$0.Agent): $CancellablePromise<void> {
+    return $Call.ByID(94309996, agent);
 }
 
 export function SetFavorite(id: string, favorite: boolean): $CancellablePromise<void> {
@@ -169,6 +200,14 @@ export function SetToolPath(tool: string, path: string): $CancellablePromise<api
 
 export function SetUpdateChecks(enabled: boolean): $CancellablePromise<void> {
     return $Call.ByID(1547946608, enabled);
+}
+
+/**
+ * ShowApprovals brings the native main window forward when a recovered pending
+ * request is first seen. It is harmless in browser/server mode.
+ */
+export function ShowApprovals(): $CancellablePromise<void> {
+    return $Call.ByID(1689805971);
 }
 
 export function ShowMain(): $CancellablePromise<void> {

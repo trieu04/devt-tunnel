@@ -20,6 +20,49 @@ import * as sshconfig$0 from "../core/sshconfig/models.js";
 // @ts-ignore: Unused imports
 import * as supervisor$0 from "../core/supervisor/models.js";
 
+export type Actor = model$0.Actor;
+
+/**
+ * Approval is a fingerprint-bound request, not a deferred/background execution.
+ * Code and Argv are omitted from MCP views. Only person clients can decide.
+ */
+export interface Approval {
+    "id": string;
+    "actor": Actor;
+    "session"?: string;
+    "purpose": string;
+    "summary": string;
+    "tunnelId"?: string;
+    "action": string;
+    "argv"?: string[] | null;
+    "fingerprint": string;
+    "choices": string[] | null;
+    "code"?: string;
+
+    /**
+     * pending | approved | denied | timed_out | consumed
+     */
+    "status": string;
+    "scope"?: string;
+    "createdAt": string;
+    "expiresAt": string;
+}
+
+export interface DecideApprovalParams {
+    "id": string;
+
+    /**
+     * approve | deny
+     */
+    "decision": string;
+
+    /**
+     * once | session | always
+     */
+    "scope": string;
+    "code": string;
+}
+
 export interface DraftResult {
     "preview": string;
     "buildError": string;
@@ -32,6 +75,8 @@ export interface Endpoint {
     "target"?: string;
     "public": boolean;
 }
+
+export type Lease = model$0.Lease;
 
 export interface Overview {
     "configPath": string;

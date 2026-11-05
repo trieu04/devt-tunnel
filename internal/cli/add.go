@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -35,7 +36,7 @@ func addSSHCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ssh <name> --host H -L M",
 		Short:   "Save an SSH tunnel with local, remote or SOCKS forwards",
-		Long:    "Save the equivalent of ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 server1. Use --host for an SSH config alias, or --hostname with --user, --port and --identity for a manual destination. Repeat -L, -R, -D, --flag and --option. Maps accept port:port, port:host:port or bind:port:host:port; non-loopback binds warn. auto: ports require phase 19 and are not supported yet.",
+		Long:    "Save the equivalent of ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 server1. Use --host for an SSH config alias, or --hostname with --user, --port and --identity for a manual destination. Repeat -L, -R, -D, --flag and --option. Maps accept port:port, port:host:port or bind:port:host:port; non-loopback binds warn. Saved definitions require concrete listen ports; use dtt forward for auto allocation.",
 		Example: "  dtt add ssh db --host server1 -L 15432:5432\n  dtt add ssh proxy --hostname example.com --user dev --port 22 --identity ~/.ssh/id_ed25519 -D 1080\n  dtt add ssh web --host server1 -L 8080:app:80 --flag C --option ServerAliveInterval=15 --dry-run",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -58,6 +59,9 @@ func addSSHCommand(a *app) *cobra.Command {
 					forward, warning, err := parsePortMap(group.kind, value)
 					if err != nil {
 						return err
+					}
+					if forward.ListenPort != "" {
+						return usageError("saved definitions require concrete ports; use dtt forward HOST auto:PORT --save NAME")
 					}
 					forwards = append(forwards, forward)
 					if warning != "" {
@@ -83,11 +87,10 @@ func addSSHCommand(a *app) *cobra.Command {
 				}
 				parsedOptions[key] = val
 			}
-			var t model.Tunnel
-			if err := a.call(cmd.Context(), "tunnel.newDraft", api.NewDraftParams{Kind: model.TypeSSH}, &t); err != nil {
+			t, err := a.newSSHDraft(cmd.Context(), args[0], forwards)
+			if err != nil {
 				return err
 			}
-			t.Name, t.Forwards = args[0], forwards
 			t.SSH.Host, t.SSH.Hostname = host, hostname
 			t.SSH.User, t.SSH.Port, t.SSH.Identity = user, port, identity
 			for _, flag := range extraFlags {
@@ -253,6 +256,13 @@ func defineEnvName(value string) bool {
 	return true
 }
 
+func (a *app) newSSHDraft(ctx context.Context, name string, forwards []model.Forward) (model.Tunnel, error) {
+	var t model.Tunnel
+	err := a.call(ctx, "tunnel.newDraft", api.NewDraftParams{Kind: model.TypeSSH}, &t)
+	t.Name, t.Forwards = name, forwards
+	return t, err
+}
+
 // parsePortMap expands CLI shorthand into the model's explicit bind and target.
 // IPv6 addresses must be bracketed, just as in an ssh port mapping.
 func parsePortMap(kind model.ForwardKind, value string) (model.Forward, string, error) {
@@ -288,16 +298,20 @@ func parsePortMap(kind model.ForwardKind, value string) (model.Forward, string, 
 	} else {
 		return bad("unknown forward kind")
 	}
-	if bindPort == "auto" {
-		return bad("auto: ports are not supported yet (phase 19)")
+	auto := bindPort == "auto"
+	if auto && (kind == model.ForwardRemote || bindHost != "127.0.0.1") {
+		return bad("auto requires a loopback local or SOCKS forward")
 	}
-	if !defineValidPort(bindPort) || kind != model.ForwardDynamic && !defineValidPort(targetPort) {
+	if (!auto && !defineValidPort(bindPort)) || kind != model.ForwardDynamic && !defineValidPort(targetPort) {
 		return bad("ports must be between 1 and 65535")
 	}
 	if targetHost == "" || strings.ContainsAny(bindHost+targetHost, " \t\r\n/") {
 		return bad("host must be a hostname or IP address")
 	}
 	forward := model.Forward{Kind: kind, Bind: net.JoinHostPort(bindHost, bindPort)}
+	if auto {
+		forward.Bind, forward.ListenPort = "", "auto"
+	}
 	if kind != model.ForwardDynamic {
 		forward.Target = net.JoinHostPort(targetHost, targetPort)
 	}

@@ -12,13 +12,13 @@ import (
 // a non-nil policy preserves an explicitly disabled Enabled value.
 // Duration strings are kept in the same form as settings.toml.
 type Agent struct {
-	Enabled       bool     `toml:"enabled"`
-	PortRange     string   `toml:"port_range"`
-	DefaultTTL    string   `toml:"default_ttl"`
-	MaxTTL        string   `toml:"max_ttl"`
-	AllowTunnels  []string `toml:"allow_tunnels"`
-	AllowSSHHosts []string `toml:"allow_ssh_hosts"`
-	Public        string   `toml:"public"` // ask | deny; public exposure cannot be allow-listed
+	Enabled       bool     `toml:"enabled" json:"enabled"`
+	PortRange     string   `toml:"port_range" json:"portRange"`
+	DefaultTTL    string   `toml:"default_ttl" json:"defaultTTL"`
+	MaxTTL        string   `toml:"max_ttl" json:"maxTTL"`
+	AllowTunnels  []string `toml:"allow_tunnels" json:"allowTunnels"`
+	AllowSSHHosts []string `toml:"allow_ssh_hosts" json:"allowSSHHosts"`
+	Public        string   `toml:"public" json:"public"` // ask | deny; public exposure cannot be allow-listed
 }
 
 // DefaultAgent returns fresh allow-lists. The lists shown in the design are

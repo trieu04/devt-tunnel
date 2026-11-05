@@ -15,6 +15,7 @@ import (
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
+	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
@@ -103,7 +104,7 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, rpcCall{method: method, params: params})
 	switch method {
-	case api.EventsSubscribe, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks":
+	case api.EventsSubscribe, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks", "settings.setAgent", "lease.revoke":
 		if out, ok := result.(*api.Empty); ok {
 			*out = api.Empty{}
 		}
@@ -118,6 +119,17 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 		*(result.(*api.Overview)) = f.overview
 	case "logs.read":
 		*(result.(*[]string)) = append([]string(nil), f.readLogs...)
+	case "approval.list":
+		*(result.(*[]api.Approval)) = []api.Approval{{ID: "ap_test", Code: "A1B2C3D4", Choices: []string{"once", "session"}, Status: "pending"}}
+	case "approval.decide":
+		p := params.(api.DecideApprovalParams)
+		*(result.(*api.Approval)) = api.Approval{ID: p.ID, Status: "approved", Scope: p.Scope}
+	case "settings.getAgent":
+		*(result.(*settings.Agent)) = settings.DefaultAgent()
+	case "lease.list":
+		*(result.(*[]api.Lease)) = []api.Lease{{ID: "ls_test", TunnelID: "tmp_test"}}
+	case "tunnel.promote":
+		*(result.(*string)) = "saved-test"
 	case "settings.get":
 		*(result.(*api.SettingsResult)) = f.settings
 	case "logs.since":
@@ -181,14 +193,15 @@ func TestServiceForwardsCallsAndEvents(t *testing.T) {
 		t.Fatalf("start marked calls = %d, want 1", len(calls))
 	}
 
-	events := make(chan api.Event, 2)
+	events := make(chan api.Event, 3)
 	s.mu.Lock()
 	s.eventSink = func(event api.Event) { events <- event }
 	s.mu.Unlock()
 	prompt := api.PendingPrompt{ID: "prompt-1"}
 	daemon.emit(api.Event{Type: api.EventPromptAdded, Prompt: &prompt})
 	daemon.emit(api.Event{Type: api.EventTunnelsChanged})
-	for _, want := range []string{api.EventPromptAdded, api.EventTunnelsChanged} {
+	daemon.emit(api.Event{Type: api.EventApprovalAdded, ApprovalID: "ap_test"})
+	for _, want := range []string{api.EventPromptAdded, api.EventTunnelsChanged, api.EventApprovalAdded} {
 		select {
 		case event := <-events:
 			if event.Type != want {
@@ -691,4 +704,49 @@ func eventually(t *testing.T, timeout time.Duration, condition func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition was not met before timeout")
+}
+
+func TestServiceForwardsAgentControls(t *testing.T) {
+	daemon := newFakeDaemon("fake.toml")
+	s := newService(func(context.Context) (daemonClient, error) { return daemon, nil }, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	approvals, err := s.ListApprovals()
+	if err != nil || len(approvals) != 1 || approvals[0].Code != "A1B2C3D4" {
+		t.Fatalf("approval listing: %+v / %v", approvals, err)
+	}
+	decision := api.DecideApprovalParams{ID: approvals[0].ID, Code: approvals[0].Code, Decision: "approve", Scope: "session"}
+	if _, err := s.DecideApproval(decision); err != nil {
+		t.Fatal(err)
+	}
+	if calls := daemon.recorded("approval.decide"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, decision) {
+		t.Fatalf("decision changed: %+v", calls)
+	}
+	agent, err := s.AgentSettings()
+	if err != nil || agent.Public != "ask" {
+		t.Fatalf("policy: %+v / %v", agent, err)
+	}
+	agent.Enabled = false
+	if err := s.SetAgentSettings(agent); err != nil {
+		t.Fatal(err)
+	}
+	if calls := daemon.recorded("settings.setAgent"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, api.AgentSettingsParams{Agent: agent}) {
+		t.Fatalf("policy changed: %+v", calls)
+	}
+	leases, err := s.ListLeases()
+	if err != nil || len(leases) != 1 {
+		t.Fatalf("leases: %+v / %v", leases, err)
+	}
+	if err := s.RevokeLease(leases[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if calls := daemon.recorded("lease.revoke"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, api.IDParams{ID: "ls_test"}) {
+		t.Fatalf("revoke: %+v", calls)
+	}
+	id, err := s.PromoteTunnel("tmp_test", "Saved test")
+	if err != nil || id != "saved-test" {
+		t.Fatalf("promote: %s / %v", id, err)
+	}
+	if calls := daemon.recorded("tunnel.promote"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, api.PromoteTunnelParams{ID: "tmp_test", Name: "Saved test"}) {
+		t.Fatalf("promote: %+v", calls)
+	}
 }

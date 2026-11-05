@@ -54,6 +54,24 @@ export enum ForwardKind {
     ForwardDynamic = "D",
 };
 
+export interface Lease {
+    "id": string;
+    "tunnelId": string;
+    "holder": Actor;
+    "session": string;
+    "createdAt": string;
+    "expiresAt": string;
+    "startedIt": boolean;
+
+    /**
+     * Detached person leases survive client disconnect. A zero ExpiresAt means
+     * no TTL; they remain revocable and never pin the tunnel.
+     */
+    "detached"?: boolean;
+    "graceUntil"?: string | null;
+    "revoked"?: boolean;
+}
+
 export interface Ngrok {
     "proto": string;
     "addr": string;

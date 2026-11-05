@@ -34,16 +34,23 @@ dtt [flags]
 
 * [dtt add](dtt_add.md)	 - Define and save a supervised tunnel
 * [dtt addr](dtt_addr.md)	 - Print a tunnel's address
+* [dtt approvals](dtt_approvals.md)	 - List pending agent requests for a person
+* [dtt approve](dtt_approve.md)	 - Approve a pending agent request
+* [dtt audit](dtt_audit.md)	 - Read or follow the daemon's audit history
 * [dtt check](dtt_check.md)	 - Run editor checks for a saved tunnel
 * [dtt completion](dtt_completion.md)	 - Generate a shell completion script
 * [dtt config](dtt_config.md)	 - Locate, reload or edit tunnel configuration
 * [dtt daemon](dtt_daemon.md)	 - Control the per-user daemon
+* [dtt deny](dtt_deny.md)	 - Deny a pending agent request
 * [dtt docs](dtt_docs.md)	 - Read embedded offline guides
 * [dtt doctor](dtt_doctor.md)	 - Check tools, keychain and daemon health
 * [dtt dup](dtt_dup.md)	 - Save a copy of a tunnel
 * [dtt edit](dtt_edit.md)	 - Edit a tunnel as a TOML fragment
+* [dtt expose](dtt_expose.md)	 - Expose a local service publicly through ngrok or cloudflared
+* [dtt forward](dtt_forward.md)	 - Open a background ephemeral SSH forward
 * [dtt hosts](dtt_hosts.md)	 - List SSH config aliases or resolve one
 * [dtt import](dtt_import.md)	 - Save a traditional command as a tunnel
+* [dtt leases](dtt_leases.md)	 - List clients holding tunnels and their expiries
 * [dtt logs](dtt_logs.md)	 - Read or follow retained tunnel output
 * [dtt ls](dtt_ls.md)	 - List tunnels and their endpoints
 * [dtt man](dtt_man.md)	 - Write man pages for every command
@@ -52,6 +59,8 @@ dtt [flags]
 * [dtt prompts](dtt_prompts.md)	 - List SSH questions waiting for an answer
 * [dtt restart](dtt_restart.md)	 - Restart tunnels and wait until ready
 * [dtt rm](dtt_rm.md)	 - Delete saved tunnel definitions
+* [dtt run](dtt_run.md)	 - Supervise a traditional tunnel command in the foreground
+* [dtt save](dtt_save.md)	 - Promote an ephemeral tunnel to a saved definition
 * [dtt secret](dtt_secret.md)	 - Manage named credentials without displaying values
 * [dtt set](dtt_set.md)	 - Change tunnel fields without an editor
 * [dtt show](dtt_show.md)	 - Inspect a tunnel definition and runtime state

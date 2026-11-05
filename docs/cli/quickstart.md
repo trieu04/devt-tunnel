@@ -30,19 +30,17 @@ The daemon starts on demand and is shared with the desktop app. Tunnel reference
 
 First-time SSH host-key questions appear inline on a terminal. Without a terminal or with `--no-input`, a question exits 4 rather than hanging; inspect it with `dtt prompts` or the app. Secret values are accepted only from a hidden prompt or `dtt secret set --stdin`, not flags or environment variables.
 
-## One-off tunnels (available after phase 19)
-
-**The one-off commands `run`, `forward` and `save` below are available after phase 19.** Fences marked `phase19` preserve those planned examples and are skipped for unavailable commands by the documentation parse check.
+## One-off tunnels
 
 Use the command you already know. `dtt` parses it, runs it under supervision, and stops it when you press Ctrl-C:
 
-```bash phase19
+```bash
 dtt run -- ssh -N -L 5433:127.0.0.1:5432 server1
 ```
 
-Or use the short form, which stays in the background until you close it:
+Or use the short form, which stays in the background until you close it with `dtt stop` or revoke its lease. Background commands use a detached person lease: it survives CLI exit and has no expiry unless you pass `--ttl` (maximum 8h). `run` defaults to the foreground with a 30m lease; `--detach` selects the background behavior.
 
-```bash phase19
+```bash
 dtt forward server1 5433:5432
 ```
 
@@ -60,7 +58,7 @@ api-test     cloudflared  running   https://x.trycloudflare.com  claude-code  23
 
 Save it under a name to reuse later, then start it by name:
 
-```bash phase19
+```bash
 dtt save tmp-server1 --name staging-db --profile work
 ```
 
@@ -73,6 +71,17 @@ Pass its address to another program:
 ```bash
 psql "host=127.0.0.1 port=$(dtt addr staging-db --port) dbname=app"
 ```
+
+Expose a local service publicly (the provider is always explicit because `default_expose` is not implemented):
+
+```bash
+dtt expose 3000 --via cloudflared --ttl 15m
+dtt leases
+dtt approvals
+dtt audit --since 1h
+```
+
+`expose` always warns on stderr that the service will be public. `approvals approve <id>` (also `approve <id>`) requires a terminal and asks for the code shown by `approvals`; `approvals deny <id>` (also `deny <id>`) can run without a terminal. Saving preserves the running process and its lease, rather than pinning it.
 
 ## Shell completion and offline help
 
@@ -98,4 +107,4 @@ man ./man/dtt.1
 
 Guides are embedded in the binary. The [command reference](reference/dtt.md) is generated from Cobra definitions and committed. From the repository root, `go run ./internal/cli/gen` regenerates `docs/cli/reference/*.md` and section 1 man pages in ignored `bin/man/`; only the reference Markdown is committed. Release packaging can install those man pages into `share/man/man1`. Both outputs disable auto-generated date/history tags, and the man header date is fixed to the interface contract date for reproducibility. `dtt man` generates the same pages offline, defaulting to the current directory.
 
-Phase 18 implements saved tunnels, lifecycle, prompts, profiles, secrets, orphans, configuration, tools and setup. `run`, `forward`, `expose`, `save`, leases, approvals and audit wait for phase 19. Daemon login installation and MCP are not implemented yet. Native/Linux no-GTK exit acceptance has not yet been run.
+Phases 18–19 implement saved and ephemeral tunnels, lifecycle, prompts, profiles, secrets, leases, approvals, audit, orphans, configuration, tools and setup. Daemon login installation and MCP are not implemented yet. Native/Linux no-GTK exit acceptance has not yet been run.

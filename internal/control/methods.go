@@ -7,6 +7,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
 	"github.com/trieu04/devt-tunnel/internal/core/importer"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
+	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/sshconfig"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
@@ -197,6 +198,11 @@ func (s *Server) register() {
 	})
 	query(s, "settings.get", func(api.Empty) api.SettingsResult {
 		return api.SettingsResult{Shortcut: e.Shortcut(), UpdateChecks: e.UpdateChecksEnabled()}
+	})
+	query(s, "settings.getAgent", func(api.Empty) settings.Agent { return e.AgentSettings() })
+	handle(s, "settings.setAgent", func(ctx context.Context, p api.AgentSettingsParams) (api.Empty, error) {
+		actor, _ := connectionActor(ctx)
+		return api.Empty{}, e.SetAgentSettingsFor(actor, p.Agent)
 	})
 	action(s, "settings.setShortcut", func(p api.ShortcutParams) error { return e.SetShortcut(p.Shortcut) })
 	action(s, "settings.setUpdateChecks", func(p api.UpdateChecksParams) error { return e.SetUpdateChecks(p.Enabled) })

@@ -33,6 +33,9 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err := s.mutationEnabled(actor); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
+	if p.Detached && actor.Kind != "cli" && actor.Kind != "gui" {
+		return api.RunEphemeralResult{}, s.policyDenied(actor, "")
+	}
 	ttl, err := s.leaseTTL(actor, p.TTL)
 	if err != nil {
 		return api.RunEphemeralResult{}, err
@@ -90,7 +93,10 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 		return api.RunEphemeralResult{}, err
 	}
 	st := s.runtimeSnapshot()
-	l := api.Lease{ID: randomID("ls_"), TunnelID: t.ID, Holder: actor, Session: session, CreatedAt: s.clock.Now(), ExpiresAt: s.clock.Now().Add(ttl), StartedIt: true}
+	l := api.Lease{ID: randomID("ls_"), TunnelID: t.ID, Holder: actor, Session: session, CreatedAt: s.clock.Now(), ExpiresAt: s.clock.Now().Add(ttl), StartedIt: true, Detached: p.Detached}
+	if p.Detached && p.TTL == "" {
+		l.ExpiresAt = time.Time{}
+	}
 	st.Ephemeral = append(st.Ephemeral, t)
 	st.Leases = append(st.Leases, l)
 	st.Owners[t.ID] = corestate.RuntimeOwner{LeaseStarted: true}
@@ -343,7 +349,7 @@ func (s *Engine) recoverRuntime() error {
 	}
 	for i := range st.Leases {
 		l := &st.Leases[i]
-		if l.Revoked {
+		if l.Revoked || l.Detached {
 			continue
 		}
 		// No connection survives a daemon restart. Preserve an earlier disconnect

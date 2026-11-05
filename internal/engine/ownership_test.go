@@ -125,6 +125,52 @@ func requireRevoked(t *testing.T, err error) {
 	}
 }
 
+func TestDetachedPersonLeaseDisconnectAndExpiry(t *testing.T) {
+	for _, ttl := range []string{"", "15m"} {
+		t.Run(ttl, func(t *testing.T) {
+			e, _, clock := ownedEngine(t, nil, model.Config{})
+			actor, token := session(t, e, "detached-cli")
+			result, err := e.RunEphemeral(actor, token, api.RunEphemeralParams{Tunnel: commandTunnel(), Detached: true, TTL: ttl})
+			if err != nil {
+				t.Fatal(err)
+			}
+			readyOwned(t, e, result.ID)
+			if !result.Lease.Detached || result.Lease.ExpiresAt.IsZero() != (ttl == "") {
+				t.Fatalf("lease = %+v", result.Lease)
+			}
+			if err := e.DisconnectSession(actor, token); err != nil {
+				t.Fatal(err)
+			}
+			leases := e.ListLeases(actor, token, false)
+			if len(leases) != 1 || leases[0].GraceUntil != nil {
+				t.Fatalf("detached grace = %+v", leases)
+			}
+			clock.Advance(DisconnectGrace + time.Second)
+			if err := e.ExpireLeases(); err != nil {
+				t.Fatal(err)
+			}
+			requireRunning(t, e, result.ID, true)
+			owner := e.owner(result.ID)
+			if owner.Pinned || owner.Holder == nil || (owner.Expiry == nil) != (ttl == "") {
+				t.Fatalf("owner = %+v", owner)
+			}
+			clock.Advance(24 * time.Hour)
+			if err := e.ExpireLeases(); err != nil {
+				t.Fatal(err)
+			}
+			if ttl != "" {
+				requireRunning(t, e, result.ID, false)
+				return
+			}
+			requireRunning(t, e, result.ID, true)
+			if err := e.RevokeLease(result.Lease.ID); err != nil {
+				t.Fatal(err)
+			}
+			requireRunning(t, e, result.ID, false)
+		})
+	}
+}
+
 // Phase 19.2 case 1.
 func TestLeasesTwoHoldersOneCloses(t *testing.T) {
 	e, _, _ := ownedEngine(t, nil, savedCommand())

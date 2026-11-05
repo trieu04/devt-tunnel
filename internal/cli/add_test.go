@@ -29,9 +29,10 @@ func TestParsePortMap(t *testing.T) {
 		{model.ForwardDynamic, "1080", "127.0.0.1:1080", "", false, false},
 		{model.ForwardDynamic, "localhost:1080", "localhost:1080", "", false, false},
 		{model.ForwardDynamic, "[::]:1080", "[::]:1080", "", true, false},
-		{model.ForwardLocal, "auto:5432", "", "", false, true},
+		{model.ForwardLocal, "auto:5432", "", "127.0.0.1:5432", false, false},
 		{model.ForwardRemote, "auto:db:5432", "", "", false, true},
-		{model.ForwardDynamic, "auto", "", "", false, true},
+		{model.ForwardDynamic, "auto", "", "", false, false},
+		{model.ForwardLocal, "0.0.0.0:auto:5432", "", "", false, true},
 		{model.ForwardLocal, "0:5432", "", "", false, true},
 		{model.ForwardLocal, "65536:5432", "", "", false, true},
 		{model.ForwardLocal, "-1:5432", "", "", false, true},
@@ -51,6 +52,9 @@ func TestParsePortMap(t *testing.T) {
 					t.Fatalf("forward=%+v err=%v", forward, err)
 				}
 				return
+			}
+			if strings.Contains(tc.value, "auto") && forward.ListenPort != "auto" {
+				t.Fatalf("auto map did not request allocation: %+v", forward)
 			}
 			if err != nil || forward.Kind != tc.kind || forward.Bind != tc.bind || forward.Target != tc.target || (warning != "") != tc.warning {
 				t.Fatalf("forward=%+v warning=%q err=%v", forward, warning, err)

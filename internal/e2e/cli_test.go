@@ -174,6 +174,45 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		}
 		verifyAndStop(t)
 	})
+	t.Run("ephemeral-forward-connect-stop", func(t *testing.T) {
+		sshConfig := filepath.Join(root, "forward_ssh_config")
+		contents := fmt.Sprintf("Host forward-fixture\n  HostName 127.0.0.1\n  User %s\n  Port %d\n  IdentityFile %q\n  IdentitiesOnly yes\n  IdentityAgent none\n  StrictHostKeyChecking yes\n  UserKnownHostsFile %q\n  GlobalKnownHostsFile /dev/null\n", os.Getenv("USER"), env.sshdPort, env.key, knownHosts)
+		if err := os.WriteFile(sshConfig, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if code, out, diagnostics := invoke("", "profile", "add", "forward-fixture", "--ssh-config", sshConfig); code != 0 {
+			t.Fatalf("profile add: code=%d stdout=%s stderr=%s", code, out, diagnostics)
+		}
+		if code, out, diagnostics := invoke("", "profile", "use", "forward-fixture"); code != 0 {
+			t.Fatalf("profile use: code=%d stdout=%s stderr=%s", code, out, diagnostics)
+		}
+		defer invoke("", "profile", "use", "--none")
+		code, out, diagnostics := invoke("", "forward", "forward-fixture", "auto:"+env.echoAddr, "--ttl", "5m", "--json")
+		var result struct {
+			APIVersion int `json:"apiVersion"`
+			Tunnels    []struct {
+				ID        string
+				Endpoints []api.Endpoint
+			}
+		}
+		if err := json.Unmarshal([]byte(out), &result); code != 0 || err != nil || result.APIVersion != 1 || len(result.Tunnels) != 1 || len(result.Tunnels[0].Endpoints) != 1 {
+			t.Fatalf("forward: code=%d stdout=%s stderr=%s decode=%v", code, out, diagnostics, err)
+		}
+		id, address := result.Tunnels[0].ID, result.Tunnels[0].Endpoints[0].Listen
+		if !strings.HasPrefix(id, "tmp-") {
+			t.Fatalf("ephemeral ID=%q", id)
+		}
+		// The launching CLI has exited: a detached lease still owns the forward.
+		if got, err := echoThrough(address); err != nil || got != "ping" {
+			t.Fatalf("ephemeral connection=%q error=%v", got, err)
+		}
+		if code, out, diagnostics := invoke("", "stop", id, "--json"); code != 0 || !strings.Contains(out, `"state":"stopped"`) {
+			t.Fatalf("ephemeral stop: code=%d stdout=%s stderr=%s", code, out, diagnostics)
+		}
+		if _, err := echoThrough(address); err == nil {
+			t.Fatal("ephemeral forward survived stop")
+		}
+	})
 	t.Run("hidden-passphrase-on-tty", func(t *testing.T) {
 		run(t, "ssh-keygen", "-q", "-p", "-P", "", "-N", passphrase, "-f", env.key)
 		output, err := cliPTYStart(t, ctx, dtt, "passphrase for", passphrase+"\n")

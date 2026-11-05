@@ -257,6 +257,9 @@ func (s *Service) handleEvent(c daemonClient, event api.Event) {
 	switch event.Type {
 	case api.EventTunnelsChanged:
 		desktop.app.Event.Emit(eventTunnels)
+	case api.EventApprovalAdded:
+		desktop.app.Event.Emit(eventApprovals)
+		desktop.showMain()
 	case api.EventPromptAdded:
 		if event.Prompt != nil {
 			desktop.app.Event.Emit(eventPrompt, *event.Prompt)

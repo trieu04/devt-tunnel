@@ -8,6 +8,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
+	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
@@ -160,6 +161,10 @@ type ShortcutParams struct {
 type UpdateChecksParams struct {
 	Enabled bool `json:"enabled"`
 }
+type AgentSettingsParams struct {
+	Agent settings.Agent `json:"agent"`
+}
+
 type SettingsResult struct {
 	Shortcut     string `json:"shortcut"`
 	UpdateChecks bool   `json:"updateChecks"`
@@ -182,7 +187,7 @@ var Methods = []string{
 	"tunnel.list", "tunnel.get", "tunnel.save", "tunnel.delete", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.waitReady", "tunnel.evaluateDraft", "tunnel.import", "tunnel.newDraft", "tunnel.duplicateDraft", "tunnel.setFavorite", "tunnel.findings", "tunnel.recordUsed", "tunnel.startOnLaunch",
 	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate", "profile.activate", "profile.setAutostart", "profile.start", "profile.stop",
 	"secret.list", "secret.set", "secret.delete", "secret.rename", "secret.forget", "prompt.list", "prompt.answer",
-	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
+	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.getAgent", "settings.setAgent", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
 }
 
 // TTL is a Go duration string (for example "30m"). Empty uses agent.default_ttl
@@ -200,6 +205,9 @@ type RunEphemeralParams struct {
 	Purpose string       `json:"purpose,omitempty"`
 	Tunnel  model.Tunnel `json:"tunnel"`
 	TTL     string       `json:"ttl,omitempty"`
+	// Detached is person-only: retain the lease after disconnect, until TTL or
+	// explicit stop/revoke. An omitted TTL means no expiry for detached leases.
+	Detached bool `json:"detached,omitempty"`
 }
 type RunEphemeralResult struct {
 	ID    string `json:"id"`

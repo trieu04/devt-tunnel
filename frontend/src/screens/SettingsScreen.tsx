@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import type { Kind } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/secret/models";
 import { onSettingsChanged, Overview, Service } from "../api";
 import { SHORTCUTS } from "../app/shortcuts";
+import { AgentsSettings } from "./AgentsSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
 
-type Page = "general" | "vault" | "ssh" | "binaries" | "shortcuts";
+type Page = "agents" | "general" | "vault" | "ssh" | "binaries" | "shortcuts";
 
 export function SettingsScreen({
   overview,
@@ -18,7 +19,7 @@ export function SettingsScreen({
   onProfiles: () => void;
 }) {
   const [page, setPage] = useState<Page>(
-    (["general", "vault", "ssh", "binaries", "shortcuts"].includes(initial) ? initial : "general") as Page,
+    (["general", "agents", "vault", "ssh", "binaries", "shortcuts"].includes(initial) ? initial : "general") as Page,
   );
   const title = page === "ssh" ? "SSH & config files" : capitalize(page);
   return (
@@ -44,6 +45,9 @@ export function SettingsScreen({
           <button aria-pressed={page === "general"} onClick={() => setPage("general")}>
             General
           </button>
+          <button aria-pressed={page === "agents"} onClick={() => setPage("agents")}>
+            Agents
+          </button>
           <button aria-pressed={page === "vault"} onClick={() => setPage("vault")}>
             Vault
           </button>
@@ -60,6 +64,7 @@ export function SettingsScreen({
         </nav>
         <section className="settings-page">
           {page === "general" && <General overview={overview} />}
+          {page === "agents" && <AgentsSettings />}
           {page === "vault" && <Vault overview={overview} />}
           {page === "ssh" && <SSHConfig overview={overview} />}
           {page === "binaries" && <Binaries />}
