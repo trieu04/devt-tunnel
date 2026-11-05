@@ -1,70 +1,16 @@
 # `dtt` command line
 
-Status: **accepted 2026-11-04; phase 16 lifecycle commands implemented.** `dtt version` and `dtt daemon run|status|stop|restart` exist using `flag`; status/stop/restart support `--timeout` and `--json`, and run supports `--idle-exit` (default 5m, 0 disables). Remaining commands and global flags arrive in [phase 18](../plans/18-cli.md) with Cobra. Architecture and rationale are in [control-plane.md](control-plane.md).
+Status: **accepted 2026-11-04; phase 18 implemented except phase-19-dependent commands; native/Linux headless exit test not yet run.** Saved-tunnel read, lifecycle, prompts, define, organize and setup commands are available, including shell completion, embedded guides and deterministic generated reference/man pages. `run`, `forward`, `expose`, `save`, `leases`, `approvals` and `audit` wait for phase 19; daemon login installation and MCP remain future work. `daemon run` supports `--idle-exit` (default 5m, 0 disables). Architecture and rationale are in [control-plane.md](control-plane.md).
 
-This file is both the interface contract and the first draft of the user documentation. See [Documentation plan](#documentation-plan) for where each part goes when commands ship.
+This file is the interface contract. User-facing guides and the generated reference are in [docs/cli](../cli/quickstart.md); see [Documentation plan](#documentation-plan) for generation and CI enforcement.
 
-## Quick start
+## User guides
 
-Use the command you already know. `dtt` parses it, runs it under supervision, and stops it when you press Ctrl-C:
-
-```bash
-dtt run -- ssh -N -L 5433:127.0.0.1:5432 server1
-```
-
-Or use the short form, which stays in the background until you close it:
-
-```bash
-dtt forward server1 5433:5432
-```
-
-```bash
-dtt ls
-```
-
-```text
-ID           TYPE         STATE     ENDPOINT              OWNER      EXPIRES
-tmp-server1  ssh          running   127.0.0.1:5433        cli
-db           ssh          running   127.0.0.1:15432       pinned
-web          ngrok        stopped   example.ngrok.app
-api-test     cloudflared  running   https://x.trycloudflare.com  claude-code  23m
-```
-
-Save it under a name to reuse later, then start it by name:
-
-```bash
-dtt save tmp-server1 --name staging-db --profile work
-```
-
-```bash
-dtt start staging-db
-```
-
-Pass its address to another program:
-
-```bash
-psql "host=127.0.0.1 port=$(dtt addr staging-db --port) dbname=app"
-```
-
-## Replacing traditional commands
-
-| You used to run | Now run | What you gain |
-|---|---|---|
-| `ssh -N -L 5433:127.0.0.1:5432 server1` | `dtt forward server1 5433:5432` | Reconnects, status, logs, port-conflict checks |
-| `ssh -f -N -L 5433:db:5432 server1` | `dtt forward server1 5433:db:5432` | Background with a known PID and a clean stop. `-f` is never used |
-| `ssh -N -R 8080:127.0.0.1:3000 server1` | `dtt forward server1 --remote 8080:3000` | Same, for the remote side |
-| `ssh -N -D 1080 server1` | `dtt forward server1 --socks 1080` | Same, for SOCKS5 |
-| `autossh -M 0 -N -L ...` | `dtt forward ...` | Reconnect with backoff is the default |
-| `ngrok http 3000` | `dtt expose 3000 --via ngrok` | Token from the keychain; address printed when ready |
-| `cloudflared tunnel --url http://localhost:3000` | `dtt expose 3000 --via cloudflared` | Prints the public URL when ready |
-| `cloudflared tunnel run prod` | `dtt add cloudflared prod --tunnel-name prod --secret cf-token`, then `dtt start prod` | Token stays out of shell history |
-| `ps aux \| grep ssh`, `lsof -i :5433` | `dtt ls`, `dtt show <tunnel>` | All tunnels and their owners in one list |
-| `kill <pid>` | `dtt stop <tunnel>` | Stops the whole process tree |
-| Any of the above, unchanged | `dtt run -- <command>` | Nothing to learn |
-
-Keep using `ssh` directly for interactive sessions, `scp` and `rsync`. `dtt` handles tunnels only.
-
-`dtt run` accepts `ssh`, `ngrok` and `cloudflared` through the same importer as the app's paste dialog. Unrecognized flags go to `extra_args`, so nothing is dropped. Other programs need `dtt add command`, because a command's readiness cannot be guessed.
+- [Quick start](../cli/quickstart.md): install, saved tunnels, planned one-off commands, completion and offline help.
+- [Replacing traditional commands](../cli/replacing.md).
+- [Scripts](../cli/scripts.md).
+- [Troubleshooting and exit codes](../cli/troubleshooting.md).
+- [Generated command reference](../cli/reference/dtt.md).
 
 ## Concepts
 
@@ -181,8 +127,8 @@ There is no `reveal`. It requires OS authentication, which the desktop app provi
 | `dtt config path\|reload\|edit` | Work with `tunnels.toml` |
 | `dtt tools` / `dtt tools set <tool> <path>` | Binaries used, with per-machine paths |
 | `dtt mcp serve` / `config` / `tools` | MCP server, see [mcp.md](mcp.md) |
-| `dtt completion bash\|zsh\|fish\|powershell` | Shell completion, including tunnel ids |
-| `dtt docs [topic]` / `dtt man` | Offline documentation |
+| `dtt completion bash\|zsh\|fish\|powershell` | Shell completion, including tunnel IDs/names and profile names; never starts a daemon |
+| `dtt docs [topic]` / `dtt man [--dir DIR]` | Embedded offline guides / section 1 pages (default directory: current) |
 | `dtt version` | CLI and daemon versions |
 
 ## Global behavior
@@ -218,6 +164,8 @@ dtt ls --running --json
 }
 ```
 
+The current Read implementation omits `owner` until phase 19 provides ownership and leases. `logs --json -f` emits one versioned object per batch (newline-delimited JSON). Log lines currently have sequence numbers but no timestamps; a positive `--since` is rejected with exit 2 rather than silently ignoring the filter.
+
 With `--json`, errors are written to stderr as a single object:
 
 ```json
@@ -231,7 +179,7 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed. See the message and `dtt logs` |
+| 1 | `failed` | The tunnel or operation failed. See the message and `dtt logs db` |
 | 2 | `usage` | Bad arguments, or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`) |
@@ -257,36 +205,9 @@ On a TTY, `dtt start`, `run` and `forward` show SSH questions for their own tunn
 
 There are no environment variables for secret values.
 
-## Scripts
+## Scripts and troubleshooting
 
-Open a tunnel for one job, and clean up even if the job fails:
-
-```bash
-#!/bin/sh
-dtt forward staging auto:5432 --ttl 15m --json > tunnel.json || exit
-id=$(jq -r '.tunnels[0].id' tunnel.json)
-port=$(dtt addr "$id" --port)
-trap 'dtt stop "$id"' EXIT
-pg_dump -h 127.0.0.1 -p "$port" app > app.sql
-```
-
-Start a saved tunnel only if needed. `start` is idempotent and returns 0 if it is already running:
-
-```bash
-dtt start db && psql -h 127.0.0.1 -p "$(dtt addr db --port)" app
-```
-
-## Troubleshooting
-
-| Message | Cause | Fix |
-|---|---|---|
-| `127.0.0.1:5433 is already in use` | Another tunnel or process has it | `dtt ls`, `lsof -i :5433`, or use `auto:5432` |
-| `secret "x" is missing` | Not in the keychain | `dtt secret set x` |
-| `the OS keychain is unavailable` | Common on Linux without Secret Service | Install one, or use tunnels without secrets. There is no plaintext fallback |
-| `prompt waiting: host key` | First connection to this host | Run on a TTY, or `dtt prompts`, or add the key with `ssh` first |
-| `tunnels.toml changed on disk` | Edited by hand | `dtt config reload`, then repeat the change |
-| `daemon version 2 is newer than this CLI` | Mixed install | Upgrade `dtt` |
-| `ssh was not found` | Not on the daemon's PATH | `dtt tools set ssh /path/to/ssh` |
+The user-facing [scripts](../cli/scripts.md) and [troubleshooting](../cli/troubleshooting.md) guides live in `docs/cli/` and are embedded for offline use with `dtt docs`.
 
 ## Documentation plan
 
@@ -296,16 +217,16 @@ Documentation comes from the command definitions where possible, so that it cann
 |---|---|---|
 | `dtt <cmd> --help`: synopsis, flags, 1 to 3 examples, the traditional equivalent, exit codes | `cobra` command definitions in `internal/cli` | Terminal |
 | Command reference | Generated by `cobra/doc` with `go run ./internal/cli/gen` | `docs/cli/reference/*.md`, committed |
-| Man pages | Generated by `cobra/doc` | Packages, and `dtt man` |
+| Man pages | Generated by `cobra/doc` with `go run ./internal/cli/gen` | Ignored `bin/man/*.1` for packaging (not committed), and `dtt man --dir DIR` |
 | Shell completion, with dynamic tunnel ids | `cobra` | Packages, and `dtt completion` |
-| Guides: quick start, replacing commands, scripts, troubleshooting | Hand-written, from this file | `docs/cli/*.md`, embedded with `go:embed` for `dtt docs` |
+| Guides: quick start, replacing commands, scripts, troubleshooting | Hand-written in `docs/cli/` | `docs/cli/*.md`, embedded with `go:embed` for `dtt docs` |
 | Agent guide | Hand-written | `docs/cli/agents.md`, also served as an MCP resource |
 
 Enforcement in CI:
 
 - **Drift:** regenerate the reference, and fail if `git diff` is not empty.
-- **Examples work:** a test parses each `dtt ...` line in `docs/cli/*.md` against the command tree, so a renamed flag fails the build.
-- **Exit codes:** a test confirms the table above matches `internal/api`.
+- **Examples work:** a test parses shell blocks and inline `dtt ...` examples in `docs/cli/*.md` against the command tree without executing them. Future `run`, `forward`, `expose` and `save` examples are explicitly marked `phase19` and available after phase 19; only those unavailable calls are skipped. A renamed flag fails the build.
+- **Exit codes:** a test confirms the tables above and in the embedded troubleshooting guide match `ExitCodes`, which must cover every `internal/api` error kind.
 - **Completeness:** a test fails when a command has no `Long` text or `Example`.
 
-Once `dtt` ships, update `README.md` with an install and usage section, and link these guides from its Docs list.
+The README links the install/usage guide. Reference Markdown is committed; man pages are generated at package time. Automatic date/history tags are disabled and the man header date is fixed to 2026-11-04, so output is deterministic. The guides retain future examples rather than silently dropping the phase-19 migration path.

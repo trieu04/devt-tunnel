@@ -21,7 +21,8 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Typed readiness errors, endpoint lists and live port checks (phase 15) | Implemented and unit tested; editor/native-window warning acceptance pending |
 | Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
 | GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; all native macOS checks passed |
-| Full `dtt` CLI and MCP | Planned for phases 18–20 |
+| `dtt` CLI (phase 18) | Saved-tunnel commands, organize/setup groups and generated/offline documentation implemented and tested; phase-19-dependent commands and native/Linux no-GTK exit acceptance pending |
+| Ownership, leases and MCP | Planned for phases 19–20 |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
 
@@ -34,6 +35,36 @@ Release artifacts are created as a draft from `v*` tags. Until signed artifacts 
 - Ubuntu 24.04+/Debian 13+: install the `.deb`; Fedora users install the `.rpm`. GNOME may need a StatusNotifierItem extension for a tray icon.
 
 The app uses system binaries and does not bundle `ssh`, `ngrok` or `cloudflared`.
+
+## `dtt`: headless install and usage
+
+The CLI needs only Go 1.27.3 or newer to build, not Node, GTK or a display. From this checkout:
+
+```bash
+CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt
+mkdir -p "$HOME/.local/bin"
+install -m 755 bin/dtt "$HOME/.local/bin/dtt"
+```
+
+Add `$HOME/.local/bin` to `PATH`. On Windows, use `go build -o bin/dtt.exe ./cmd/dtt` and put the binary in a directory on `PATH`. Signed CLI packages and installer integration are planned for phase 21.
+
+```bash
+dtt add ssh db --host server1 -L 5433:127.0.0.1:5432
+dtt start db
+dtt ls
+dtt show db --json
+dtt addr db --port
+dtt logs db -n 20
+dtt stop db
+dtt completion zsh > _dtt
+dtt docs
+```
+
+`--host` reuses `~/.ssh/config`. The daemon starts on demand and shares saved tunnels with the GUI. `--json` provides versioned script output; `--no-input` prevents prompts. `dtt version` never starts a daemon, and `--no-daemon-start` limits other commands to an existing daemon. Shell completion never starts one either. `dtt daemon run|status|stop|restart` controls the daemon; `run --idle-exit 0` disables its default five-minute idle exit. `stop` and `restart` stop all daemon-owned tunnels; quitting the GUI does the same.
+
+Read the [quick start](docs/cli/quickstart.md), [traditional-command replacements](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting and exit codes](docs/cli/troubleshooting.md), or the [generated command reference](docs/cli/reference/dtt.md). The four guides are also available offline through `dtt docs <topic>`. `dtt man --dir ./man` writes a full section 1 manual. `go run ./internal/cli/gen` refreshes the committed reference and generates package-time man pages under ignored `bin/man/`.
+
+The one-off `run`, `forward`, `expose` and `save` commands, leases, approvals and audit wait for phase 19. Daemon login installation and MCP are not implemented yet. Native/Linux no-GTK CLI exit acceptance has not yet been run.
 
 ## First tunnel
 
@@ -73,7 +104,7 @@ pnpm --dir frontend test
 
 `go test` needs no frontend build. `internal/e2e` starts a private `sshd` and is skipped where that is not possible. Building the root package needs `frontend/dist`, which `wails3 task build` produces.
 
-Build the headless binary with `CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt`. Phase 16 provides `dtt version` and `dtt daemon run|status|stop|restart`; `run --idle-exit 0` disables the default five-minute idle exit. `stop` and `restart` stop every daemon-owned tunnel. The GUI uses the same daemon and stops it, with all tunnels, on app quit. See [the daemon API](docs/design/control-plane.md#local-api) for client methods and version handling.
+The headless CLI has its own [install and usage instructions](#dtt-headless-install-and-usage), [interface contract](docs/design/cli.md) and [daemon API](docs/design/control-plane.md#local-api). Its documentation package needs no frontend build either.
 
 ## Layout
 
@@ -94,7 +125,8 @@ Build the headless binary with `CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt`. Ph
 - [docs/product.md](docs/product.md): concepts, tunnel types, flows, screens, shortcuts.
 - [docs/architecture.md](docs/architecture.md): process model, SSH integration, secrets, storage, data model, decisions, open questions.
 - [docs/platform.md](docs/platform.md): cross-platform stack, code layout, per-OS differences, distribution, validation checks.
-- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API and GUI migration are implemented; full CLI and MCP remain planned.
+- [CLI quick start](docs/cli/quickstart.md), [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting](docs/cli/troubleshooting.md) and [command reference](docs/cli/reference/dtt.md): also available with `dtt docs` / `dtt help`.
+- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API, GUI migration and phase-18 CLI are implemented; phase-19 commands and MCP remain planned.
 - [docs/plans/README.md](docs/plans/README.md): implementation plans.
 
 ## Design

@@ -31,6 +31,8 @@ type ErrorKind string
 const (
 	Conflict           ErrorKind = "conflict"
 	NeedsSecret        ErrorKind = "needs_secret"
+	NeedsUser          ErrorKind = "needs_user"
+	NotFound           ErrorKind = "not_found"
 	KeyringUnavailable ErrorKind = "keyring_unavailable"
 	Stopped            ErrorKind = "stopped"
 	Unknown            ErrorKind = "unknown"
