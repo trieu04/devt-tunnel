@@ -392,6 +392,12 @@ func TestMissingSecretRetriesWithMemoryStore(t *testing.T) {
 	if secrets := e.ListSecrets(); len(secrets) != 1 || secrets[0].State != "present" || len(secrets[0].UsedBy) != 1 {
 		t.Fatalf("vault = %#v", secrets)
 	}
+	if err := e.RenameSecret("test-token", "test-token"); err != nil {
+		t.Fatal(err)
+	}
+	if value, err := store.Get("test-token"); err != nil || value != "test-value" {
+		t.Fatalf("rename to the same name lost the secret: %q %v", value, err)
+	}
 	if err := e.RenameSecret("test-token", "renamed-token"); err != nil {
 		t.Fatal(err)
 	}

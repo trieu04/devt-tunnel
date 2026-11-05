@@ -100,6 +100,10 @@ func (s *Engine) RenameSecret(from, to string) error {
 		return errors.New("invalid secret name")
 	}
 	value, err := s.secrets.Get(from)
+	if err == nil && from == to {
+		// Copy-then-delete would remove the only copy.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
