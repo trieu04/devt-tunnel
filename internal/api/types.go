@@ -19,7 +19,12 @@ type Endpoint struct {
 	Public bool   `json:"public"`
 }
 
+type Actor = model.Actor
+type Lease = model.Lease
+type TunnelOwner = model.TunnelOwner
+
 type TunnelView struct {
+	Owner          TunnelOwner       `json:"owner"`
 	Endpoints      []Endpoint        `json:"endpoints"`
 	Tunnel         model.Tunnel      `json:"tunnel"`
 	Status         supervisor.Status `json:"status"`

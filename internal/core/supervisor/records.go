@@ -103,3 +103,19 @@ func FindOrphans(recs []Record, identity func(pid int) (string, error)) []Record
 	}
 	return orphans
 }
+
+// RenameTunnel updates crash recovery records without touching the process.
+func (f *FileRecords) RenameTunnel(from, to string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	recs, err := f.read()
+	if err != nil {
+		return err
+	}
+	for i := range recs {
+		if recs[i].TunnelID == from {
+			recs[i].TunnelID = to
+		}
+	}
+	return f.write(recs)
+}

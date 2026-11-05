@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -36,7 +37,7 @@ func decode(path string, data []byte) (model.Config, error) {
 	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
 		return model.Config{}, fmt.Errorf("parse %s: unknown key %q", path, undecoded[0])
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := ValidateSaved(cfg); err != nil {
 		return model.Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
@@ -44,7 +45,7 @@ func decode(path string, data []byte) (model.Config, error) {
 
 // Save validates and writes the file atomically, so a crash cannot truncate it.
 func Save(path string, cfg model.Config) error {
-	if err := cfg.Validate(); err != nil {
+	if err := ValidateSaved(cfg); err != nil {
 		return err
 	}
 	var buf bytes.Buffer
@@ -68,4 +69,19 @@ func Save(path string, cfg model.Config) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// ValidateSaved reserves tmp- ids and unresolved port requests for runtime.json.
+func ValidateSaved(cfg model.Config) error {
+	for _, t := range cfg.Tunnels {
+		if strings.HasPrefix(t.ID, "tmp-") {
+			return fmt.Errorf("saved tunnel id %q uses reserved tmp- prefix", t.ID)
+		}
+		for _, f := range t.Forwards {
+			if f.ListenPort != "" {
+				return fmt.Errorf("listen_port is only accepted for ephemeral tunnels")
+			}
+		}
+	}
+	return cfg.Validate()
 }

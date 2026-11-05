@@ -417,14 +417,22 @@ func DialAddress(bind string) string {
 	return net.JoinHostPort(host, port)
 }
 
-// Fingerprint identifies settings that affect the spawned process without including secret values.
+// Fingerprint is the SHA-256 identity of argv (Tool and ordered Args), Dir,
+// Askpass, Passphrase's secret name, and sorted (environment name, secret name)
+// pairs. Spec never contains secret values, so rotating a secret does not
+// invalidate an approval. Readiness and preview-only metadata are excluded.
 func (s Spec) Fingerprint() string {
 	keys := make([]string, 0, len(s.SecretEnv))
-	for env, name := range s.SecretEnv {
-		keys = append(keys, env+"="+name)
+	for env := range s.SecretEnv {
+		keys = append(keys, env)
 	}
 	sort.Strings(keys)
 	h := sha256.New()
-	fmt.Fprintf(h, "%q\x00%q\x00%q\x00%q\x00%q", s.Tool, s.Args, s.Dir, keys, s.Passphrase)
+	fmt.Fprintf(h, "%q\x00%q\x00%q\x00%t\x00%q\x00", s.Tool, s.Args, s.Dir, s.Askpass, s.Passphrase)
+	for _, env := range keys {
+		// Frame both strings separately: concatenating env+"="+name would
+		// collide for e.g. ("TOKEN=A", "B") and ("TOKEN", "A=B").
+		fmt.Fprintf(h, "%q\x00%q\x00", env, s.SecretEnv[env])
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }

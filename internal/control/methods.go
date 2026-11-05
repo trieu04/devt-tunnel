@@ -24,6 +24,28 @@ func query[P, R any](s *Server, method string, fn func(P) R) {
 
 func (s *Server) register() {
 	e := s.engine
+	handle(s, "tunnel.promote", func(_ context.Context, p api.PromoteTunnelParams) (string, error) { return e.PromoteTunnel(p) })
+	handle(s, "tunnel.runEphemeral", func(ctx context.Context, p api.RunEphemeralParams) (api.RunEphemeralResult, error) {
+		actor, session := connectionActor(ctx)
+		return e.RunEphemeralContext(ctx, actor, session, p)
+	})
+	handle(s, "lease.open", func(ctx context.Context, p api.OpenLeaseParams) (api.Lease, error) {
+		actor, session := connectionActor(ctx)
+		return e.OpenLeaseContext(ctx, actor, session, p)
+	})
+	handle(s, "lease.renew", func(ctx context.Context, p api.RenewLeaseParams) (api.Lease, error) {
+		actor, session := connectionActor(ctx)
+		return e.RenewLease(actor, session, p)
+	})
+	handle(s, "lease.close", func(ctx context.Context, p api.IDParams) (api.Empty, error) {
+		actor, session := connectionActor(ctx)
+		return api.Empty{}, e.CloseLease(actor, session, p.ID)
+	})
+	read(s, "lease.list", func(ctx context.Context, _ api.Empty) ([]api.Lease, error) {
+		actor, session := connectionActor(ctx)
+		return e.ListLeases(actor, session, actor.Kind == "mcp"), nil
+	})
+	action(s, "lease.revoke", func(p api.IDParams) error { return e.RevokeLease(p.ID) })
 	query(s, api.DaemonHello, func(api.HelloParams) api.HelloResult { return s.Hello() })
 	query(s, api.DaemonStatusMethod, func(api.Empty) api.DaemonStatus {
 		return api.DaemonStatus{HelloResult: s.Hello(), Active: e.Active(), Connections: s.Connections(), Tunnels: e.Statuses()}
@@ -45,7 +67,7 @@ func (s *Server) register() {
 	})
 	action(s, "tunnel.delete", func(p api.IDParams) error { return e.DeleteTunnel(p.ID) })
 	action(s, "tunnel.start", func(p api.IDParams) error { return e.Start(p.ID) })
-	action(s, "tunnel.stop", func(p api.IDParams) error { e.Stop(p.ID); return nil })
+	action(s, "tunnel.stop", func(p api.IDParams) error { return e.StopTunnel(p.ID) })
 	action(s, "tunnel.restart", func(p api.IDParams) error { return e.Restart(p.ID) })
 	read(s, "tunnel.waitReady", func(ctx context.Context, p api.IDParams) (supervisor.Status, error) { return e.WaitReady(ctx, p.ID) })
 	query(s, "tunnel.evaluateDraft", func(p api.TunnelParams) api.DraftResult { return e.EvaluateDraft(p.Tunnel) })

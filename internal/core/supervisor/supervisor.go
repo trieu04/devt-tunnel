@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,6 +68,8 @@ type Deps struct {
 	Askpass  Askpass // optional
 	Records  Records // optional
 	OnChange func()  // optional; called after any state change
+	// RetryForward persists an allocated replacement before the next spawn.
+	RetryForward func(context.Context, model.Tunnel, error) (model.Tunnel, bool, error)
 
 	// Zero values select the defaults below.
 	BackoffBase  time.Duration
@@ -89,14 +92,15 @@ const (
 
 // Status is a tunnel's current runtime state.
 type Status struct {
-	ID        string    `json:"id"`
-	State     State     `json:"state"`
-	PID       int       `json:"pid,omitempty"`
-	StartedAt time.Time `json:"startedAt,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	Address   string    `json:"address,omitempty"`
-	Attempt   int       `json:"attempt,omitempty"`
-	Stale     bool      `json:"stale,omitempty"`
+	ID        string            `json:"id"`
+	State     State             `json:"state"`
+	PID       int               `json:"pid,omitempty"`
+	StartedAt time.Time         `json:"startedAt,omitempty"`
+	Error     string            `json:"error,omitempty"`
+	Address   string            `json:"address,omitempty"`
+	Attempt   int               `json:"attempt,omitempty"`
+	Stale     bool              `json:"stale,omitempty"`
+	Owner     model.TunnelOwner `json:"owner"`
 }
 
 // Manager owns all tunnels.
@@ -113,6 +117,7 @@ type Manager struct {
 }
 
 type entry struct {
+	id          string
 	status      Status
 	log         *logRing
 	cancel      context.CancelFunc
@@ -401,11 +406,11 @@ func (m *Manager) WaitReady(ctx context.Context, id string) (Status, error) {
 	defer func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		for i, waiter := range m.waiters[id] {
+		for i, waiter := range m.waiters[e.id] {
 			if waiter == ch {
-				m.waiters[id] = append(m.waiters[id][:i], m.waiters[id][i+1:]...)
-				if len(m.waiters[id]) == 0 {
-					delete(m.waiters, id)
+				m.waiters[e.id] = append(m.waiters[e.id][:i], m.waiters[e.id][i+1:]...)
+				if len(m.waiters[e.id]) == 0 {
+					delete(m.waiters, e.id)
 				}
 				break
 			}
@@ -486,7 +491,7 @@ func (m *Manager) findLocked(id string) (model.Tunnel, bool) {
 func (m *Manager) entryLocked(id string) *entry {
 	e, ok := m.tunnels[id]
 	if !ok {
-		e = &entry{status: Status{ID: id, State: StateStopped}, log: newLogRing(m.deps.LogLines)}
+		e = &entry{id: id, status: Status{ID: id, State: StateStopped}, log: newLogRing(m.deps.LogLines)}
 		m.tunnels[id] = e
 	}
 	return e
@@ -551,6 +556,7 @@ func (m *Manager) changed() {
 func (m *Manager) update(e *entry, f func(*Status)) {
 	m.mu.Lock()
 	f(&e.status)
+	e.status.ID = e.id
 	if terminalStatus(e.status.State) {
 		for _, waiter := range m.waiters[e.status.ID] {
 			select {
@@ -576,6 +582,7 @@ func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e
 	retrying := false
 	backoff := m.deps.BackoffBase
 	attempt := 0
+	forwardRetries := 0
 	for {
 		attempt++
 		wasRunning, err := m.runOnce(ctx, t, spec, e, attempt, retrying)
@@ -590,6 +597,28 @@ func (m *Manager) loop(ctx context.Context, t model.Tunnel, spec command.Spec, e
 			}
 			m.update(e, func(s *Status) { *s = Status{ID: t.ID, State: state, Error: err.Error()} })
 			return
+		}
+		if !wasRunning && forwardRetries < 3 && m.deps.RetryForward != nil && forwardFailure(err) {
+			m.mu.Lock()
+			t.ID = e.id
+			m.mu.Unlock()
+			replacement, retry, retryErr := m.deps.RetryForward(ctx, t, err)
+			if retryErr != nil {
+				err = retryErr
+			}
+			if retry {
+				t = replacement
+				m.mu.Lock()
+				spec, err = command.Build(t, m.optionsLocked(t))
+				if err == nil {
+					e.fingerprint = spec.Fingerprint()
+				}
+				m.mu.Unlock()
+				if err == nil {
+					forwardRetries++
+					continue
+				}
+			}
 		}
 		// A first start that fails is reported as Failed. Reconnect only applies once the tunnel has run.
 		if !t.Reconnect || (!wasRunning && !retrying) {
@@ -665,7 +694,7 @@ func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec
 		return false, err
 	}
 	if m.deps.Records != nil {
-		if err := m.deps.Records.Add(Record{TunnelID: t.ID, PID: proc.PID(), Identity: proc.Identity()}); err != nil {
+		if err := m.addProcessRecord(e, proc); err != nil {
 			e.log.Note("cannot record process: " + err.Error())
 		}
 		defer m.deps.Records.Remove(proc.PID())
@@ -835,4 +864,58 @@ func defaultAddress(t model.Tunnel) string {
 		return t.Ngrok.Addr
 	}
 	return ""
+}
+
+// Rename keeps the running entry and its fingerprint while changing its registry
+// key. ID/name are not part of command.Spec.Fingerprint.
+func (m *Manager) Rename(from, to string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e := m.tunnels[from]; e != nil {
+		delete(m.tunnels, from)
+		m.tunnels[to] = e
+		e.id = to
+		e.status.ID = to
+	}
+	m.config.Tunnels = append([]model.Tunnel(nil), m.config.Tunnels...)
+	for i := range m.config.Tunnels {
+		if m.config.Tunnels[i].ID == from {
+			m.config.Tunnels[i].ID = to
+		}
+	}
+	if m.pendingStart[from] {
+		delete(m.pendingStart, from)
+		m.pendingStart[to] = true
+	}
+	if waiters := m.waiters[from]; len(waiters) > 0 {
+		delete(m.waiters, from)
+		m.waiters[to] = append(m.waiters[to], waiters...)
+	}
+}
+
+func (m *Manager) addProcessRecord(e *entry, proc Process) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.deps.Records.Add(Record{TunnelID: e.id, PID: proc.PID(), Identity: proc.Identity()})
+}
+
+func forwardFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, text := range []string{"address already in use", "already in use", "cannot listen to port", "could not request local forwarding", "forwarding failed", "port forwarding failed", "cannot bind"} {
+		if strings.Contains(message, text) {
+			return true
+		}
+	}
+	return false
+}
+
+// WaitingForSecret distinguishes an explicit deferred start from an ordinary
+// stop without consulting the keychain.
+func (m *Manager) WaitingForSecret(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pendingStart[id]
 }

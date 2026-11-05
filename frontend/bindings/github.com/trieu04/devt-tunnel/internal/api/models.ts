@@ -75,7 +75,10 @@ export interface ToolInfo {
     "error": string;
 }
 
+export type TunnelOwner = model$0.TunnelOwner;
+
 export interface TunnelView {
+    "owner": TunnelOwner;
     "endpoints": Endpoint[] | null;
     "tunnel": model$0.Tunnel;
     "status": supervisor$0.Status;

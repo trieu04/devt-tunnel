@@ -70,6 +70,8 @@ func dialManagement(ctx context.Context, socket string, info api.ClientInfo, che
 	return c, nil
 }
 
+// Session is the reconnect token to pass in ClientInfo.Session on the next dial.
+func (c *Client) Session() string        { return c.hello.Session }
 func (c *Client) Hello() api.HelloResult { return c.hello }
 func (c *Client) Done() <-chan struct{}  { return c.done }
 func (c *Client) Close() error           { c.once.Do(func() { close(c.done); c.conn.Close() }); return nil }

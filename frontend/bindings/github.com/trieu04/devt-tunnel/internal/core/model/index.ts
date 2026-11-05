@@ -7,11 +7,13 @@ export {
 } from "./models.js";
 
 export type {
+    Actor,
     Cloudflared,
     Command,
     Forward,
     Ngrok,
     Profile,
     SSH,
-    Tunnel
+    Tunnel,
+    TunnelOwner
 } from "./models.js";

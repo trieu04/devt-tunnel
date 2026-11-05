@@ -38,7 +38,7 @@ func showCommand(a *app) *cobra.Command {
 			}
 			if a.json {
 				return a.writeJSON(map[string]any{
-					"tunnel": view.Tunnel, "status": view.Status, "endpoints": view.Endpoints,
+					"tunnel": view.Tunnel, "status": view.Status, "endpoints": view.Endpoints, "owner": view.Owner,
 					"preview": view.Preview, "missingSecrets": view.MissingSecrets, "findings": findings,
 				})
 			}

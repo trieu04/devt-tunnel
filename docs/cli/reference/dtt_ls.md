@@ -4,7 +4,7 @@ List tunnels and their endpoints
 
 ### Synopsis
 
-List saved tunnels, their states and endpoints. Replaces ps aux | grep ssh and lsof -i :PORT. Ownership fields are omitted until phase 19 adds ownership and leases.
+List saved and ephemeral tunnels, their states, endpoints and ownership. Replaces ps aux | grep ssh and lsof -i :PORT. JSON includes pinned, ephemeral and lease ownership fields.
 
 ```
 dtt ls [flags]

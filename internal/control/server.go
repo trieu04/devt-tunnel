@@ -128,6 +128,7 @@ type connection struct {
 	compatible bool
 	apiVersion int
 	client     api.ClientInfo
+	session    string
 }
 
 func (c *connection) close() { c.cancel(); c.conn.Close() }
@@ -184,7 +185,21 @@ func (c *connection) serve() {
 	c.compatible = hello.APIVersion == api.Version
 	c.apiVersion = hello.APIVersion
 	c.client = hello.Client
-	c.respond(req.ID, c.server.Hello(), nil)
+	session, err := c.server.engine.ConnectSession(api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.client.Session)
+	if err != nil {
+		c.respond(req.ID, nil, api.NewError(api.Incompatible, err.Error()))
+		return
+	}
+	c.session = session
+	defer func() {
+		// OS work already in flight must not block server/connection shutdown.
+		go func() {
+			_ = c.server.engine.DisconnectSession(api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.session)
+		}()
+	}()
+	result := c.server.Hello()
+	result.Session = session
+	c.respond(req.ID, result, nil)
 	_ = c.conn.SetReadDeadline(time.Time{})
 	unsubscribe := c.server.engine.Subscribe(c.enqueue)
 	defer unsubscribe()
@@ -266,6 +281,10 @@ func (c *connection) execute(req api.Request) {
 		return
 	}
 	if req.Method == api.DaemonShutdown {
+		if c.client.Kind == "mcp" {
+			c.respond(req.ID, nil, api.NewError(api.Unknown, "MCP clients cannot shut down the daemon; release their own leases instead"))
+			return
+		}
 		var p api.ShutdownParams
 		if len(req.Params) > 0 && json.Unmarshal(req.Params, &p) != nil {
 			c.respond(req.ID, nil, api.NewError(api.Unknown, "invalid parameters"))
@@ -311,8 +330,8 @@ func (c *connection) execute(req api.Request) {
 		}()
 	}
 	s.operations.Unlock()
-	if c.client.Kind == "mcp" && req.Method == "prompt.answer" {
-		c.respond(req.ID, nil, api.NewError(api.Unknown, "MCP clients cannot answer prompts"))
+	if c.client.Kind == "mcp" && personOnlyMethod(req.Method) {
+		c.respond(req.ID, nil, api.NewError(api.Unknown, "MCP clients must use their own leases; person-only operation"))
 		return
 	}
 	h, ok := s.handlers[req.Method]
@@ -320,7 +339,12 @@ func (c *connection) execute(req api.Request) {
 		c.respond(req.ID, nil, &api.Error{Code: -32601, Message: "method not found", Data: api.ErrorData{Kind: api.Unknown}})
 		return
 	}
-	result, err := h(c.ctx, req.Params)
+	ctx := context.WithValue(c.ctx, connectionKey{}, c)
+	if err := ctx.Err(); err != nil {
+		c.respond(req.ID, nil, err)
+		return
+	}
+	result, err := h(ctx, req.Params)
 	c.respond(req.ID, result, err)
 }
 
@@ -345,4 +369,21 @@ func wireError(err error) *api.Error {
 		kind = api.Unknown
 	}
 	return api.NewError(kind, err.Error())
+}
+
+type connectionKey struct{}
+
+func personOnlyMethod(method string) bool {
+	switch method {
+	case "prompt.answer", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.startOnLaunch",
+		"profile.start", "profile.stop", "profile.activate", "lease.revoke", "orphan.stop",
+		"tunnel.delete", "tunnel.save", "tunnel.promote":
+		return true
+	}
+	return false
+}
+
+func connectionActor(ctx context.Context) (api.Actor, string) {
+	c := ctx.Value(connectionKey{}).(*connection)
+	return api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.session
 }

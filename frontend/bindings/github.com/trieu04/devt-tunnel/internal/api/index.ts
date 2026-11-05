@@ -9,5 +9,6 @@ export type {
     SSHHostList,
     SecretView,
     ToolInfo,
+    TunnelOwner,
     TunnelView
 } from "./models.js";

@@ -101,12 +101,14 @@ The engine adds three concepts on top of the `Tunnel` model. Saved definitions d
 
 Agents do not write to `tunnels.toml` unless a person approves, because that file is meant to be reviewed and shared.
 
+The implemented `runtime.json` is versioned (`version: 1`) and contains `ephemeral`, `leases`, and per-tunnel `owners` (`pinned`, `leaseStarted`). Optional `autoPorts` records allocated forward indices; `promotions` is a write-ahead old-id/new-id map for recovery across `runtime.json`, `tunnels.toml` and process-record renames. Person-revoked leases remain as tombstones until their original expiry so the next renew/close returns `lease_revoked`. Promotion changes the registry id in place, retaining the PID and command fingerprint. Surviving Unix children remain in the existing orphan list rather than being silently respawned; expired lease-owned orphans are stopped. Runtime writes use a synced, mode-`0600` temporary file and atomic rename before a spawn.
+
 ```go
 type Lease struct {
     ID         string    // "ls_..."
     TunnelID   string
     Holder     Actor     // kind: "gui" | "cli" | "mcp"; name: e.g. "claude-code"
-    Session    string    // the client connection that opened it
+    Session    string    // reconnect token returned by daemon.hello, shared by this client's connections
     CreatedAt  time.Time
     ExpiresAt  time.Time
     StartedIt  bool      // this lease caused the start
@@ -119,12 +121,14 @@ type Lease struct {
 2. **Opening adds a lease and starts the tunnel if needed.** Two agents can share one running tunnel, each with its own lease.
 3. **Closing or expiring removes a lease.** The tunnel stops when no leases remain, it is not pinned, and a lease started it. A tunnel that was already running stays up.
 4. **A person always wins.** `dtt stop` and the GUI stop the tunnel at once and revoke its leases. The agent's next call returns `lease_revoked`. An agent can only release its own lease, never stop a tunnel directly.
-5. **Limits:** default TTL 30 minutes, maximum 8 hours, renewable up to the maximum per renewal. When an MCP client's connection drops, its leases end after a 2-minute grace period, so a restarted adapter can continue.
+5. **Limits:** default TTL 30 minutes, maximum 8 hours, renewable up to the maximum per renewal. When a lease-holding client's last connection drops, its leases end after a 2-minute grace period, so a restarted adapter can continue. Reconnect with the same `client.session` token and the same client kind/name before the grace deadline; a matching name alone does not resume claims. A daemon restart starts this grace for still-valid leases, without extending an earlier disconnect deadline.
 6. **Crash safety:** leases and ephemeral definitions are written before the spawn. After a daemon restart, expired ones are stopped and removed; the rest continue if the process survived.
 
 ### Port allocation
 
-Agents and `dtt forward` may request `auto` for a local port. The engine takes a port from `agent.port_range` (default `20000-20999`) that no tunnel uses and `Listening` reports free, and binds only to `127.0.0.1`. A process can still take the port between the check and the spawn. `ExitOnForwardFailure=yes` already turns that into an exit, so the engine retries with another port, up to 3 times.
+Agents and `dtt forward` may request `auto` for a local port. The engine takes a port from `agent.port_range` (default `20000-20999`) that no tunnel uses and `Listening` reports free, and binds only to `127.0.0.1`. A process can still take the port between the check and the spawn. `ExitOnForwardFailure=yes` already turns that into an exit, so the engine retries with another, previously untried port, up to 3 retries after the initial attempt. Only forward/bind failures trigger allocation retries.
+
+The phase 19 API accepts `forwards[].listen_port` as `"auto"` or a decimal string on `tunnel.runEphemeral`; it is resolved into the existing `bind` field before validation, persistence or spawn. It cannot be combined with `bind`, and is supported only for local/dynamic SSH forwards. Saved definitions retain their existing TOML format. The engine currently takes its range from `engine.Options.PortRange` (default above); settings-to-engine wiring is a later integration step.
 
 ## Local API
 
@@ -132,15 +136,15 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 
 - **Location:** `$XDG_RUNTIME_DIR/devt-tunnel/ctl.sock` on Linux when set, otherwise `<state dir>/run/ctl.sock`, in a directory with mode `0700` and an owner check. Socket paths are limited to about 100 bytes, so a longer path falls back to a per-user `0700` directory under the OS temp directory.
 - **Authorization:** directory permissions and, on Unix, a peer UID check (`SO_PEERCRED`, `LOCAL_PEERCRED`). On Windows, the per-user ACL of the directory under `%LOCALAPPDATA%`. Whether that is enough on Windows needs testing in phase 12.
-- **Handshake:** `daemon.hello {apiVersion, client: {kind, name, version}}` returns `{apiVersion, daemonVersion, pid}`. `kind` selects the policy and is recorded in the audit log. A client declares it itself, see [Threat model](#threat-model).
+- **Handshake:** `daemon.hello {apiVersion, client: {kind, name, version, session?}}` returns `{apiVersion, daemonVersion, pid, session}`. A client retains the opaque session token and supplies it on reconnect; omitting it creates a new session. Overlapping connections with the same token count as one lease holder, and grace begins only when the last closes. `kind` selects the policy and is recorded in the audit log. A client declares it itself, see [Threat model](#threat-model).
 - **Version recovery:** an incompatible hello still returns version metadata and permits only `daemon.status` and `daemon.shutdown`; normal client dialing rejects it. `Ensure` uses these recovery methods to implement the upgrade rule.
-- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, or `timeout`. Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged. `daemon.shutdown` accepts the handshake PID as `expectedPid` and rejects a different daemon identity, so a lost response cannot make a retry stop a replacement process.
+- **Errors:** JSON-RPC errors carry `data.kind`: `conflict`, `needs_secret`, `keyring_unavailable`, `stopped`, `unknown`, `internal`, `incompatible`, `timeout`, or `lease_revoked` (renewing/closing a person-revoked claim). Secret values enter only through `secret.set` or credential-bearing `prompt.answer`; neither returns a value, and request parameters are never logged. `daemon.shutdown` accepts the handshake PID as `expectedPid` and rejects a different daemon identity, so a lost response cannot make a retry stop a replacement process.
 - **Types:** one package, `internal/api`, used by every client. New fields are additive, and a breaking change raises `apiVersion`.
 
 | Group | Methods |
 |---|---|
-| `tunnel.*` | `list` `get` `save` `delete` `start` `stop` `restart` `evaluateDraft` `import` `newDraft` `duplicateDraft` `setFavorite` `promote` |
-| `lease.*` | `open` `renew` `close` `list` |
+| `tunnel.*` | `list` `get` `save` `delete` `start` `stop` `restart` `evaluateDraft` `import` `newDraft` `duplicateDraft` `setFavorite` `promote` `runEphemeral` |
+| `lease.*` | `open` `renew` `close` `list` `revoke` (person only) |
 | `logs.*` | `read` `since`. Clients poll `since`, as `WatchLogs` polls `LogsSince` today |
 | `profile.*` | `list` `save` `delete` `duplicate` `activate` `setAutostart` `start` `stop` |
 | `secret.*` | `list` `set` `delete` `rename` `forget`. Values go in only |
@@ -196,6 +200,7 @@ enabled = true
 port_range = "20000-20999"
 default_ttl = "30m"
 max_ttl = "8h"
+# The allow-lists below are examples; both default to empty on a new installation.
 allow_tunnels = ["dev-*"]          # saved tunnels usable without approval
 allow_ssh_hosts = ["staging"]      # aliases usable for new local forwards without approval
 public = "ask"                     # ask | deny

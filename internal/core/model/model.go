@@ -77,6 +77,9 @@ type Forward struct {
 	Kind   ForwardKind `toml:"kind" json:"kind"`
 	Bind   string      `toml:"bind" json:"bind"`
 	Target string      `toml:"target,omitempty" json:"target,omitempty"`
+	// ListenPort is an ephemeral request only ("auto" or a decimal port).
+	// The engine resolves it to Bind before validation, persistence and spawn.
+	ListenPort string `toml:"-" json:"listen_port,omitempty"`
 }
 
 // Cloudflared runs a named tunnel when Name or Secret is set, otherwise a quick tunnel of URL.
@@ -162,6 +165,9 @@ func (t Tunnel) validateSettings() error {
 			return fmt.Errorf("ssh needs host or hostname")
 		}
 		for _, f := range t.Forwards {
+			if f.ListenPort != "" {
+				return fmt.Errorf("listen_port must be allocated before validation")
+			}
 			if err := validateAddress(f.Bind); err != nil {
 				return fmt.Errorf("forward bind %q: %w", f.Bind, err)
 			}

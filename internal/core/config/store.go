@@ -70,7 +70,7 @@ func (s *Store) Update(fn func(*model.Config) error) (model.Config, error) {
 	if err := fn(&cfg); err != nil {
 		return model.Config{}, err
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := ValidateSaved(cfg); err != nil {
 		return model.Config{}, err
 	}
 	if len(data) != 0 {

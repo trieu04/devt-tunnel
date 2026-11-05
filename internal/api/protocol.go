@@ -39,6 +39,7 @@ const (
 	Internal           ErrorKind = "internal"
 	Incompatible       ErrorKind = "incompatible"
 	Timeout            ErrorKind = "timeout"
+	LeaseRevoked       ErrorKind = "lease_revoked"
 )
 
 type ErrorData struct {
@@ -59,6 +60,7 @@ func VersionError(found int) *Error {
 }
 
 type ClientInfo struct {
+	Session string `json:"session,omitempty"`
 	Kind    string `json:"kind"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -68,6 +70,7 @@ type HelloParams struct {
 	Client     ClientInfo `json:"client"`
 }
 type HelloResult struct {
+	Session       string `json:"session,omitempty"`
 	APIVersion    int    `json:"apiVersion"`
 	DaemonVersion string `json:"daemonVersion"`
 	PID           int    `json:"pid"`
@@ -168,8 +171,32 @@ const (
 
 var Methods = []string{
 	DaemonHello, DaemonStatusMethod, DaemonShutdown, EventsSubscribe,
+	"tunnel.promote", "tunnel.runEphemeral", "lease.open", "lease.renew", "lease.close", "lease.list", "lease.revoke",
 	"tunnel.list", "tunnel.get", "tunnel.save", "tunnel.delete", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.waitReady", "tunnel.evaluateDraft", "tunnel.import", "tunnel.newDraft", "tunnel.duplicateDraft", "tunnel.setFavorite", "tunnel.findings", "tunnel.recordUsed", "tunnel.startOnLaunch",
 	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate", "profile.activate", "profile.setAutostart", "profile.start", "profile.stop",
 	"secret.list", "secret.set", "secret.delete", "secret.rename", "secret.forget", "prompt.list", "prompt.answer",
 	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
+}
+
+// TTL is a Go duration string (for example "30m"); empty selects 30 minutes.
+type OpenLeaseParams struct {
+	ID  string `json:"id"`
+	TTL string `json:"ttl,omitempty"`
+}
+type RenewLeaseParams struct {
+	ID  string `json:"id"`
+	TTL string `json:"ttl,omitempty"`
+}
+type RunEphemeralParams struct {
+	Tunnel model.Tunnel `json:"tunnel"`
+	TTL    string       `json:"ttl,omitempty"`
+}
+type RunEphemeralResult struct {
+	ID    string `json:"id"`
+	Lease Lease  `json:"lease"`
+}
+type PromoteTunnelParams struct {
+	ID      string `json:"id"`
+	SavedID string `json:"savedId,omitempty"`
+	Name    string `json:"name,omitempty"`
 }

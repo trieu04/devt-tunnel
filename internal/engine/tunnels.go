@@ -3,7 +3,6 @@ package engine
 import (
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -51,28 +50,7 @@ func (s *Engine) checkDeps(t model.Tunnel) checks.Deps {
 	profileID := firstProfile(t)
 	return checks.Deps{
 		Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), ProfileID: profileID,
-		Listening: func(address string) bool {
-			if own[address] {
-				return false
-			}
-			host, port, err := net.SplitHostPort(address)
-			if err != nil || strings.Contains(port, "/") {
-				return false
-			}
-			if host == "localhost" {
-				host = "127.0.0.1"
-			}
-			ip := net.ParseIP(host)
-			if ip == nil || !ip.IsLoopback() {
-				return false
-			}
-			conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 100*time.Millisecond)
-			if err != nil {
-				return false
-			}
-			conn.Close()
-			return true
-		},
+		Listening: func(address string) bool { return !own[address] && s.listening(address) },
 		Hosts: func(id string) ([]string, error) {
 			list := s.SSHHosts(id)
 			hosts := make([]string, 0, len(list.Hosts))
@@ -140,6 +118,9 @@ func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 				taken[candidate.ID] = true
 			}
 			t.ID = model.NewID(t.Name, taken)
+			if strings.HasPrefix(t.ID, "tmp-") {
+				t.ID = model.NewID("saved-"+t.Name, taken)
+			}
 			cfg.Tunnels = append(cfg.Tunnels, t)
 			return nil
 		}
@@ -158,7 +139,7 @@ func (s *Engine) SaveTunnel(t model.Tunnel, start bool) (string, error) {
 		return "", err
 	}
 	if start {
-		if err := s.manager.Restart(t.ID); err != nil {
+		if err := s.Restart(t.ID); err != nil {
 			return t.ID, err
 		}
 		s.recordUsed(t.ID)
@@ -205,7 +186,7 @@ func (s *Engine) SetFavorite(id string, favorite bool) error {
 	return err
 }
 
-func (s *Engine) Restart(id string) error { return s.manager.Restart(id) }
+func (s *Engine) Restart(id string) error { return s.personStart(id, true) }
 
 func (s *Engine) recordUsed(id string) {
 	_ = s.stateStore.Update(func(st *state.State) {

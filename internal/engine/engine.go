@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
@@ -29,16 +30,33 @@ import (
 const notifyDelay = 50 * time.Millisecond
 
 type Options struct {
-	Version       string
-	ConfigPath    string
-	SettingsPath  string
-	StateDir      string
-	Secrets       secret.Store
-	Runner        supervisor.Runner
-	AskpassHelper string
+	Version         string
+	ConfigPath      string
+	SettingsPath    string
+	StateDir        string
+	Secrets         secret.Store
+	Runner          supervisor.Runner
+	AskpassHelper   string
+	Clock           Clock
+	PortRange       string
+	Listening       func(string) bool
+	ProcessIdentity func(int) (string, error)
+	StopProcess     func(int, string, time.Duration) error
 }
 
 type Engine struct {
+	runtimeMu           sync.RWMutex
+	runtime             corestate.Runtime
+	runtimeStore        corestate.RuntimeStore
+	clock               Clock
+	portFirst, portLast int
+	portHistory         map[string]map[int]bool
+	listening           func(string) bool
+	processIdentity     func(int) (string, error)
+	stopProcess         func(int, string, time.Duration) error
+	runtimeChanged      chan struct{}
+	sessions            map[string]sessionState
+
 	configPath        string
 	settingsPath      string
 	secrets           *secret.Cached
@@ -59,9 +77,11 @@ type Engine struct {
 	secretIndexMu  sync.Mutex
 	lifecycleMu    sync.RWMutex
 	promptMu       sync.Mutex
+	orphanMu       sync.Mutex
 	mu             sync.Mutex
 	configError    string
 	orphans        []supervisor.Record
+	orphanCount    atomic.Int64
 	prompts        map[string]*waitingPrompt
 	nextPrompt     int
 	notifyTimer    *time.Timer
@@ -89,12 +109,17 @@ func (s *Engine) updateConfig(change func(*model.Config) error) error {
 	if err := s.lifetimeError(); err != nil {
 		return err
 	}
-	cfg, err := s.configStore.Update(change)
+	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
+		if err := change(cfg); err != nil {
+			return err
+		}
+		return s.merged(*cfg).Validate()
+	})
 	if stopped := s.lifetimeError(); stopped != nil {
 		return stopped
 	}
 	if err == nil {
-		return s.applyWhileAlive(func() { s.manager.SetConfig(cfg) })
+		return s.applyWhileAlive(func() { s.manager.SetConfig(s.merged(cfg)) })
 	}
 	return err
 }
@@ -137,11 +162,39 @@ func New(opts Options) (*Engine, error) {
 	if opts.AskpassHelper == "" {
 		opts.AskpassHelper = askpassHelperPath()
 	}
+	if opts.Clock == nil {
+		opts.Clock = realClock{}
+	}
+	if opts.PortRange == "" {
+		opts.PortRange = "20000-20999"
+	}
+	first, last, err := parsePortRange(opts.PortRange)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Listening == nil {
+		opts.Listening = listeningLoopback
+	}
+	if opts.ProcessIdentity == nil {
+		opts.ProcessIdentity = platform.ProcessIdentity
+	}
+	if opts.StopProcess == nil {
+		opts.StopProcess = platform.StopOrphan
+	}
+	runtimeStore := corestate.RuntimeStore{Path: filepath.Join(opts.StateDir, "runtime.json")}
+	runtimeState, err := runtimeStore.Load()
+	if err != nil {
+		return nil, fmt.Errorf("runtime: %w", err)
+	}
 	index := &secret.Index{Path: filepath.Join(opts.StateDir, "vault.json")}
 	done := make(chan struct{})
 	cachedSecrets := &secret.Cached{Inner: &lifetimeSecrets{inner: opts.Secrets, done: done}}
 	s := &Engine{
-		configPath:   opts.ConfigPath,
+		configPath: opts.ConfigPath,
+		runtime:    runtimeState, runtimeStore: runtimeStore, clock: opts.Clock,
+		portFirst: first, portLast: last, listening: opts.Listening, portHistory: map[string]map[int]bool{},
+		processIdentity: opts.ProcessIdentity, stopProcess: opts.StopProcess,
+		runtimeChanged: make(chan struct{}, 1), sessions: map[string]sessionState{},
 		settingsPath: opts.SettingsPath,
 		secrets:      cachedSecrets,
 		secretIndex:  index,
@@ -165,11 +218,17 @@ func New(opts Options) (*Engine, error) {
 	s.manager = supervisor.New(supervisor.Deps{
 		Runner: opts.Runner, Secrets: s.secrets, Resolve: s.tools.Resolve, Environ: s.tools.Environ,
 		Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), Askpass: s.broker,
-		Records: s.records, OnChange: s.notify,
+		Records: s.records, OnChange: s.managerChanged, RetryForward: s.retryForward,
 	})
 	s.manager.SetActiveProfile(s.stateStore.Get().ActiveProfile)
 	s.findOrphans()
+	s.recoverPromotions()
 	s.loadConfig()
+	if err := s.recoverRuntime(); err != nil {
+		s.Shutdown()
+		return nil, err
+	}
+	go s.monitorRuntime()
 	go s.monitorClockJump()
 	return s, nil
 }
@@ -196,6 +255,9 @@ func (s *Engine) loadConfig() error {
 		return err
 	}
 	cfg, err := s.configStore.Load()
+	if err == nil {
+		err = s.merged(cfg).Validate()
+	}
 	if stopped := s.lifetimeError(); stopped != nil {
 		return stopped
 	}
@@ -232,7 +294,7 @@ func (s *Engine) loadConfig() error {
 		s.mu.Lock()
 		s.configError = ""
 		s.mu.Unlock()
-		s.manager.SetConfig(cfg)
+		s.manager.SetConfig(s.merged(cfg))
 		s.manager.SetActiveProfile(active)
 	})
 }
@@ -243,7 +305,7 @@ func (s *Engine) findOrphans() {
 		log.Printf("process records: %v", err)
 		return
 	}
-	orphans := supervisor.FindOrphans(recs, platform.ProcessIdentity)
+	orphans := supervisor.FindOrphans(recs, s.processIdentity)
 	alive := map[int]bool{}
 	for _, o := range orphans {
 		alive[o.PID] = true
@@ -255,7 +317,33 @@ func (s *Engine) findOrphans() {
 	}
 	s.mu.Lock()
 	s.orphans = orphans
+	s.orphanCount.Store(int64(len(orphans)))
 	s.mu.Unlock()
+}
+
+// refreshOrphans prunes only recovered children, never adopts manager-owned
+// records. A child can exit on its own while a lease is in its grace period.
+func (s *Engine) refreshOrphans() {
+	s.orphanMu.Lock()
+	defer s.orphanMu.Unlock()
+	s.mu.Lock()
+	recovered := append([]supervisor.Record(nil), s.orphans...)
+	s.mu.Unlock()
+	alive := make([]supervisor.Record, 0, len(recovered))
+	for _, record := range recovered {
+		if identity, err := s.processIdentity(record.PID); err == nil && identity == record.Identity {
+			alive = append(alive, record)
+		} else {
+			_ = s.records.Remove(record.PID)
+		}
+	}
+	if len(alive) != len(recovered) {
+		s.mu.Lock()
+		s.orphans = alive
+		s.orphanCount.Store(int64(len(alive)))
+		s.mu.Unlock()
+		s.notify()
+	}
 }
 
 func (s *Engine) Overview() api.Overview {
@@ -289,12 +377,17 @@ func (s *Engine) Overview() api.Overview {
 
 func (s *Engine) views() []api.TunnelView {
 	statuses := s.manager.Statuses()
+	byID := map[string]supervisor.Status{}
+	for _, status := range statuses {
+		byID[status.ID] = status
+	}
 	tunnels := s.manager.Config().Tunnels
 	views := make([]api.TunnelView, 0, len(tunnels))
-	for i, t := range tunnels {
-		if i >= len(statuses) {
-			break // config replaced between the two reads; the next notification corrects it
-		}
+	for _, t := range tunnels {
+		status, ok := byID[t.ID]
+		if !ok {
+			continue
+		} // config changed between snapshots; the next event resyncs it
 		preview, err := s.manager.Preview(t.ID)
 		if err != nil {
 			preview = err.Error()
@@ -307,7 +400,9 @@ func (s *Engine) views() []api.TunnelView {
 		}
 		spec, _ := command.Build(t, command.Options{Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect()})
 		toolPath, _ := s.tools.Resolve(spec.Tool)
-		views = append(views, api.TunnelView{Tunnel: t, Status: statuses[i], Endpoints: endpoints(t, statuses[i]), Preview: preview, MissingSecrets: missing, ToolPath: toolPath})
+		owner := s.owner(t.ID)
+		status.Owner = owner
+		views = append(views, api.TunnelView{Owner: owner, Tunnel: t, Status: status, Endpoints: endpoints(t, status), Preview: preview, MissingSecrets: missing, ToolPath: toolPath})
 	}
 	return views
 }
@@ -323,21 +418,22 @@ func keychainName() string {
 	}
 }
 
-func (s *Engine) Start(id string) error { return s.manager.Start(id) }
+func (s *Engine) Start(id string) error { return s.personStart(id, false) }
 
-func (s *Engine) Stop(id string) { s.manager.Stop(id) }
+func (s *Engine) Stop(id string) {
+	if err := s.StopTunnel(id); err != nil {
+		log.Printf("stop %s: %v", id, err)
+	}
+}
 
 func (s *Engine) Toggle(id string) error {
-	for _, st := range s.manager.Statuses() {
-		if st.ID != id {
-			continue
+	for _, st := range s.manager.RuntimeStatuses() {
+		if st.ID == id {
+			if activeState(st.State) {
+				return s.StopTunnel(id)
+			}
+			return s.Start(id)
 		}
-		switch st.State {
-		case supervisor.StateStarting, supervisor.StateRunning, supervisor.StateReconnecting:
-			s.manager.Stop(id)
-			return nil
-		}
-		return s.manager.Start(id)
 	}
 	return fmt.Errorf("unknown tunnel %q", id)
 }
@@ -395,16 +491,15 @@ func (s *Engine) SetSecret(name, value string, kind secret.Kind) error {
 }
 
 func (s *Engine) StopOrphan(pid int) error {
+	s.orphanMu.Lock()
+	defer s.orphanMu.Unlock()
 	s.mu.Lock()
 	var found bool
 	var identity string
-	var kept []supervisor.Record
 	for _, o := range s.orphans {
 		if o.PID == pid {
 			found = true
 			identity = o.Identity
-		} else {
-			kept = append(kept, o)
 		}
 	}
 	if !found {
@@ -412,11 +507,18 @@ func (s *Engine) StopOrphan(pid int) error {
 		return fmt.Errorf("process %d is not a known orphan", pid)
 	}
 	s.mu.Unlock()
-	if err := platform.StopOrphan(pid, identity, 5*time.Second); err != nil {
+	if err := s.stopProcess(pid, identity, 5*time.Second); err != nil {
 		return err
 	}
 	s.mu.Lock()
+	kept := s.orphans[:0]
+	for _, orphan := range s.orphans {
+		if orphan.PID != pid {
+			kept = append(kept, orphan)
+		}
+	}
 	s.orphans = kept
+	s.orphanCount.Store(int64(len(kept)))
 	s.mu.Unlock()
 	s.records.Remove(pid)
 	s.notify()

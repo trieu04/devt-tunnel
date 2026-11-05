@@ -16,10 +16,12 @@ type Settings struct {
 	Shortcut     string            `toml:"shortcut,omitempty"`
 	Shell        string            `toml:"shell,omitempty"`
 	CheckUpdates *bool             `toml:"check_updates,omitempty"`
+	Agent        *Agent            `toml:"agent,omitempty"`
 }
 
 func Load(path string) (Settings, error) {
-	var s Settings
+	defaults := DefaultAgent()
+	s := Settings{Agent: &defaults}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s, nil
@@ -34,10 +36,20 @@ func Load(path string) (Settings, error) {
 	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
 		return Settings{}, fmt.Errorf("parse %s: unknown key %q", path, undecoded[0])
 	}
+	if err := s.Agent.Validate(); err != nil {
+		return Settings{}, fmt.Errorf("parse %s: agent: %w", path, err)
+	}
 	return s, nil
 }
 
 func Save(path string, s Settings) error {
+	if s.Agent == nil {
+		defaults := DefaultAgent()
+		s.Agent = &defaults
+	}
+	if err := s.Agent.Validate(); err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
 	var b bytes.Buffer
 	if err := toml.NewEncoder(&b).Encode(s); err != nil {
 		return err

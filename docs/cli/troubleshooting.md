@@ -17,7 +17,7 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed. See the message and `dtt logs db` |
+| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`). See the message and `dtt logs db` |
 | 2 | `usage` | Bad arguments, or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`) |

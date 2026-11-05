@@ -22,7 +22,7 @@ func listCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Short:   "List tunnels and their endpoints",
-		Long:    "List saved tunnels, their states and endpoints. Replaces ps aux | grep ssh and lsof -i :PORT. Ownership fields are omitted until phase 19 adds ownership and leases.",
+		Long:    "List saved and ephemeral tunnels, their states, endpoints and ownership. Replaces ps aux | grep ssh and lsof -i :PORT. JSON includes pinned, ephemeral and lease ownership fields.",
 		Example: "  dtt ls\n  dtt ls --running --type ssh\n  dtt ls --profile work --favorites --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -66,6 +66,7 @@ func (a *app) writeTunnelList(tunnels []api.TunnelView) error {
 			State     supervisor.State `json:"state"`
 			PID       int              `json:"pid,omitempty"`
 			Endpoints []api.Endpoint   `json:"endpoints"`
+			Owner     api.TunnelOwner  `json:"owner"`
 		}
 		out := make([]summary, 0, len(tunnels))
 		for _, view := range tunnels {
@@ -73,7 +74,7 @@ func (a *app) writeTunnelList(tunnels []api.TunnelView) error {
 			if endpoints == nil {
 				endpoints = []api.Endpoint{}
 			}
-			out = append(out, summary{view.Tunnel.ID, view.Tunnel.Name, view.Tunnel.Type, view.Status.State, view.Status.PID, endpoints})
+			out = append(out, summary{view.Tunnel.ID, view.Tunnel.Name, view.Tunnel.Type, view.Status.State, view.Status.PID, endpoints, view.Owner})
 		}
 		return a.writeJSON(map[string]any{"tunnels": out})
 	}

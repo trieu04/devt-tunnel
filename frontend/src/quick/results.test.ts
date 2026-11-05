@@ -5,7 +5,8 @@ import { buildResults } from "./results";
 const tunnel = (id: string, name: string, host: string, profiles: string[] = []): TunnelView =>
   ({
     tunnel: { id, name, type: "ssh", ssh: { host }, profiles },
-    status: { id, state: "stopped" },
+    status: { id, state: "stopped", owner: { pinned: false, ephemeral: false, leases: 0 } },
+    owner: { pinned: false, ephemeral: false, leases: 0 },
     preview: "",
     missingSecrets: [],
     endpoints: [],

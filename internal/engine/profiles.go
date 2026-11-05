@@ -32,10 +32,10 @@ func (s *Engine) ActivateProfile(id string) error {
 	if selected != nil {
 		plan := profiles.Activation(cfg, *selected, running)
 		for _, tunnelID := range plan.Stop {
-			s.manager.Stop(tunnelID)
+			s.Stop(tunnelID)
 		}
 		for _, tunnelID := range plan.Start {
-			_ = s.manager.Start(tunnelID)
+			_ = s.Start(tunnelID)
 		}
 	}
 	if err := s.stateStore.Update(func(st *state.State) { st.ActiveProfile = id }); err != nil {
@@ -134,7 +134,7 @@ func (s *Engine) SetProfileAutostart(id, tunnelID string, on bool) error {
 func (s *Engine) StartProfile(id string) error {
 	var failures []string
 	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
-		if err := s.manager.Start(tunnel.ID); err != nil {
+		if err := s.Start(tunnel.ID); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", tunnel.Name, err))
 		}
 	}
@@ -146,6 +146,6 @@ func (s *Engine) StartProfile(id string) error {
 
 func (s *Engine) StopProfile(id string) {
 	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
-		s.manager.Stop(tunnel.ID)
+		s.Stop(tunnel.ID)
 	}
 }

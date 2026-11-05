@@ -70,6 +70,15 @@ func (s *Engine) Shutdown() {
 		s.lifecycleMu.Unlock()
 		s.broker.Close()
 		s.manager.Shutdown()
+		s.mu.Lock()
+		orphans := append([]supervisor.Record(nil), s.orphans...)
+		s.mu.Unlock()
+		for _, orphan := range orphans {
+			if err := s.StopOrphan(orphan.PID); err != nil {
+				log.Printf("shutdown orphan %d: %v", orphan.PID, err)
+			}
+		}
+		s.clearRuntimeOnShutdown()
 	})
 }
 
@@ -80,14 +89,26 @@ func (s *Engine) Active() bool {
 	if pending {
 		return true
 	}
-	return s.manager.Active()
+	s.runtimeMu.RLock()
+	owned := len(s.runtime.Ephemeral) > 0
+	for _, l := range s.runtime.Leases {
+		owned = owned || !l.Revoked
+	}
+	s.runtimeMu.RUnlock()
+	return owned || s.orphanCount.Load() > 0 || s.manager.Active()
 }
 
 func (s *Engine) Wake() { s.manager.Wake() }
 
 func (s *Engine) ForgetSecrets() { s.secrets.Forget() }
 
-func (s *Engine) Statuses() []supervisor.Status { return s.manager.RuntimeStatuses() }
+func (s *Engine) Statuses() []supervisor.Status {
+	out := s.manager.RuntimeStatuses()
+	for i := range out {
+		out[i].Owner = s.owner(out[i].ID)
+	}
+	return out
+}
 
 func (s *Engine) Focus() {
 	s.secrets.Forget()

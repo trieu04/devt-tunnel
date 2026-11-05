@@ -29,8 +29,9 @@ var update = flag.Bool("update", false, "Update CLI golden files")
 func fixtureTunnels() []api.TunnelView {
 	return []api.TunnelView{
 		{
+			Owner:     api.TunnelOwner{Pinned: true},
 			Tunnel:    model.Tunnel{ID: "db-prod", Name: "Production DB", Type: model.TypeSSH, Profiles: []string{"work"}, Favorite: true},
-			Status:    supervisor.Status{ID: "db-prod", State: supervisor.StateRunning, PID: 4242},
+			Status:    supervisor.Status{ID: "db-prod", State: supervisor.StateRunning, PID: 4242, Owner: api.TunnelOwner{Pinned: true}},
 			Endpoints: []api.Endpoint{{Kind: "local", Listen: "127.0.0.1:15432", Target: "127.0.0.1:5432"}},
 			Preview:   "ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 server1",
 		},
@@ -82,7 +83,7 @@ func TestExitCodes(t *testing.T) {
 	expected := map[api.ErrorKind]int{
 		api.Conflict: 5, api.NeedsSecret: 3, api.KeyringUnavailable: 3,
 		api.NeedsUser: 4, api.NotFound: 8, api.Timeout: 6,
-		api.Incompatible: 7, api.Unknown: 2, api.Stopped: 1, api.Internal: 1,
+		api.Incompatible: 7, api.Unknown: 2, api.Stopped: 1, api.Internal: 1, api.LeaseRevoked: 1,
 	}
 	for kind, want := range expected {
 		if got := ExitCode(api.NewError(kind, "fixture")); got != want {

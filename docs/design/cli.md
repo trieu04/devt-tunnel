@@ -164,7 +164,7 @@ dtt ls --running --json
 }
 ```
 
-The current Read implementation omits `owner` until phase 19 provides ownership and leases. `logs --json -f` emits one versioned object per batch (newline-delimited JSON). Log lines currently have sequence numbers but no timestamps; a positive `--since` is rejected with exit 2 rather than silently ignoring the filter.
+`ls --json` and `show --json` include `owner` with `pinned`, `ephemeral` and `leases`; active claims also include a holder and expiry. `logs --json -f` emits one versioned object per batch (newline-delimited JSON). Log lines currently have sequence numbers but no timestamps; a positive `--since` is rejected with exit 2 rather than silently ignoring the filter.
 
 With `--json`, errors are written to stderr as a single object:
 
@@ -179,7 +179,7 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed. See the message and `dtt logs db` |
+| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`). See the message and `dtt logs db` |
 | 2 | `usage` | Bad arguments, or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`) |

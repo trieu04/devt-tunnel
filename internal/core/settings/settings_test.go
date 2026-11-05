@@ -10,7 +10,8 @@ import (
 
 func TestLoadSaveRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "settings.toml")
-	want := Settings{Tools: map[string]string{"ssh": "/usr/bin/ssh", "ngrok": "/opt/ngrok"}, Shortcut: "Ctrl+Shift+K", Shell: "powershell"}
+	agent := DefaultAgent()
+	want := Settings{Tools: map[string]string{"ssh": "/usr/bin/ssh", "ngrok": "/opt/ngrok"}, Shortcut: "Ctrl+Shift+K", Shell: "powershell", Agent: &agent}
 	if err := Save(path, want); err != nil {
 		t.Fatal(err)
 	}
