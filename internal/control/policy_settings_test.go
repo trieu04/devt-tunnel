@@ -195,7 +195,10 @@ func TestAgentSettingsPersonOnlyAndValidated(t *testing.T) {
 	}
 	// Both methods must stay outside mcpMethodAllowed, even read access.
 	for _, method := range []string{"settings.getAgent", "settings.setAgent"} {
-		policyError(t, policyCall(t, mcp, method, api.AgentSettingsParams{Agent: initial}, nil), api.PolicyDenied)
+		policyError(t, policyCall(t, mcp, method, api.AgentSettingsParams{Agent: initial}, nil), api.AgentDisabled)
+		if mcpMethodAllowed(method) {
+			t.Fatalf("settings method entered MCP allow-list: %s", method)
+		}
 	}
 	policyOK(t, person, "settings.getAgent", api.Empty{}, &got)
 	if got.Public != "deny" || got.Enabled {

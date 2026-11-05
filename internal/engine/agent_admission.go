@@ -22,16 +22,24 @@ func (s *Engine) agentBuilt(actor api.Actor, session string, t model.Tunnel) err
 	if actor.Kind != "mcp" {
 		return nil
 	}
-	deny := func(reason string) error { return s.denySession(actor, session, t.ID, reason) }
+	if reason := s.agentBuiltReason(t); reason != "" {
+		return s.denySession(actor, session, t.ID, reason)
+	}
+	return nil
+}
+
+// Pure admission diagnostics shared with dry runs. No approval, audit or
+// mutation is performed; configMu must be held for the saved-port snapshot.
+func (s *Engine) agentBuiltReason(t model.Tunnel) string {
 	if t.StartOnLaunch || len(t.Profiles) != 0 || t.Favorite {
-		return deny("agents cannot set startOnLaunch, profiles or favorite; saved and ephemeral agent tunnels must remain lease-controlled")
+		return "agents cannot set startOnLaunch, profiles or favorite; saved and ephemeral agent tunnels must remain lease-controlled"
 	}
 	if !utf8.ValidString(t.Name) || utf8.RuneCountInString(t.Name) > 64 || strings.ContainsFunc(t.Name, func(r rune) bool { return !unicode.IsPrint(r) }) {
-		return deny("agent-provided name must be printable UTF-8, without control characters, and at most 64 characters")
+		return "agent-provided name must be printable UTF-8, without control characters, and at most 64 characters"
 	}
 	for _, f := range checks.AgentSafe(t) {
 		if f.Severity == checks.Error {
-			return deny(f.Message)
+			return f.Message
 		}
 	}
 	// A Bind spelling (as opposed to listen_port) must not bypass the saved
@@ -47,10 +55,10 @@ func (s *Engine) agentBuilt(actor api.Actor, session string, t model.Tunnel) err
 	}
 	for _, f := range t.Forwards {
 		if f.Kind != model.ForwardRemote && bindPort(f.Bind) != 0 && reserved[bindPort(f.Bind)] {
-			return deny("agent listen port is reserved by a saved tunnel")
+			return "agent listen port is reserved by a saved tunnel"
 		}
 	}
-	return nil
+	return ""
 }
 
 func bindPort(bind string) int {

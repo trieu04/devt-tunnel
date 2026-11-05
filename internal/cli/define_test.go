@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -58,7 +59,11 @@ func defineDaemon(t *testing.T, prepare ...func(*engine.Options)) *engine.Engine
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.Save(settingsPath, settings.Settings{Shell: "/bin/sh", Tools: map[string]string{"ssh": "/bin/true", "ngrok": "/bin/true", "cloudflared": "/bin/true"}}); err != nil {
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.Save(settingsPath, settings.Settings{Shell: "/bin/sh", Tools: map[string]string{"ssh": truePath, "ngrok": truePath, "cloudflared": truePath}}); err != nil {
 		t.Fatal(err)
 	}
 	store := &secret.Memory{}

@@ -47,6 +47,10 @@ type Options struct {
 }
 
 type Engine struct {
+	// Request serialization is outside configMu: execution reuses the normal
+	// lease/ephemeral admission methods, which acquire configMu themselves.
+	requestMu           sync.Mutex
+	openRequests        map[openRequestKey]*openRequest
 	denialMu            sync.Mutex
 	denials             map[string]*denialWindow
 	redactionMu         sync.Mutex
@@ -123,7 +127,7 @@ func (s *Engine) updateConfig(change func(*model.Config) error) error {
 		if err := change(cfg); err != nil {
 			return err
 		}
-		return s.merged(*cfg).Validate()
+		return invalidSpec(s.merged(*cfg).Validate())
 	})
 	if stopped := s.lifetimeError(); stopped != nil {
 		return stopped
@@ -268,7 +272,7 @@ func (s *Engine) loadConfig() error {
 	}
 	cfg, err := s.configStore.Load()
 	if err == nil {
-		err = s.merged(cfg).Validate()
+		err = invalidSpec(s.merged(cfg).Validate())
 	}
 	if stopped := s.lifetimeError(); stopped != nil {
 		return stopped

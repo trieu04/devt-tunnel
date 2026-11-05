@@ -13,6 +13,7 @@ import (
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/audit"
+	"github.com/trieu04/devt-tunnel/internal/core/command"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 	"github.com/trieu04/devt-tunnel/internal/core/policy"
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
@@ -52,9 +53,22 @@ func (s *Engine) agentSettings() settings.Settings {
 	return cfg
 }
 
+// AgentAccess enforces the master MCP switch for read and mutation RPCs alike.
+// Policy inspection and daemon handshake/status are exempt at the boundary.
+func (s *Engine) AgentEnabled() bool { return s.agentSettings().AgentPolicy().Enabled }
+
+func (s *Engine) AgentAccess(actor api.Actor, session string) error {
+	return s.mutationEnabled(actor, session)
+}
+
 func (s *Engine) mutationEnabled(actor api.Actor, session string) error {
 	if actor.Kind == "mcp" && !s.agentSettings().AgentPolicy().Enabled {
-		return s.denySession(actor, session, "", "")
+		err := s.denySession(actor, session, "", "")
+		if rpc, ok := err.(*api.Error); ok && rpc.Data.Kind == api.PolicyDenied {
+			rpc.Data.Kind = api.AgentDisabled
+			rpc.Message = "agent access is disabled"
+		}
+		return err
 	}
 	return nil
 }
@@ -139,26 +153,30 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 		}
 	}
 	cfg := s.agentSettings()
+	var spec command.Spec
+	var err error
+	if action == policy.ActionSave {
+		// Saving/promoting neither starts a process nor binds a new listener.
+		spec, err = s.manager.BuildDraft(t)
+		err = invalidSpec(err)
+	} else {
+		spec, err = s.buildStartDraft(t)
+	}
+	if err != nil {
+		return "", err
+	}
+	if action != policy.ActionSave && !s.running(t.ID) {
+		if err := s.startPortsAvailable(spec); err != nil {
+			return "", err
+		}
+	}
 	decision, reason := policy.Decide(actor, action, t, cfg)
 	if decision == policy.Deny {
 		return "", s.denySession(actor, session, t.ID, "")
 	}
-	spec, err := s.manager.BuildDraft(t)
-	if err != nil {
-		return "", err
-	}
-	aliasKnown := true
-	if t.SSH != nil && t.SSH.Host != "" {
-		// Check the exact SSH config selected by this freshly built command, not
-		// merely t.Profiles[0] (the active profile may select another config).
-		aliasKnown = s.builtAliasExists(t.SSH.Host, spec)
-		if !aliasKnown {
-			if t.SSH.PassphraseSecret != "" && action != policy.ActionOpenSaved && action != policy.ActionStartSaved {
-				return "", s.denySession(actor, session, t.ID, "SSH passphrase secrets require a literal config alias")
-			}
-			cfg.Agent.AllowSSHHosts = nil
-			decision, reason = policy.Decide(actor, action, t, cfg)
-		}
+	decision, reason, aliasKnown := s.builtPolicyDecision(actor, action, t, cfg, spec)
+	if decision == policy.Deny {
+		return "", s.denySession(actor, session, t.ID, reason)
 	}
 	fingerprint := spec.Fingerprint()
 	if err := s.expireApprovalsLocked(); err != nil {
@@ -227,6 +245,25 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 	// from inside the configuration transaction.
 	go s.emit(api.Event{Type: api.EventApprovalAdded, ApprovalID: r.view.ID})
 	return "", pendingApproval(r.view.ID)
+}
+
+// Check the actual config selected by the built command, not a caller's alias
+// label or first profile. Shared by admission and mutation-free dry runs.
+func (s *Engine) builtPolicyDecision(actor api.Actor, action policy.Action, t model.Tunnel, cfg settings.Settings, spec command.Spec) (policy.Decision, string, bool) {
+	aliasKnown := true
+	if t.SSH != nil && t.SSH.Host != "" {
+		aliasKnown = s.builtAliasExists(t.SSH.Host, spec)
+		if !aliasKnown {
+			if actor.Kind == "mcp" && t.SSH.PassphraseSecret != "" && action != policy.ActionOpenSaved && action != policy.ActionStartSaved {
+				return policy.Deny, "SSH passphrase secrets require a literal config alias", false
+			}
+			a := cfg.AgentPolicy()
+			a.AllowSSHHosts = nil
+			cfg.Agent = &a
+		}
+	}
+	decision, reason := policy.Decide(actor, action, t, cfg)
+	return decision, reason, aliasKnown
 }
 
 func pendingApproval(id string) error {
@@ -308,7 +345,7 @@ func (s *Engine) GetApproval(actor api.Actor, session, id string) (api.Approval,
 	}
 	r := s.approvals[id]
 	if r == nil || (actor.Kind == "mcp" && (r.view.Actor != actor || r.view.Session != session)) {
-		return api.Approval{}, api.NewError(api.NotFound, "approval not found")
+		return api.Approval{}, api.NewError(api.Unknown, "approval not found")
 	}
 	return approvalView(r, actor), nil
 }
@@ -326,7 +363,7 @@ func (s *Engine) DecideApproval(actor api.Actor, p api.DecideApprovalParams) (ap
 	}
 	r := s.approvals[p.ID]
 	if r == nil {
-		return api.Approval{}, api.NewError(api.NotFound, "approval not found")
+		return api.Approval{}, api.NewError(api.Unknown, "approval not found")
 	}
 	if r.view.Status != "pending" {
 		return api.Approval{}, api.NewError(api.PolicyDenied, "approval is no longer pending")

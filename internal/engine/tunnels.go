@@ -122,7 +122,7 @@ func (s *Engine) saveTunnel(t model.Tunnel, start bool, admit func(string) error
 	err := s.updateConfig(func(cfg *model.Config) error {
 		beforeCommit := func() error {
 			if err := s.merged(*cfg).Validate(); err != nil {
-				return err
+				return invalidSpec(err)
 			}
 			if admit != nil {
 				return admit(t.ID)

@@ -85,6 +85,10 @@ func TestMethodContract(t *testing.T) {
 		params any
 	}{
 		{api.DaemonStatusMethod, api.Empty{}}, {api.EventsSubscribe, api.Empty{}},
+		{"policy.get", api.Empty{}},
+		{"tunnel.openRequest", api.OpenRequestParams{RequestID: "contract-request", ID: "absent", Purpose: "contract"}},
+		{"tunnel.waitRequest", api.WaitRequestParams{RequestID: "contract-request"}},
+		{"tunnel.checkRequest", api.OpenRequestParams{ID: "t"}},
 		{"approval.list", api.Empty{}}, {"approval.get", api.IDParams{ID: "absent"}},
 		{"approval.decide", api.DecideApprovalParams{ID: "absent", Decision: "deny", Scope: "once"}},
 		{"audit.read", api.AuditReadParams{}},
@@ -122,7 +126,7 @@ func TestMethodContract(t *testing.T) {
 		if err != nil && (!errors.As(err, &rpc) || rpc.Code == -32601 || rpc.Code == -32602) {
 			t.Errorf("%s: %v", tc.method, err)
 		}
-		if err != nil && tc.method != "approval.get" && tc.method != "approval.decide" && tc.method != "tunnel.promote" && tc.method != "tunnel.runEphemeral" && tc.method != "lease.open" && tc.method != "lease.renew" && tc.method != "lease.close" && tc.method != "lease.revoke" && tc.method != "tunnel.start" && tc.method != "tunnel.stop" && tc.method != "tunnel.restart" && tc.method != "tunnel.waitReady" && tc.method != "ssh.resolve" && tc.method != "orphan.stop" {
+		if err != nil && tc.method != "tunnel.openRequest" && tc.method != "tunnel.waitRequest" && tc.method != "approval.get" && tc.method != "approval.decide" && tc.method != "tunnel.promote" && tc.method != "tunnel.runEphemeral" && tc.method != "lease.open" && tc.method != "lease.renew" && tc.method != "lease.close" && tc.method != "lease.revoke" && tc.method != "tunnel.start" && tc.method != "tunnel.stop" && tc.method != "tunnel.restart" && tc.method != "tunnel.waitReady" && tc.method != "ssh.resolve" && tc.method != "orphan.stop" {
 			t.Errorf("%s unexpectedly failed: %v", tc.method, err)
 		}
 		seen[tc.method] = true

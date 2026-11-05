@@ -251,14 +251,6 @@ func lifecycleError(view api.TunnelView, err error) error {
 			}
 		case api.NeedsUser:
 			hint = "dtt prompts"
-		case api.Internal:
-			// Supervisor status currently preserves only the failure message, not
-			// its typed cause. Recognize the daemon's bind and tool-lookup messages.
-			if strings.Contains(strings.ToLower(err.Error()), "already in use") {
-				err = api.NewError(api.Conflict, err.Error())
-			} else if strings.HasSuffix(err.Error(), " was not found on this machine") {
-				err = api.NewError(api.NotFound, err.Error())
-			}
 		}
 	}
 	if hint != "" {

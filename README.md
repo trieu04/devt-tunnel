@@ -22,7 +22,8 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
 | GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; all native macOS checks passed |
 | `dtt` CLI (phases 18–19) | Saved and ephemeral tunnels, leases, approvals, audit and generated/offline documentation implemented and tested; native/Linux no-GTK exit acceptance pending |
-| Ownership, leases and policy (phase 19) | Daemon policy and approvals, CLI, agent badges, ephemeral Save and Settings → Agents implemented and tested; native macOS approval acceptance passed; MCP server planned for phase 20 |
+| Ownership, leases and policy (phase 19) | Daemon policy and approvals, CLI, agent badges, ephemeral Save and Settings → Agents implemented and tested; native macOS approval acceptance passed |
+| MCP server and agent guide (phase 20) | Implemented with automated checks; real-client check pending |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
 
@@ -62,9 +63,9 @@ dtt docs
 
 `--host` reuses `~/.ssh/config`. The daemon starts on demand and shares saved tunnels with the GUI. `--json` provides versioned script output; `--no-input` prevents prompts. `dtt version` never starts a daemon, and `--no-daemon-start` limits other commands to an existing daemon. Shell completion never starts one either. `dtt daemon run|status|stop|restart` controls the daemon; `run --idle-exit 0` disables its default five-minute idle exit. `stop` and `restart` stop all daemon-owned tunnels; quitting the GUI does the same.
 
-Read the [quick start](docs/cli/quickstart.md), [traditional-command replacements](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting and exit codes](docs/cli/troubleshooting.md), or the [generated command reference](docs/cli/reference/dtt.md). The four guides are also available offline through `dtt docs <topic>`. `dtt man --dir ./man` writes a full section 1 manual. `go run ./internal/cli/gen` refreshes the committed reference and generates package-time man pages under ignored `bin/man/`.
+Read the [quick start](docs/cli/quickstart.md), [traditional-command replacements](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [agent guide](docs/cli/agents.md), [troubleshooting and exit codes](docs/cli/troubleshooting.md), or the [generated command reference](docs/cli/reference/dtt.md). The five guides are also available offline through `dtt docs <topic>`. `dtt man --dir ./man` writes a full section 1 manual. `go run ./internal/cli/gen` refreshes the committed reference and generates package-time man pages under ignored `bin/man/`.
 
-One-off `run`, `forward`, `expose` and `save` commands, leases, approvals and audit are available. Background tunnels use detached person leases: CLI exit does not stop them, and no expiry applies unless `--ttl` is set. Use `dtt stop` or `dtt leases revoke` to close them. `expose` requires `--via` and always warns that the service will be public. Daemon login installation and MCP are not implemented yet. Native/Linux no-GTK CLI exit acceptance has not yet been run.
+One-off `run`, `forward`, `expose` and `save` commands, leases, approvals and audit are available. Background tunnels use detached person leases: CLI exit does not stop them, and no expiry applies unless `--ttl` is set. Use `dtt stop` or `dtt leases revoke` to close them. `expose` requires `--via` and always warns that the service will be public. `dtt mcp config` prints client setup using this executable's absolute path; `dtt mcp serve` exposes policy-controlled tools over stdio. `mcp config --json` is paste-ready client configuration and `mcp tools --json` is the raw tool-definition array, deliberately without the usual CLI envelope. See the [agent guide](docs/cli/agents.md) for approvals, lease cleanup and the pending real-client compatibility checks. Daemon login installation is not implemented yet. Native/Linux no-GTK CLI exit acceptance has not yet been run.
 
 ## First tunnel
 
@@ -125,8 +126,8 @@ The headless CLI has its own [install and usage instructions](#dtt-headless-inst
 - [docs/product.md](docs/product.md): concepts, tunnel types, flows, screens, shortcuts.
 - [docs/architecture.md](docs/architecture.md): process model, SSH integration, secrets, storage, data model, decisions, open questions.
 - [docs/platform.md](docs/platform.md): cross-platform stack, code layout, per-OS differences, distribution, validation checks.
-- [CLI quick start](docs/cli/quickstart.md), [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting](docs/cli/troubleshooting.md) and [command reference](docs/cli/reference/dtt.md): also available with `dtt docs` / `dtt help`.
-- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API, GUI migration and phases 18–19 CLI commands are implemented; MCP remains planned.
+- [CLI quick start](docs/cli/quickstart.md), [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [agent guide](docs/cli/agents.md), [troubleshooting](docs/cli/troubleshooting.md) and [command reference](docs/cli/reference/dtt.md): also available with `dtt docs` / `dtt help`.
+- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API, GUI migration and phases 18–20 CLI/MCP commands are implemented with automated checks; the MCP real-client check remains pending.
 - [docs/plans/README.md](docs/plans/README.md): implementation plans.
 
 ## Design

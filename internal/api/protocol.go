@@ -44,6 +44,9 @@ const (
 	Timeout            ErrorKind = "timeout"
 	LeaseRevoked       ErrorKind = "lease_revoked"
 	PolicyDenied       ErrorKind = "policy_denied"
+	InvalidSpec        ErrorKind = "invalid_spec"
+	PortInUse          ErrorKind = "port_in_use"
+	AgentDisabled      ErrorKind = "agent_disabled"
 	PendingApproval    ErrorKind = "pending_approval"
 )
 
@@ -182,6 +185,7 @@ const (
 
 var Methods = []string{
 	DaemonHello, DaemonStatusMethod, DaemonShutdown, EventsSubscribe,
+	"tunnel.openRequest", "tunnel.waitRequest", "tunnel.checkRequest", "policy.get",
 	"approval.list", "approval.get", "approval.decide", "audit.read",
 	"tunnel.promote", "tunnel.runEphemeral", "lease.open", "lease.renew", "lease.close", "lease.list", "lease.revoke",
 	"tunnel.list", "tunnel.get", "tunnel.save", "tunnel.delete", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.waitReady", "tunnel.evaluateDraft", "tunnel.import", "tunnel.newDraft", "tunnel.duplicateDraft", "tunnel.setFavorite", "tunnel.findings", "tunnel.recordUsed", "tunnel.startOnLaunch",

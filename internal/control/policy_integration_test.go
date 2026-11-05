@@ -451,7 +451,7 @@ func TestPolicyIntegrationSessionGrantAndApprovalIsolation(t *testing.T) {
 		if other.Session() == first.Session() {
 			t.Fatal("different connection implicitly reused session")
 		}
-		policyError(t, policyCall(t, other, "approval.get", api.IDParams{ID: id}, nil), api.NotFound)
+		policyError(t, policyCall(t, other, "approval.get", api.IDParams{ID: id}, nil), api.Unknown)
 		var approvals []api.Approval
 		policyOK(t, other, "approval.list", api.Empty{}, &approvals)
 		if len(approvals) != 0 {
@@ -461,7 +461,7 @@ func TestPolicyIntegrationSessionGrantAndApprovalIsolation(t *testing.T) {
 		if next == id {
 			t.Fatal("session grant escaped to another session")
 		}
-		policyError(t, policyCall(t, first, "approval.get", api.IDParams{ID: next}, nil), api.NotFound)
+		policyError(t, policyCall(t, first, "approval.get", api.IDParams{ID: next}, nil), api.Unknown)
 		policyOK(t, other, "approval.list", api.Empty{}, &approvals)
 		if len(approvals) != 1 || approvals[0].ID != next {
 			t.Fatalf("session list did not isolate own request: %+v", approvals)
@@ -612,7 +612,7 @@ func TestPolicyIntegrationPromoteNeedsOwnLeaseAndSeparateApproval(t *testing.T) 
 	policyError(t, policyCall(t, mcp, "tunnel.start", api.IDParams{ID: savedID}, nil), api.PolicyDenied)
 }
 
-func TestPolicyIntegrationDisabledDeniesMutations(t *testing.T) {
+func TestPolicyIntegrationDisabledDeniesAllAgentMethods(t *testing.T) {
 	agent := settings.DefaultAgent()
 	agent.Enabled = false
 	agent.AllowTunnels = []string{"*"}
@@ -636,7 +636,7 @@ func TestPolicyIntegrationDisabledDeniesMutations(t *testing.T) {
 		{"tunnel.promote", api.PromoteTunnelParams{ID: run.ID, SavedID: "disabled-promote"}},
 	} {
 		t.Run(tc.method, func(t *testing.T) {
-			policyError(t, policyCall(t, mcp, tc.method, tc.params, nil), api.PolicyDenied)
+			policyError(t, policyCall(t, mcp, tc.method, tc.params, nil), api.AgentDisabled)
 		})
 	}
 	var approvals []api.Approval
@@ -645,9 +645,15 @@ func TestPolicyIntegrationDisabledDeniesMutations(t *testing.T) {
 		t.Fatalf("disabled mutation queued approval: %+v", approvals)
 	}
 	policyStopped(t, person, "t")
-	// Reads remain usable while mutations are disabled.
-	policyOK(t, mcp, "tunnel.list", api.Empty{}, nil)
-	policyOK(t, mcp, "lease.list", api.Empty{}, nil)
+	// The master switch protects inspection too, independently of the allow-list.
+	for _, method := range api.Methods {
+		if method == api.DaemonHello || method == api.DaemonStatusMethod || method == "policy.get" {
+			continue
+		}
+		policyError(t, policyCall(t, mcp, method, api.Empty{}, nil), api.AgentDisabled)
+	}
+	policyOK(t, mcp, api.DaemonStatusMethod, api.Empty{}, nil)
+	policyOK(t, mcp, "policy.get", api.Empty{}, nil)
 }
 
 func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
@@ -657,6 +663,7 @@ func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 	// handshake; replaying it is not an allow-list probe.
 	allowed := map[string]bool{
 		"daemon.hello": true, "daemon.status": true, "events.subscribe": true,
+		"tunnel.openRequest": true, "tunnel.waitRequest": true, "tunnel.checkRequest": true, "policy.get": true,
 		"tunnel.list": true, "tunnel.get": true, "tunnel.waitReady": true,
 		"tunnel.findings": true, "tunnel.evaluateDraft": true,
 		"ssh.hosts": true, "ssh.resolve": true, "tool.list": true, "prompt.list": true,

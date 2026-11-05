@@ -84,6 +84,7 @@ func TestExitCodes(t *testing.T) {
 		api.Conflict: 5, api.NeedsSecret: 3, api.KeyringUnavailable: 3,
 		api.NeedsUser: 4, api.NotFound: 8, api.Timeout: 6,
 		api.Incompatible: 7, api.Unknown: 2, api.Stopped: 1, api.Internal: 1, api.LeaseRevoked: 1,
+		api.PolicyDenied: 1, api.AgentDisabled: 1, api.InvalidSpec: 2, api.PortInUse: 5,
 	}
 	for kind, want := range expected {
 		if got := ExitCode(api.NewError(kind, "fixture")); got != want {

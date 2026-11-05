@@ -197,12 +197,15 @@ func TestTunnelSurvivesDisconnectAndShutdownStopsTree(t *testing.T) {
 	}
 	var childPID int
 	if runtime.GOOS != "windows" {
-		for i := 0; i < 100; i++ {
+		// The shell creates child.pid before writing it, so an empty read means
+		// "not yet", not "missing". Allow for slow starts under parallel load.
+		for deadline := time.Now().Add(10 * time.Second); childPID == 0 && time.Now().Before(deadline); {
 			if data, err := os.ReadFile(filepath.Join(s.root, "child.pid")); err == nil {
 				fmt.Sscanf(string(data), "%d", &childPID)
-				break
 			}
-			time.Sleep(10 * time.Millisecond)
+			if childPID == 0 {
+				time.Sleep(10 * time.Millisecond)
+			}
 		}
 		if childPID == 0 {
 			t.Fatal("missing child pid")

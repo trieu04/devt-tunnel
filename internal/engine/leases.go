@@ -52,7 +52,7 @@ func leaseTTL(value string) (time.Duration, error) {
 	}
 	d, err := time.ParseDuration(value)
 	if err != nil || d <= 0 || d > MaxLeaseTTL {
-		return 0, fmt.Errorf("TTL must be positive and at most %s", MaxLeaseTTL)
+		return 0, api.NewError(api.InvalidSpec, fmt.Sprintf("TTL must be positive and at most %s", MaxLeaseTTL))
 	}
 	return d, nil
 }
@@ -71,7 +71,7 @@ func (s *Engine) leaseTTL(actor api.Actor, value string) (time.Duration, error) 
 	ttl, err := time.ParseDuration(value)
 	max, _ := time.ParseDuration(a.MaxTTL)
 	if err != nil || ttl <= 0 || ttl > max {
-		return 0, fmt.Errorf("TTL must be positive and at most %s", max)
+		return 0, api.NewError(api.InvalidSpec, fmt.Sprintf("TTL must be positive and at most %s", max))
 	}
 	return ttl, nil
 }
@@ -181,6 +181,9 @@ func (s *Engine) personStart(id string, restart bool) error {
 	if !s.known(id) {
 		return fmt.Errorf("unknown tunnel %q", id)
 	}
+	if err := s.startPreflight(id, !s.running(id)); err != nil {
+		return err
+	}
 	st := s.runtimeSnapshot()
 	owner := st.Owners[id]
 	owner.Pinned = true
@@ -190,6 +193,9 @@ func (s *Engine) personStart(id string, restart bool) error {
 	}
 	if restart {
 		if err := s.stopProcesses(id); err != nil {
+			return err
+		}
+		if err := s.startPreflight(id, true); err != nil {
 			return err
 		}
 	} else if s.hasOrphan(id) {
@@ -263,9 +269,9 @@ func (s *Engine) OpenLeaseContext(ctx context.Context, actor api.Actor, session 
 	if err := ctx.Err(); err != nil {
 		return api.Lease{}, err
 	}
-	return s.openLeaseLocked(actor, session, p)
+	return s.openLeaseLocked(ctx, actor, session, p)
 }
-func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeaseParams) (api.Lease, error) {
+func (s *Engine) openLeaseLocked(ctx context.Context, actor api.Actor, session string, p api.OpenLeaseParams) (api.Lease, error) {
 	if err := s.mutationEnabled(actor, session); err != nil {
 		return api.Lease{}, err
 	}
@@ -296,7 +302,7 @@ func (s *Engine) openLeaseLocked(actor api.Actor, session string, p api.OpenLeas
 		if t.ID == "" {
 			return api.Lease{}, s.denySession(actor, session, p.ID, "")
 		}
-		fingerprint, err = s.authorize(actor, session, policy.ActionOpenSaved, t, p.Purpose, requestKey(struct{ Method, ID string }{"lease.open", p.ID}))
+		fingerprint, err = s.authorize(actor, session, policy.ActionOpenSaved, t, p.Purpose, approvalOperationKey(ctx, requestKey(struct{ Method, ID string }{"lease.open", p.ID})))
 		if err != nil {
 			return api.Lease{}, err
 		}
@@ -584,6 +590,7 @@ func (s *Engine) monitorRuntime() {
 // ExpireLeases also removes terminal ephemeral definitions. It is public so a
 // scheduler or a deterministic test can synchronously apply an advanced clock.
 func (s *Engine) ExpireLeases() error {
+	s.pruneOpenRequests()
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	if err := s.lifetimeError(); err != nil {
@@ -669,6 +676,9 @@ func (s *Engine) clearRuntimeOnShutdown() {
 }
 
 func (s *Engine) startAuthorized(id, fingerprint string) error {
+	if err := s.startPreflight(id, !s.running(id)); err != nil {
+		return err
+	}
 	if fingerprint != "" {
 		return s.manager.StartFingerprint(id, fingerprint)
 	}

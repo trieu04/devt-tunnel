@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -198,6 +199,8 @@ func TestRequestTimeout(t *testing.T) {
 
 func TestLogsFollowAndCancel(t *testing.T) {
 	var polls atomic.Int32
+	pollStarted, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
 	fakeDaemon(t, func(method string, params json.RawMessage) (any, *api.Error) {
 		if method != "logs.since" {
 			return readFixture(method, params)
@@ -213,14 +216,72 @@ func TestLogsFollowAndCancel(t *testing.T) {
 		if p.Sequence == 2 {
 			return api.LogsResult{Sequence: 3, Lines: []supervisor.LogLine{{Seq: 3, Line: "followed"}}}, nil
 		}
+		// Both lines have been written by the time the next poll arrives.
+		// Cancel with this RPC in flight, instead of racing a fixed deadline
+		// against the poller's 250ms ticker.
+		close(pollStarted)
+		<-release
 		return api.LogsResult{Sequence: 3}, nil
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var out, diagnostics bytes.Buffer
-	code := Run(ctx, []string{"logs", "db-prod", "-f", "-n", "1", "--no-daemon-start"}, IO{Out: &out, Err: &diagnostics}, Options{Version: "test"})
-	if code != 0 || out.String() != "initial\nfollowed\n" || diagnostics.Len() != 0 || polls.Load() < 2 {
-		t.Fatalf("code=%d stdout=%s stderr=%s polls=%d", code, &out, &diagnostics, polls.Load())
+	done := make(chan int, 1)
+	go func() {
+		done <- Run(ctx, []string{"logs", "db-prod", "-f", "-n", "1", "--no-daemon-start"}, IO{Out: &out, Err: &diagnostics}, Options{Version: "test"})
+	}()
+	watchdog := time.NewTimer(5 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case <-pollStarted:
+		cancel()
+	case code := <-done:
+		t.Fatalf("follow exited before cancellation: code=%d stdout=%s stderr=%s", code, &out, &diagnostics)
+	case <-watchdog.C:
+		t.Fatal("follow did not reach the in-flight poll")
+	}
+	select {
+	case code := <-done:
+		if code != 0 || out.String() != "initial\nfollowed\n" || diagnostics.Len() != 0 || polls.Load() != 3 {
+			t.Fatalf("code=%d stdout=%s stderr=%s polls=%d", code, &out, &diagnostics, polls.Load())
+		}
+	case <-watchdog.C:
+		t.Fatal("follow did not exit after cancellation")
+	}
+}
+
+func TestLogsFollowRequestTimeout(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	fakeDaemon(t, func(method string, params json.RawMessage) (any, *api.Error) {
+		if method != "logs.since" {
+			return readFixture(method, params)
+		}
+		var p api.LogsParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			t.Error(err)
+		}
+		if p.Sequence == 0 {
+			return api.LogsResult{Sequence: 1, Lines: []supervisor.LogLine{{Seq: 1, Line: "initial"}}}, nil
+		}
+		<-release
+		return api.LogsResult{Sequence: 1}, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var out bytes.Buffer
+	var a *app
+	a = newApp(IO{Out: callbackOutput(func(p []byte) (int, error) {
+		// Finish setup and initial output before imposing a short timeout on
+		// follow requests. The parent's deadline remains far in the future.
+		a.timeout = 10 * time.Millisecond
+		return out.Write(p)
+	})}, Options{})
+	a.noDaemonStart = true
+	defer a.close()
+	err := a.readLogs(ctx, "db-prod", 1, true)
+	if !errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil || out.String() != "initial\n" {
+		t.Fatalf("request timeout must not become a clean follow cancellation: err=%v parent=%v stdout=%s", err, ctx.Err(), &out)
 	}
 }
 

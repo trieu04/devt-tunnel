@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -66,6 +67,12 @@ func (a *app) readLogs(ctx context.Context, id string, count int, follow bool) e
 			var next api.LogsResult
 			if err := a.call(ctx, "logs.since", api.LogsParams{ID: id, Sequence: batch.Sequence}, &next); err != nil {
 				if ctx.Err() != nil {
+					return nil
+				}
+				// The client can observe the socket deadline before the parent
+				// context's timer publishes Err. Only end follow for the parent
+				// deadline, not an independent per-request timeout.
+				if deadline, ok := ctx.Deadline(); errors.Is(err, context.DeadlineExceeded) && ok && !time.Now().Before(deadline) {
 					return nil
 				}
 				return err

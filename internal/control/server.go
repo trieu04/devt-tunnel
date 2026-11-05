@@ -214,6 +214,9 @@ func (c *connection) serve() {
 			case <-c.ctx.Done():
 				return
 			case event := <-c.events:
+				if c.client.Kind == "mcp" && !c.server.engine.AgentEnabled() {
+					continue
+				}
 				params, _ := json.Marshal(event)
 				if c.write(api.Request{JSONRPC: "2.0", Method: event.Type, Params: params}) != nil {
 					c.close()
@@ -240,6 +243,9 @@ func (c *connection) serve() {
 }
 
 func (c *connection) enqueue(event api.Event) {
+	if c.client.Kind == "mcp" && !c.server.engine.AgentEnabled() {
+		return
+	}
 	if c.client.Kind == "mcp" && event.Prompt != nil {
 		prompt := *event.Prompt
 		prompt.Prompt.Text = ""
@@ -276,6 +282,12 @@ func (c *connection) execute(req api.Request) {
 	if s.stopping.Load() {
 		c.respond(req.ID, nil, api.NewError(api.Stopped, "daemon is shutting down"))
 		return
+	}
+	if c.client.Kind == "mcp" && req.Method != api.DaemonHello && req.Method != api.DaemonStatusMethod && req.Method != "policy.get" {
+		if err := s.engine.AgentAccess(api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.session); err != nil {
+			c.respond(req.ID, nil, err)
+			return
+		}
 	}
 	if c.client.Kind == "mcp" && !mcpMethodAllowed(req.Method) {
 		c.respond(req.ID, nil, s.engine.PolicyRefusalForSession(api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.session))
@@ -388,6 +400,7 @@ func knownClientKind(kind string) bool { return kind == "gui" || kind == "cli" |
 func mcpMethodAllowed(method string) bool {
 	switch method {
 	case api.DaemonHello, api.DaemonStatusMethod, api.EventsSubscribe,
+		"tunnel.openRequest", "tunnel.waitRequest", "tunnel.checkRequest", "policy.get",
 		"tunnel.list", "tunnel.get", "tunnel.waitReady", "tunnel.findings", "tunnel.evaluateDraft",
 		"ssh.hosts", "ssh.resolve", "tool.list", "prompt.list",
 		"lease.open", "lease.renew", "lease.close", "lease.list", "tunnel.runEphemeral",

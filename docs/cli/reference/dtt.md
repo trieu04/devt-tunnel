@@ -54,6 +54,7 @@ dtt [flags]
 * [dtt logs](dtt_logs.md)	 - Read or follow retained tunnel output
 * [dtt ls](dtt_ls.md)	 - List tunnels and their endpoints
 * [dtt man](dtt_man.md)	 - Write man pages for every command
+* [dtt mcp](dtt_mcp.md)	 - Connect agents through the policy-controlled MCP adapter
 * [dtt orphans](dtt_orphans.md)	 - List tunnel processes left after a crash
 * [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
 * [dtt prompts](dtt_prompts.md)	 - List SSH questions waiting for an answer

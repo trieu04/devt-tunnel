@@ -1,6 +1,6 @@
 # `dtt` command line
 
-Status: **accepted 2026-11-04; phases 18–19 CLI commands implemented; native/Linux headless exit test not yet run.** Saved and ephemeral tunnel commands, leases, approvals, audit, shell completion, embedded guides and deterministic generated reference/man pages are available. Daemon login installation and MCP remain future work. `daemon run` supports `--idle-exit` (default 5m, 0 disables). Architecture and rationale are in [control-plane.md](control-plane.md).
+Status: **accepted 2026-11-04; phases 18–19 CLI commands implemented; native/Linux headless exit test not yet run.** Saved and ephemeral tunnel commands, leases, approvals, audit, shell completion, embedded guides and deterministic generated reference/man pages are available. Phase 20 MCP commands are implemented with automated checks; real-client check pending. Daemon login installation remains future work. `daemon run` supports `--idle-exit` (default 5m, 0 disables). Architecture and rationale are in [control-plane.md](control-plane.md).
 
 This file is the interface contract. User-facing guides and the generated reference are in [docs/cli](../cli/quickstart.md); see [Documentation plan](#documentation-plan) for generation and CI enforcement.
 
@@ -10,6 +10,7 @@ This file is the interface contract. User-facing guides and the generated refere
 - [Replacing traditional commands](../cli/replacing.md).
 - [Scripts](../cli/scripts.md).
 - [Troubleshooting and exit codes](../cli/troubleshooting.md).
+- [Agent guide and client compatibility status](../cli/agents.md).
 - [Generated command reference](../cli/reference/dtt.md).
 
 ## Concepts
@@ -142,7 +143,8 @@ There is no `reveal`. It requires OS authentication, which the desktop app provi
 ### Output
 
 - Results go to stdout and diagnostics to stderr. Tables are for people and may change.
-- `--json` is the stable interface. Every object has `"apiVersion": 1`. New fields may appear, and removing or renaming a field raises the version.
+- `--json` is the stable interface. Ordinary CLI result objects have `"apiVersion": 1`. New fields may appear, and removing or renaming a field raises the version.
+- Deliberate MCP exceptions: `dtt mcp config --json` prints only `{"mcpServers":{"devt-tunnel":{"command":"/absolute/dtt","args":["mcp","serve"]}}}`, a paste-ready client configuration with the symlink-resolved executable path and no `apiVersion`. `dtt mcp tools --json` prints the raw MCP tool-definition array without a CLI envelope. `dtt mcp serve` writes only MCP JSON-RPC to stdout, regardless of `--json`. CLI errors still use the normal stderr format.
 - Colors, spinners and tables appear only on a TTY.
 
 ```bash
@@ -181,11 +183,11 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`) or a policy refusal (`policy_denied`). See the message and `dtt logs db` |
-| 2 | `usage` | Bad arguments, or an unknown or ambiguous tunnel |
+| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`), a policy refusal (`policy_denied`) or disabled agent access (`agent_disabled`). See the message and `dtt logs db` |
+| 2 | `usage` | Bad arguments or an invalid tunnel specification (`invalid_spec`), or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`). Includes `pending_approval`; poll the approval and retry after a person decides. |
-| 5 | `conflict` | Port in use, or `tunnels.toml` changed on disk |
+| 5 | `conflict` | Port in use (`port_in_use`), or `tunnels.toml` changed on disk |
 | 6 | `timeout` | Not ready within the timeout |
 | 7 | `daemon` | The daemon cannot be reached or started, or its version is incompatible |
 | 8 | `not_found` | A required binary is missing, e.g. `ngrok` |

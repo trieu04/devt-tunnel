@@ -157,7 +157,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer busy.Close()
-		if code, out, diagnostics := invoke("", "start", "t", "--json"); code != 5 || out != "" || !strings.Contains(diagnostics, `"code":"conflict"`) {
+		if code, out, diagnostics := invoke("", "start", "t", "--json"); code != 5 || out != "" || !strings.Contains(diagnostics, `"code":"port_in_use"`) {
 			t.Fatalf("port conflict: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 		}
 		if code, out, diagnostics := invoke("", "stop", "t"); code != 0 {

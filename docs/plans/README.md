@@ -30,7 +30,7 @@ Baseline when this was written (2026-11-03): `go test ./...` passes on macOS arm
 | 20 | [MCP server](20-mcp.md) | Tools for agents, tested with a real client | 19 | 3 d |
 | 21 | [Packaging `dtt`](21-cli-packaging.md) | Signed binary in every installer, on `PATH` | 18, 20 | 3 d |
 
-Estimates are rough, for one developer, and have not been checked against real progress. Phase 12 is the least certain, because its cost depends on what breaks. Phases 14–21 come from the accepted [central management design](../design/control-plane.md); phases 14–19 are implemented, phase 16 detached Keychain access remains unverified, phase 17 native-window acceptance passed on macOS, and phase 18 native/Linux no-GTK exit acceptance has not yet been run. Phase 19 native-window approval acceptance passed on macOS (2026-11-05) after the security-review hardening; phases 20–21, daemon login installation and MCP remain future work.
+Estimates are rough, for one developer, and have not been checked against real progress. Phase 12 is the least certain, because its cost depends on what breaks. Phases 14–21 come from the accepted [central management design](../design/control-plane.md); phases 14–19 are implemented, phase 16 detached Keychain access remains unverified, phase 17 native-window acceptance passed on macOS, and phase 18 native/Linux no-GTK exit acceptance has not yet been run. Phase 19 native-window approval acceptance passed on macOS (2026-11-05) after the security-review hardening. Phase 20 MCP is implemented with automated checks; real-client check pending. Phase 21 packaging and daemon login installation remain future work.
 
 ```text
 1 ─┬─► 2 ─┬─► 4 ────────┐

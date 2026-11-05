@@ -17,11 +17,11 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`) or a policy refusal (`policy_denied`). See the message and `dtt logs db` |
-| 2 | `usage` | Bad arguments, or an unknown or ambiguous tunnel |
+| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`), a policy refusal (`policy_denied`) or disabled agent access (`agent_disabled`). See the message and `dtt logs db` |
+| 2 | `usage` | Bad arguments or an invalid tunnel specification (`invalid_spec`), or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`). Includes `pending_approval`; poll the approval and retry after a person decides. |
-| 5 | `conflict` | Port in use, or `tunnels.toml` changed on disk |
+| 5 | `conflict` | Port in use (`port_in_use`), or `tunnels.toml` changed on disk |
 | 6 | `timeout` | Not ready within the timeout |
 | 7 | `daemon` | The daemon cannot be reached or started, or its version is incompatible |
 | 8 | `not_found` | A required binary is missing, e.g. `ngrok` |

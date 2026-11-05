@@ -281,7 +281,7 @@ func TestMCPCompletedApprovalsPrunedWhileConnected(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{consumed, denied} {
-		policyError(t, policyCall(t, mcp, "approval.get", api.IDParams{ID: id}, nil), api.NotFound)
+		policyError(t, policyCall(t, mcp, "approval.get", api.IDParams{ID: id}, nil), api.Unknown)
 	}
 	if a := policyGetApproval(t, mcp, timed); a.Status != "timed_out" {
 		t.Fatalf("not timed out: %+v", a)
@@ -290,7 +290,7 @@ func TestMCPCompletedApprovalsPrunedWhileConnected(t *testing.T) {
 	if err := s.engine.ExpireLeases(); err != nil {
 		t.Fatal(err)
 	}
-	policyError(t, policyCall(t, mcp, "approval.get", api.IDParams{ID: timed}, nil), api.NotFound)
+	policyError(t, policyCall(t, mcp, "approval.get", api.IDParams{ID: timed}, nil), api.Unknown)
 	var approvals []api.Approval
 	policyOK(t, person, "approval.list", api.Empty{}, &approvals)
 	if len(approvals) != 0 {

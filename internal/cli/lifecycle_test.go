@@ -189,10 +189,13 @@ func TestLifecycleFailureExitCodes(t *testing.T) {
 	}{
 		{"missing-secret", api.NeedsSecret, "tunnel needs a secret", "dtt secret set db-key", 3},
 		{"keyring", api.KeyringUnavailable, "the OS keychain is unavailable", "", 3},
-		{"bind", api.Internal, "127.0.0.1:15432 is already in use", "", 5},
+		{"bind", api.PortInUse, "bind failed", "", 5},
 		{"typed-conflict", api.Conflict, "conflict", "", 5},
+		{"invalid-spec", api.InvalidSpec, "invalid forward", "", 2},
 		{"timeout", api.Timeout, "not ready", "", 6},
-		{"missing-binary", api.Internal, "ngrok was not found on this machine", "", 8},
+		{"missing-binary", api.NotFound, "missing executable", "", 8},
+		{"untyped-bind-message", api.Internal, "127.0.0.1:15432 is already in use", "", 1},
+		{"untyped-missing-binary-message", api.Internal, "ngrok was not found on this machine", "", 1},
 		{"needs-user", api.NeedsUser, "SSH question pending", "dtt prompts", 4},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

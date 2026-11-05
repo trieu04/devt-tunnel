@@ -46,10 +46,10 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	key := requestKey(struct {
+	key := approvalOperationKey(ctx, requestKey(struct {
 		Method string
 		Tunnel model.Tunnel
-	}{"tunnel.runEphemeral", p.Tunnel})
+	}{"tunnel.runEphemeral", p.Tunnel}))
 	t := p.Tunnel
 	prepared := false
 	if actor.Kind == "mcp" {
@@ -70,10 +70,10 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 		}
 	}()
 	if !strings.HasPrefix(t.ID, "tmp-") {
-		return api.RunEphemeralResult{}, errors.New("ephemeral ids must start with tmp-")
+		return api.RunEphemeralResult{}, api.NewError(api.InvalidSpec, "ephemeral ids must start with tmp-")
 	}
 	if s.known(t.ID) {
-		return api.RunEphemeralResult{}, fmt.Errorf("duplicate tunnel id %q", t.ID)
+		return api.RunEphemeralResult{}, api.NewError(api.InvalidSpec, fmt.Sprintf("duplicate tunnel id %q", t.ID))
 	}
 	var auto []int
 	if !prepared {
@@ -85,9 +85,9 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	cfg := s.manager.Config()
 	cfg.Tunnels = append(append([]model.Tunnel(nil), cfg.Tunnels...), t)
 	if err := cfg.Validate(); err != nil {
-		return api.RunEphemeralResult{}, err
+		return api.RunEphemeralResult{}, invalidSpec(err)
 	}
-	if _, err := s.manager.PreviewDraft(t); err != nil {
+	if _, err := s.buildStartDraft(t); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
 	action := policy.ActionCreate
@@ -211,7 +211,7 @@ func (s *Engine) PromoteTunnelFor(actor api.Actor, session string, p api.Promote
 		return "", errors.New("saved ids may not start with tmp-")
 	}
 	if taken[t.ID] {
-		return "", fmt.Errorf("duplicate tunnel id %q", t.ID)
+		return "", api.NewError(api.InvalidSpec, fmt.Sprintf("duplicate tunnel id %q", t.ID))
 	}
 	if actor.Kind == "mcp" {
 		if err := s.validSession(actor, session); err != nil {
@@ -244,7 +244,7 @@ func (s *Engine) PromoteTunnelFor(actor api.Actor, session string, p api.Promote
 	}
 	cfg, err := s.configStore.Update(func(cfg *model.Config) error {
 		cfg.Tunnels = append(cfg.Tunnels, t)
-		return s.merged(*cfg).Validate()
+		return invalidSpec(s.merged(*cfg).Validate())
 	})
 	if err != nil {
 		delete(st.Promotions, p.ID)
@@ -408,6 +408,11 @@ func listeningLoopback(address string) bool {
 }
 
 func (s *Engine) allocatePorts(t *model.Tunnel, retry []int) ([]int, error) {
+	return s.allocatePortsFor(t, retry, true)
+}
+
+// A dry run resolves a candidate without reserving it in allocation history.
+func (s *Engine) allocatePortsFor(t *model.Tunnel, retry []int, remember bool) ([]int, error) {
 	used := map[int]bool{}
 	for port := range s.portHistory[t.ID] {
 		used[port] = true
@@ -470,10 +475,10 @@ func (s *Engine) allocatePorts(t *model.Tunnel, retry []int) ([]int, error) {
 			continue
 		}
 		if t.Type != model.TypeSSH || (f.Kind != model.ForwardLocal && f.Kind != model.ForwardDynamic) {
-			return nil, errors.New("listen_port requires a local or dynamic SSH forward")
+			return nil, api.NewError(api.InvalidSpec, "listen_port requires a local or dynamic SSH forward")
 		}
 		if f.Bind != "" && request == f.ListenPort {
-			return nil, errors.New("use either bind or listen_port, not both")
+			return nil, api.NewError(api.InvalidSpec, "use either bind or listen_port, not both")
 		}
 		port := 0
 		if request == "auto" {
@@ -485,20 +490,22 @@ func (s *Engine) allocatePorts(t *model.Tunnel, retry []int) ([]int, error) {
 				}
 			}
 			if port == 0 {
-				return nil, errors.New("no free port in configured port range")
+				return nil, api.NewError(api.PortInUse, "no free port in configured port range")
 			}
 			auto = append(auto, i)
-			if s.portHistory[t.ID] == nil {
-				s.portHistory[t.ID] = map[int]bool{}
+			if remember {
+				if s.portHistory[t.ID] == nil {
+					s.portHistory[t.ID] = map[int]bool{}
+				}
+				s.portHistory[t.ID][port] = true
 			}
-			s.portHistory[t.ID][port] = true
 		} else {
 			n, err := strconv.Atoi(request)
 			if err != nil || n < 1 || n > 65535 {
-				return nil, errors.New("listen_port must be auto or a decimal port")
+				return nil, api.NewError(api.InvalidSpec, "listen_port must be auto or a decimal port")
 			}
 			if external[n] || concrete[n] > 1 || s.listening(net.JoinHostPort("127.0.0.1", strconv.Itoa(n))) {
-				return nil, fmt.Errorf("port %d is already in use", n)
+				return nil, api.NewError(api.PortInUse, fmt.Sprintf("port %d is already in use", n))
 			}
 			port = n
 		}

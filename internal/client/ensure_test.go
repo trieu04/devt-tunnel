@@ -156,3 +156,73 @@ func TestDaemonPathAdjacentThenPATH(t *testing.T) {
 		t.Fatalf("adjacent: %q %v", got, err)
 	}
 }
+
+// Model the ordering where the socket's deadline has elapsed but the context
+// timer goroutine has not published Err/Done yet. No scheduler timing is needed.
+type unpublishedDeadlineContext struct {
+	context.Context
+	deadline time.Time
+}
+
+func (c unpublishedDeadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
+
+// Let Call write its request before the reader observes the expired socket
+// deadline; otherwise closing the connection could race SetWriteDeadline.
+type readTimeoutConn struct {
+	net.Conn
+	written chan struct{}
+}
+
+func (c readTimeoutConn) Write(p []byte) (int, error) {
+	close(c.written)
+	return len(p), nil
+}
+
+func TestCallSocketDeadlineBeforeContextTimer(t *testing.T) {
+	for _, direction := range []string{"write", "read"} {
+		t.Run(direction, func(t *testing.T) {
+			conn, peer := net.Pipe()
+			defer conn.Close()
+			defer peer.Close()
+			ctx := unpublishedDeadlineContext{Context: context.Background(), deadline: time.Now().Add(-time.Second)}
+			c := &Client{conn: conn, done: make(chan struct{}), pending: map[string]chan api.Response{}}
+			defer c.Close()
+			if direction == "read" {
+				if err := conn.SetReadDeadline(ctx.deadline); err != nil {
+					t.Fatal(err)
+				}
+				written := make(chan struct{})
+				c.conn = readTimeoutConn{Conn: conn, written: written}
+				go func() {
+					<-written
+					c.read()
+				}()
+			}
+			if err := c.Call(ctx, "fixture", api.Empty{}, nil); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("socket %s timeout must be a context deadline error: %T %v", direction, err, err)
+			}
+			if ctx.Err() != nil {
+				t.Fatal("fixture must leave context cancellation unpublished")
+			}
+		})
+	}
+}
+
+func TestContextIOErrorKeepsIndependentTimeouts(t *testing.T) {
+	timeout := &net.DNSError{Err: "fixture timeout", IsTimeout: true}
+	future := unpublishedDeadlineContext{Context: context.Background(), deadline: time.Now().Add(time.Hour)}
+	for _, ctx := range []context.Context{context.Background(), future} {
+		if err := contextIOError(ctx, timeout); err != timeout {
+			t.Fatalf("independent timeout changed to %v", err)
+		}
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := contextIOError(canceled, timeout); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled I/O timeout = %v", err)
+	}
+	transport := errors.New("fixture transport failure")
+	if err := contextIOError(canceled, transport); err != transport {
+		t.Fatalf("non-timeout transport error changed to %v", err)
+	}
+}

@@ -1,7 +1,10 @@
 package control
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/checks"
@@ -23,8 +26,42 @@ func query[P, R any](s *Server, method string, fn func(P) R) {
 	read(s, method, func(_ context.Context, p P) (R, error) { return fn(p), nil })
 }
 
+// These narrow agent endpoints reject unknown fields recursively, rather than
+// silently accepting a caller's misspelled or smuggled execution parameters.
+func strictHandle[P, R any](s *Server, method string, fn func(context.Context, P) (R, error)) {
+	handle(s, method, fn)
+	s.handlers[method] = func(ctx context.Context, raw json.RawMessage) (any, error) {
+		var p P
+		if len(raw) != 0 && string(raw) != "null" {
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			decoder.DisallowUnknownFields()
+			var extra any
+			if raw[0] != '{' || decoder.Decode(&p) != nil || decoder.Decode(&extra) != io.EOF {
+				return nil, &api.Error{Code: -32602, Message: "invalid parameters", Data: api.ErrorData{Kind: api.Unknown}}
+			}
+		}
+		return fn(ctx, p)
+	}
+}
+
 func (s *Server) register() {
 	e := s.engine
+	strictHandle(s, "tunnel.openRequest", func(ctx context.Context, p api.OpenRequestParams) (api.OpenRequestResult, error) {
+		actor, session := connectionActor(ctx)
+		return e.OpenRequest(ctx, actor, session, p)
+	})
+	// Polling may execute an approved original request; it is not read-only.
+	strictHandle(s, "tunnel.waitRequest", func(ctx context.Context, p api.WaitRequestParams) (api.OpenRequestResult, error) {
+		actor, session := connectionActor(ctx)
+		return e.WaitRequest(ctx, actor, session, p)
+	})
+	strictHandle(s, "tunnel.checkRequest", func(ctx context.Context, p api.OpenRequestParams) (api.CheckRequestResult, error) {
+		actor, _ := connectionActor(ctx)
+		return e.CheckRequest(actor, p)
+	})
+	s.readOnly["tunnel.checkRequest"] = true
+	strictHandle(s, "policy.get", func(_ context.Context, _ api.Empty) (api.AgentPolicyResult, error) { return e.AgentPolicy(), nil })
+	s.readOnly["policy.get"] = true
 	handle(s, "tunnel.promote", func(ctx context.Context, p api.PromoteTunnelParams) (string, error) {
 		actor, session := connectionActor(ctx)
 		return e.PromoteTunnelFor(actor, session, p)
@@ -71,6 +108,9 @@ func (s *Server) register() {
 		statuses := e.Statuses()
 		actor, _ := connectionActor(ctx)
 		if actor.Kind == "mcp" {
+			if !e.AgentEnabled() {
+				statuses = []supervisor.Status{}
+			}
 			for i := range statuses {
 				statuses[i] = mcpStatus(statuses[i])
 			}

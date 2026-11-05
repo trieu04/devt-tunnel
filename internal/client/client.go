@@ -25,6 +25,7 @@ type Client struct {
 	mu       sync.Mutex
 	next     uint64
 	pending  map[string]chan api.Response
+	readErr  error
 	callback func(api.Event)
 	writeMu  sync.Mutex
 	events   chan api.Event
@@ -132,6 +133,11 @@ func (c *Client) read() {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		c.mu.Lock()
+		c.readErr = err
+		c.mu.Unlock()
+	}
 }
 
 func (c *Client) Call(ctx context.Context, method string, params, result any) error {
@@ -162,7 +168,7 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 	c.writeMu.Unlock()
 	if err != nil {
 		c.Close()
-		return err
+		return contextIOError(ctx, err)
 	}
 	select {
 	case response := <-ch:
@@ -175,9 +181,31 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 		case response := <-ch:
 			return decode(response, result)
 		default:
+			c.mu.Lock()
+			err := c.readErr
+			c.mu.Unlock()
+			if err != nil {
+				return contextIOError(ctx, err)
+			}
 			return io.EOF
 		}
 	}
+}
+
+// A socket deadline can expire before the context timer goroutine publishes Err.
+// Report the context outcome consistently, but keep independent I/O timeouts.
+func contextIOError(ctx context.Context, err error) error {
+	var timeout net.Error
+	if !errors.As(err, &timeout) || !timeout.Timeout() {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return err
 }
 
 func decode(response api.Response, result any) error {

@@ -48,7 +48,7 @@ func (s *Engine) SaveTunnelFor(actor api.Actor, session string, p api.SaveTunnel
 		}
 		cfg.Tunnels = append(cfg.Tunnels, t)
 		if err := s.merged(*cfg).Validate(); err != nil {
-			return err
+			return invalidSpec(err)
 		}
 		return s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelSave, TunnelID: t.ID, Fingerprint: fingerprint, Result: audit.ResultOK})
 	})
