@@ -2,9 +2,11 @@
 
 **Goal:** the desktop app holds no tunnel state. Every `host.Service` method reaches the daemon over the API, with no visible change for a user who only uses the app.
 
-**Implementation:** typed forwarding, connection cache/backoff, event resubscription, lifecycle forwarding and the host-to-engine boundary are implemented with automated tests; the native macOS window checklist remains pending.
+**Implementation:** typed forwarding, connection cache/backoff, event resubscription, lifecycle forwarding and the host-to-engine boundary are implemented with automated tests; native checks 1–9 passed on macOS, while check 10 remains pending after fixing its reveal authentication policy.
 
 **Automated evidence (2026-11-05, macOS arm64):** host race tests, full internal/command Go tests including daemon e2e, frontend tests/typecheck/build, binding regeneration without contract changes, dependency audits and the Wails native shell build passed. The app was not launched or inspected, so none of the native-window rows below are accepted.
+
+**Native evidence (2026-11-05, macOS arm64):** a person reported checks 1–9 passed. Check 10, covering Vault, missing-secret retry and reveal, stopped at reveal with `RuntimeError: device owner authentication is not configured`; the implementation incorrectly requested biometric-only policy value 1 instead of `LAPolicyDeviceOwnerAuthentication` value 2. The code is corrected, but check 10 is not accepted until the rebuilt app shows the OS authentication prompt and reveals the value.
 
 **Depends on:** 16. This is the riskiest phase: `go test` cannot show that the tray, dialogs and quit still work.
 

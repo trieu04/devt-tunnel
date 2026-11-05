@@ -12,6 +12,8 @@ import (
 
 type localUserAuth struct{ available bool }
 
+const deviceOwnerAuthenticationPolicy int64 = 2
+
 func NewUserAuth() UserAuth {
 	if _, err := purego.Dlopen("/System/Library/Frameworks/Foundation.framework/Foundation", purego.RTLD_GLOBAL|purego.RTLD_NOW); err != nil {
 		return localUserAuth{}
@@ -35,7 +37,7 @@ func (a localUserAuth) Confirm(ctx context.Context, reason string) error {
 	}
 	defer laContext.Send(objc.RegisterName("release"))
 	var evaluationError objc.ID
-	if !objc.Send[bool](laContext, objc.RegisterName("canEvaluatePolicy:error:"), int64(1), &evaluationError) {
+	if !objc.Send[bool](laContext, objc.RegisterName("canEvaluatePolicy:error:"), deviceOwnerAuthenticationPolicy, &evaluationError) {
 		return errors.New("device owner authentication is not configured")
 	}
 	reasonText := objc.ID(objc.GetClass("NSString")).Send(objc.RegisterName("stringWithUTF8String:"), reason+"\x00")
@@ -48,7 +50,7 @@ func (a localUserAuth) Confirm(ctx context.Context, reason string) error {
 		}
 	})
 	defer block.Release()
-	laContext.Send(objc.RegisterName("evaluatePolicy:localizedReason:reply:"), int64(1), reasonText, block)
+	laContext.Send(objc.RegisterName("evaluatePolicy:localizedReason:reply:"), deviceOwnerAuthenticationPolicy, reasonText, block)
 	select {
 	case err := <-result:
 		return err
