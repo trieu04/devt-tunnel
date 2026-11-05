@@ -66,3 +66,5 @@ Using the socket directly with `kind: "mcp"`:
 - A public tunnel waits until a person approves in the native window.
 - Killing the client ends its lease after the grace period, and the process is gone.
 - A tunnel that a person pinned is untouched.
+
+Status: the native-window part passed on macOS on 2026-11-05. A raw-socket `kind: "mcp"` client requested a public `-R` tunnel and received `pending_approval` with no process started. The window came forward without an "always" choice, and the retry ran only after a person approved once. Badge, ephemeral Save, lease revoke and the 2-minute disconnect grace behaved as designed, and a person-pinned tunnel was untouched. Policy rows and the `ProxyCommand` refusal are covered by `internal/control` integration tests.

@@ -22,7 +22,7 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
 | GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; all native macOS checks passed |
 | `dtt` CLI (phases 18–19) | Saved and ephemeral tunnels, leases, approvals, audit and generated/offline documentation implemented and tested; native/Linux no-GTK exit acceptance pending |
-| Ownership, leases and policy (phase 19) | Daemon policy and approvals, CLI, agent badges, ephemeral Save and Settings → Agents implemented and tested; native-window approval acceptance pending; MCP server planned for phase 20 |
+| Ownership, leases and policy (phase 19) | Daemon policy and approvals, CLI, agent badges, ephemeral Save and Settings → Agents implemented and tested; native macOS approval acceptance passed; MCP server planned for phase 20 |
 
 Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
 
