@@ -124,7 +124,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		if code, out, diagnostics := invoke("", "start", "t"); code != 0 || strings.TrimSpace(out) != address {
 			t.Fatalf("idempotent start: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 		}
-		if code, out, diagnostics := invoke("", "logs", "t", "--json"); code != 0 || !strings.Contains(out, `"apiVersion":1`) || !strings.Contains(out, `"lines":`) {
+		if code, out, diagnostics := invoke("", "logs", "t", "--json"); code != 0 || !strings.Contains(out, `"apiVersion":2`) || !strings.Contains(out, `"lines":`) {
 			t.Fatalf("logs: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 		}
 		if code, out, diagnostics := invoke("", "stop", "t", "--json"); code != 0 || !strings.Contains(out, `"state":"stopped"`) {
@@ -183,11 +183,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		if code, out, diagnostics := invoke("", "profile", "add", "forward-fixture", "--ssh-config", sshConfig); code != 0 {
 			t.Fatalf("profile add: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 		}
-		if code, out, diagnostics := invoke("", "profile", "use", "forward-fixture"); code != 0 {
-			t.Fatalf("profile use: code=%d stdout=%s stderr=%s", code, out, diagnostics)
-		}
-		defer invoke("", "profile", "use", "--none")
-		code, out, diagnostics := invoke("", "forward", "forward-fixture", "auto:"+env.echoAddr, "--ttl", "5m", "--json")
+		code, out, diagnostics := invoke("", "forward", "forward-fixture", "auto:"+env.echoAddr, "--profile", "forward-fixture", "--ttl", "5m", "--json")
 		var result struct {
 			APIVersion int `json:"apiVersion"`
 			Tunnels    []struct {
@@ -195,7 +191,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 				Endpoints []api.Endpoint
 			}
 		}
-		if err := json.Unmarshal([]byte(out), &result); code != 0 || err != nil || result.APIVersion != 1 || len(result.Tunnels) != 1 || len(result.Tunnels[0].Endpoints) != 1 {
+		if err := json.Unmarshal([]byte(out), &result); code != 0 || err != nil || result.APIVersion != api.Version || len(result.Tunnels) != 1 || len(result.Tunnels[0].Endpoints) != 1 {
 			t.Fatalf("forward: code=%d stdout=%s stderr=%s decode=%v", code, out, diagnostics, err)
 		}
 		id, address := result.Tunnels[0].ID, result.Tunnels[0].Endpoints[0].Listen

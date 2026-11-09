@@ -256,7 +256,7 @@ func TestOfflineDocumentationCommands(t *testing.T) {
 		{[]string{"docs"}, 0, "quickstart"},
 		{[]string{"docs", "quickstart"}, 0, "# Quick start"},
 		{[]string{"docs", "agents"}, 0, "# Agent guide"},
-		{[]string{"docs", "troubleshooting", "--json"}, 0, `"apiVersion":1`},
+		{[]string{"docs", "troubleshooting", "--json"}, 0, `"apiVersion":2`},
 		{[]string{"docs", "missing"}, 2, "unknown documentation topic"},
 		{[]string{"docs", "../../README"}, 2, "unknown documentation topic"},
 		{[]string{"docs", "quickstart", "extra"}, 2, "accepts at most 1"},
@@ -271,7 +271,7 @@ func TestOfflineDocumentationCommands(t *testing.T) {
 	if code := Run(context.Background(), []string{"man", "--dir", dir}, IO{Out: &out, Err: &diagnostics}, Options{}); code != 0 {
 		t.Fatalf("man: code=%d stdout=%s stderr=%s", code, &out, &diagnostics)
 	}
-	for _, name := range []string{"dtt.1", "dtt-docs.1", "dtt-man.1", "dtt-completion.1", "dtt-profile-autostart.1"} {
+	for _, name := range []string{"dtt.1", "dtt-docs.1", "dtt-man.1", "dtt-completion.1", "dtt-group-assign.1"} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil || len(data) == 0 || bytes.Contains(data, []byte("Auto generated")) {
 			t.Errorf("%s: err=%v content=%s", name, err, data)

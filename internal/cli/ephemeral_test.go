@@ -99,7 +99,7 @@ func ephemeralResult(t *testing.T, args ...string) ephemeralJSON {
 	t.Helper()
 	code, out, diagnostics := defineRun(append([]string{"--json"}, args...)...)
 	var result ephemeralJSON
-	if err := json.Unmarshal([]byte(out), &result); code != 0 || err != nil || result.APIVersion != 1 || len(result.Tunnels) != 1 {
+	if err := json.Unmarshal([]byte(out), &result); code != 0 || err != nil || result.APIVersion != 2 || len(result.Tunnels) != 1 {
 		t.Fatalf("%v: code=%d stdout=%s stderr=%s err=%v", args, code, out, diagnostics, err)
 	}
 	return result
@@ -117,7 +117,7 @@ func TestRunDryRunRealDaemon(t *testing.T) {
 	} {
 		code, out, diagnostics := defineRun(append([]string{"run", "--dry-run", "--json", "--"}, tc.argv...)...)
 		var result defineResult
-		if err := json.Unmarshal([]byte(out), &result); code != 0 || diagnostics != "" || err != nil || result.APIVersion != 1 || !result.DryRun || result.Saved || result.Started || !strings.Contains(result.Preview, tc.command) || len(result.Findings) == 0 {
+		if err := json.Unmarshal([]byte(out), &result); code != 0 || diagnostics != "" || err != nil || result.APIVersion != 2 || !result.DryRun || result.Saved || result.Started || !strings.Contains(result.Preview, tc.command) || len(result.Findings) == 0 {
 			t.Fatalf("%v: code=%d stdout=%s stderr=%s decode=%v", tc.argv, code, out, diagnostics, err)
 		}
 	}
@@ -138,7 +138,7 @@ func TestForwardAutoJSONAndDetachedLeaseRealDaemon(t *testing.T) {
 		APIVersion int `json:"apiVersion"`
 		Leases     []api.Lease
 	}
-	if err := json.Unmarshal([]byte(out), &listed); code != 0 || err != nil || diagnostics != "" || listed.APIVersion != 1 || len(listed.Leases) != 1 {
+	if err := json.Unmarshal([]byte(out), &listed); code != 0 || err != nil || diagnostics != "" || listed.APIVersion != 2 || len(listed.Leases) != 1 {
 		t.Fatalf("leases: %d %s %s %v", code, out, diagnostics, err)
 	}
 	lease := listed.Leases[0]
@@ -173,7 +173,7 @@ func TestForwardSaveAndSaveProfileRealDaemon(t *testing.T) {
 		t.Fatalf("save: %d %s %s", code, out, diagnostics)
 	}
 	stored = defineSavedTunnel(t, "profile-db")
-	if len(stored.Profiles) != 1 || stored.Profiles[0] != "work" {
+	if stored.Profile != "work" {
 		t.Fatalf("profile membership: %+v", stored)
 	}
 	if code, out, diagnostics := defineRun("stop", "profile-db", "staging-db"); code != 0 {
@@ -184,7 +184,7 @@ func TestForwardSaveAndSaveProfileRealDaemon(t *testing.T) {
 func TestForwardWarningsAndValidation(t *testing.T) {
 	ephemeralDaemon(t)
 	code, out, diagnostics := defineRun("forward", "server1", "0.0.0.0:15432:127.0.0.1:5432", "--json", "--quiet")
-	if code != 0 || !strings.Contains(out, `"apiVersion":1`) || !strings.Contains(diagnostics, "non-loopback") {
+	if code != 0 || !strings.Contains(out, `"apiVersion":2`) || !strings.Contains(diagnostics, "non-loopback") {
 		t.Fatalf("warning: %d %s %s", code, out, diagnostics)
 	}
 	if code, _, diagnostics := defineRun("stop", "--all"); code != 0 {
@@ -301,7 +301,7 @@ func TestApprovalsAndDetachedPolicyRealDaemon(t *testing.T) {
 			APIVersion int `json:"apiVersion"`
 			Approvals  []api.Approval
 		}
-		if err := json.Unmarshal([]byte(out), &listed); code != 0 || err != nil || diagnostics != "" || listed.APIVersion != 1 || len(listed.Approvals) != 1 {
+		if err := json.Unmarshal([]byte(out), &listed); code != 0 || err != nil || diagnostics != "" || listed.APIVersion != 2 || len(listed.Approvals) != 1 {
 			t.Fatalf("approvals: %d %s %s %v", code, out, diagnostics, err)
 		}
 		request := listed.Approvals[0]
@@ -361,7 +361,7 @@ func TestAuditFiltersRealDaemon(t *testing.T) {
 			Events     []audit.Event
 			Next       uint64
 		}
-		if err := json.Unmarshal([]byte(out), &result); code != 0 || diagnostics != "" || err != nil || result.APIVersion != 1 || len(result.Events) != tc.count || result.Next != 3 {
+		if err := json.Unmarshal([]byte(out), &result); code != 0 || diagnostics != "" || err != nil || result.APIVersion != 2 || len(result.Events) != tc.count || result.Next != 3 {
 			t.Errorf("%v: code=%d stdout=%s stderr=%s decode=%v", tc.flags, code, out, diagnostics, err)
 		}
 	}
@@ -431,7 +431,7 @@ func TestAuditFollowCursorAndPagination(t *testing.T) {
 		t.Fatalf("follow batches: %s", &out)
 	}
 	for _, line := range lines {
-		if !strings.Contains(line, `"apiVersion":1`) {
+		if !strings.Contains(line, `"apiVersion":2`) {
 			t.Errorf("unversioned batch: %s", line)
 		}
 	}

@@ -43,21 +43,24 @@ func attachCompletions(root *cobra.Command, a *app) {
 			cmd.ValidArgsFunction = a.referenceCompletion("tunnel", false)
 		case "dtt start", "dtt stop", "dtt restart", "dtt rm":
 			cmd.ValidArgsFunction = a.referenceCompletion("tunnel", true)
-		case "dtt profile show", "dtt profile use", "dtt profile start", "dtt profile stop", "dtt profile rm":
+		case "dtt profile show", "dtt profile rm":
 			cmd.ValidArgsFunction = a.referenceCompletion("profile", false)
-		case "dtt profile autostart":
+		case "dtt group show", "dtt group start", "dtt group stop", "dtt group rm":
+			cmd.ValidArgsFunction = a.referenceCompletion("group", false)
+		case "dtt group assign", "dtt group unassign":
 			cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
-				switch len(args) {
-				case 0:
-					return a.completeReferences(cmd, "profile", prefix)
-				case 1:
-					return a.completeReferences(cmd, "tunnel", prefix)
-				case 2:
-					return matchingCompletions([]string{"on", "off"}, prefix), cobra.ShellCompDirectiveNoFileComp
-				default:
-					return nil, cobra.ShellCompDirectiveNoFileComp
+				if len(args) == 0 {
+					return a.completeReferences(cmd, "group", prefix)
 				}
+				return a.completeReferences(cmd, "tunnel", prefix)
 			}
+		}
+		if cmd.Flags().Lookup("group") != nil {
+			kind := "group"
+			if cmd.CommandPath() == "dtt ls" {
+				kind = "group-id" // this read flag accepts IDs only, like ls --profile
+			}
+			_ = cmd.RegisterFlagCompletionFunc("group", a.referenceCompletion(kind, true))
 		}
 		if cmd.Flags().Lookup("profile") != nil {
 			kind := "profile"
@@ -105,6 +108,17 @@ func (a *app) completeReferences(cmd *cobra.Command, kind, prefix string) ([]str
 		}
 		for _, view := range tunnels {
 			values = append(values, view.Tunnel.ID, view.Tunnel.Name)
+		}
+	} else if kind == "group" || kind == "group-id" {
+		var groups []model.Group
+		if err := completion.call(ctx, "group.list", api.Empty{}, &groups); err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		for _, group := range groups {
+			values = append(values, group.ID)
+			if kind != "group-id" {
+				values = append(values, group.Name)
+			}
 		}
 	} else {
 		var profiles []model.Profile

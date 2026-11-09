@@ -69,7 +69,7 @@ func TestReadStartsDaemonOnDemand(t *testing.T) {
 		t.Fatalf("invoke %v: %v", args, err)
 		return 1, "", ""
 	}
-	if code, out, diagnostics := invoke("version", "--json"); code != 0 || !strings.Contains(out, `"apiVersion":1`) || diagnostics != "" {
+	if code, out, diagnostics := invoke("version", "--json"); code != 0 || !strings.Contains(out, `"apiVersion":2`) || diagnostics != "" {
 		t.Fatalf("version: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 	}
 	if _, err := os.Stat(socket); !os.IsNotExist(err) {
@@ -88,7 +88,7 @@ func TestReadStartsDaemonOnDemand(t *testing.T) {
 		APIVersion int `json:"apiVersion"`
 		Tunnels    []struct{ ID, Name, Type, State string }
 	}
-	if err := json.Unmarshal([]byte(out), &list); err != nil || code != 0 || len(list.Tunnels) != 1 || list.Tunnels[0].ID != "db" || list.APIVersion != 1 {
+	if err := json.Unmarshal([]byte(out), &list); err != nil || code != 0 || len(list.Tunnels) != 1 || list.Tunnels[0].ID != "db" || list.APIVersion != 2 {
 		t.Fatalf("ls: code=%d stdout=%s stderr=%s decode=%v", code, out, diagnostics, err)
 	}
 	for _, args := range [][]string{{"addr", "Database", "--port"}, {"show", "d", "--json"}, {"logs", "db", "-n", "1"}, {"daemon", "status", "--json"}, {"daemon", "restart", "--json"}} {
@@ -104,7 +104,7 @@ func TestVersionAndUsage(t *testing.T) {
 		args     []string
 		code     int
 		contains string
-	}{{[]string{"version"}, 0, "API 1"}, {nil, 0, "Usage:"}, {[]string{"daemon", "bad"}, 2, "unknown"}, {[]string{"daemon", "run", "--idle-exit", "-1s"}, 2, "invalid"}, {[]string{"ls", "--timeout", "0"}, 2, "positive"}} {
+	}{{[]string{"version"}, 0, "API 2"}, {nil, 0, "Usage:"}, {[]string{"daemon", "bad"}, 2, "unknown"}, {[]string{"daemon", "run", "--idle-exit", "-1s"}, 2, "invalid"}, {[]string{"ls", "--timeout", "0"}, 2, "positive"}} {
 		var out, err bytes.Buffer
 		if got := run(tc.args, &out, &err); got != tc.code || !strings.Contains(out.String()+err.String(), tc.contains) {
 			t.Fatalf("%v: %d %s %s", tc.args, got, &out, &err)

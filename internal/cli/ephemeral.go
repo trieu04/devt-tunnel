@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -26,7 +25,7 @@ func init() {
 const backgroundLeaseHelp = "Background tunnels use a detached, revocable person lease, not a pin. They survive CLI exit until dtt stop or lease revocation; --ttl adds an expiry (maximum 8h). Foreground leases default to 30m and Ctrl-C closes the lease."
 
 type ephemeralOptions struct {
-	ttl, save          string
+	ttl, save, profile string
 	foreground, dryRun bool
 }
 
@@ -105,7 +104,7 @@ func forwardCommand(a *app) *cobra.Command {
 	var remote, socks []string
 	cmd := &cobra.Command{
 		Use: "forward <host> [map...]", Short: "Open a background ephemeral SSH forward",
-		Long:    "Replace ssh -f -N -L 127.0.0.1:5433:127.0.0.1:5432 server1 without using ssh -f. Maps accept port:port, port:host:port or bind:port:host:port; auto:5432 requests a free loopback port from the daemon. Non-loopback binds warn. Repeat --remote or --socks for remote forwards and SOCKS listeners. SSH config aliases (including user@host destinations) are handled by ssh, using the active profile's SSH config when selected. --save promotes after readiness without restarting. " + backgroundLeaseHelp,
+		Long:    "Replace ssh -f -N -L 127.0.0.1:5433:127.0.0.1:5432 server1 without using ssh -f. Maps accept port:port, port:host:port or bind:port:host:port; auto:5432 requests a free loopback port from the daemon. Non-loopback binds warn. Repeat --remote or --socks for remote forwards and SOCKS listeners. SSH config aliases (including user@host destinations) are handled by ssh, using a profile's SSH config with --profile. --save promotes after readiness without restarting. " + backgroundLeaseHelp,
 		Example: "  dtt forward server1 auto:5432 --json\n  dtt forward server1 5433:db:5432 --ttl 15m --save staging-db\n  dtt forward server1 --remote 8080:3000 --socks 1080 --foreground",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -145,6 +144,7 @@ func forwardCommand(a *app) *cobra.Command {
 			return a.runEphemeral(cmd.Context(), t, o, warnings)
 		},
 	}
+	cmd.Flags().StringVar(&o.profile, "profile", "", "Use this profile's SSH config (ID, name or unique ID prefix)")
 	cmd.Flags().StringArrayVar(&remote, "remote", nil, "Remote port:port, port:host:port or bind:port:host:port (repeatable)")
 	cmd.Flags().StringArrayVar(&socks, "socks", nil, "SOCKS listen port, bind:port or auto (repeatable)")
 	cmd.Flags().BoolVar(&o.foreground, "foreground", false, "Hold the CLI open; Ctrl-C closes its lease")
@@ -206,16 +206,13 @@ func exposeCommand(a *app) *cobra.Command {
 }
 
 func (a *app) runEphemeral(ctx context.Context, t model.Tunnel, o ephemeralOptions, warnings []string) (err error) {
-	// One-off SSH commands use the active profile's config, just like the host
-	// list/importer. Membership makes the supervisor select that same file.
-	if t.Type == model.TypeSSH && len(t.Profiles) == 0 {
-		var overview api.Overview
-		if err := a.call(ctx, "config.overview", api.Empty{}, &overview); err != nil {
+	// Membership makes the supervisor select that profile's SSH config.
+	if o.profile != "" {
+		p, err := a.resolveProfile(ctx, o.profile)
+		if err != nil {
 			return err
 		}
-		if overview.ActiveProfile != "" {
-			t.Profiles = []string{overview.ActiveProfile}
-		}
+		t.Profile = p.ID
 	}
 	if o.dryRun {
 		for _, f := range t.Forwards {
@@ -325,7 +322,7 @@ func saveCommand(a *app) *cobra.Command {
 	var name, profile string
 	cmd := &cobra.Command{
 		Use: "save <tmp-id> --name N", Short: "Promote an ephemeral tunnel to a saved definition",
-		Long:    "Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process or losing its leases. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile adds it to an existing profile after promotion; saving does not pin it or remove its lease expiry.",
+		Long:    "Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process or losing its leases. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile puts it in an existing profile after promotion; saving does not pin it or remove its lease expiry.",
 		Example: "  dtt save tmp-123 --name staging-db\n  dtt save tmp-123 --name staging-db --profile work --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -359,11 +356,9 @@ func saveCommand(a *app) *cobra.Command {
 				if err := a.call(cmd.Context(), "tunnel.get", api.IDParams{ID: id}, &current); err != nil {
 					return err
 				}
-				if !slices.Contains(current.Tunnel.Profiles, profileID) {
-					current.Tunnel.Profiles = append(current.Tunnel.Profiles, profileID)
-				}
+				current.Tunnel.Profile = profileID
 				if err := a.call(cmd.Context(), "tunnel.save", api.SaveTunnelParams{Tunnel: current.Tunnel}, nil); err != nil {
-					return fmt.Errorf("promoted as %s, but could not add profile: %w", id, err)
+					return fmt.Errorf("promoted as %s, but could not set profile: %w", id, err)
 				}
 			}
 			if a.json {
@@ -374,6 +369,6 @@ func saveCommand(a *app) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Name of the saved tunnel (required)")
-	cmd.Flags().StringVar(&profile, "profile", "", "Add the promoted tunnel to an existing profile")
+	cmd.Flags().StringVar(&profile, "profile", "", "Put the promoted tunnel in an existing profile")
 	return cmd
 }

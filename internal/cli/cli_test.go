@@ -30,7 +30,7 @@ func fixtureTunnels() []api.TunnelView {
 	return []api.TunnelView{
 		{
 			Owner:     api.TunnelOwner{Pinned: true},
-			Tunnel:    model.Tunnel{ID: "db-prod", Name: "Production DB", Type: model.TypeSSH, Profiles: []string{"work"}, Favorite: true},
+			Tunnel:    model.Tunnel{ID: "db-prod", Name: "Production DB", Type: model.TypeSSH, Profile: "work", Groups: []string{"work"}, Favorite: true},
 			Status:    supervisor.Status{ID: "db-prod", State: supervisor.StateRunning, PID: 4242, Owner: api.TunnelOwner{Pinned: true}},
 			Endpoints: []api.Endpoint{{Kind: "local", Listen: "127.0.0.1:15432", Target: "127.0.0.1:5432"}},
 			Preview:   "ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 server1",

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,13 +27,15 @@ func init() {
 
 type defineOptions struct {
 	profile                              string
+	groups                               []string
 	favorite, startOnLaunch, noReconnect bool
 	start, dryRun                        bool
 }
 
 func (o *defineOptions) flags(cmd *cobra.Command) {
 	f := cmd.Flags()
-	f.StringVar(&o.profile, "profile", "", "Add to an existing profile by ID, name or unique ID prefix")
+	f.StringVar(&o.profile, "profile", "", "Put in an existing profile by ID, name or unique ID prefix")
+	f.StringArrayVar(&o.groups, "group", nil, "Add to an existing group by ID, name or unique ID prefix (repeatable)")
 	f.BoolVar(&o.favorite, "favorite", false, "Mark as a favorite")
 	f.BoolVar(&o.startOnLaunch, "start-on-launch", false, "Start when the app launches")
 	f.BoolVar(&o.noReconnect, "no-reconnect", false, "Disable automatic reconnection")
@@ -46,45 +49,22 @@ func (o defineOptions) apply(ctx context.Context, a *app, t *model.Tunnel) error
 		t.Reconnect = false
 	}
 	if o.profile != "" {
-		var profiles []model.Profile
-		if err := a.call(ctx, "profile.list", api.Empty{}, &profiles); err != nil {
-			return err
-		}
-		id, err := defineProfileID(profiles, o.profile)
+		p, err := a.resolveProfile(ctx, o.profile)
 		if err != nil {
 			return err
 		}
-		t.Profiles = []string{id}
+		t.Profile = p.ID
+	}
+	for _, ref := range o.groups {
+		g, err := a.resolveGroup(ctx, ref)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(t.Groups, g.ID) {
+			t.Groups = append(t.Groups, g.ID)
+		}
 	}
 	return nil
-}
-
-func defineProfileID(profiles []model.Profile, ref string) (string, error) {
-	for _, p := range profiles {
-		if p.ID == ref {
-			return p.ID, nil
-		}
-	}
-	var names, prefixes []string
-	for _, p := range profiles {
-		if p.Name == ref {
-			names = append(names, p.ID)
-		}
-		if strings.HasPrefix(p.ID, ref) {
-			prefixes = append(prefixes, p.ID)
-		}
-	}
-	matches := names
-	if len(matches) == 0 {
-		matches = prefixes
-	}
-	if len(matches) == 1 {
-		return matches[0], nil
-	}
-	if len(matches) == 0 {
-		return "", usageError("unknown profile %q", ref)
-	}
-	return "", usageError("ambiguous profile %q; matches: %s", ref, strings.Join(matches, ", "))
 }
 
 // evaluateDefinition also checks the stored model's structural rules: the daemon
@@ -102,15 +82,14 @@ func (a *app) evaluateDefinition(ctx context.Context, t model.Tunnel, warnings [
 		copy.ID = "draft"
 	}
 	cfg := model.Config{Tunnels: []model.Tunnel{copy}}
-	if len(copy.Profiles) > 0 {
-		var profiles []model.Profile
-		if err := a.call(ctx, "profile.list", api.Empty{}, &profiles); err != nil {
+	if copy.Profile != "" {
+		if err := a.call(ctx, "profile.list", api.Empty{}, &cfg.Profiles); err != nil {
 			return result, err
 		}
-		for _, profile := range profiles {
-			// Only membership matters here; autostart refers to other saved
-			// tunnels that are intentionally absent from this draft config.
-			cfg.Profiles = append(cfg.Profiles, model.Profile{ID: profile.ID})
+	}
+	if len(copy.Groups) > 0 {
+		if err := a.call(ctx, "group.list", api.Empty{}, &cfg.Groups); err != nil {
+			return result, err
 		}
 	}
 	structural := cfg.Validate()

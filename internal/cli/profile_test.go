@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,45 +93,68 @@ func organizeSuccess(t *testing.T, input string, args ...string) string {
 func TestProfileRoundTripRealDaemon(t *testing.T) {
 	cfg := model.Config{
 		Profiles: []model.Profile{{ID: "ops", Name: "Operations"}},
-		Tunnels:  []model.Tunnel{{ID: "db", Name: "Database", Type: model.TypeCommand, Profiles: []string{"ops"}, Command: &model.Command{Line: "echo ready"}}},
+		Tunnels:  []model.Tunnel{{ID: "db", Name: "Database", Type: model.TypeCommand, Profile: "ops", Command: &model.Command{Line: "echo ready"}}},
 	}
 	path := organizeDaemon(t, &cfg, nil)
-	out := organizeSuccess(t, "", "profile", "add", "Work projects", "--ssh-config", "/test/ssh/config", "--on-activate", "start_autostart", "--stop-non-members")
+	out := organizeSuccess(t, "", "profile", "add", "Work projects", "--ssh-config", "/test/ssh/config", "--description", "Client work")
 	var added struct{ Profile model.Profile }
-	if err := json.Unmarshal([]byte(out), &added); err != nil || added.Profile.ID == "" || added.Profile.OnActivate != "start_autostart" || !added.Profile.StopNonMembers || added.Profile.SSHConfig != "/test/ssh/config" {
+	if err := json.Unmarshal([]byte(out), &added); err != nil || added.Profile.ID == "" || added.Profile.SSHConfig != "/test/ssh/config" || added.Profile.Description != "Client work" {
 		t.Fatalf("add: %s (%v)", out, err)
 	}
 	id := added.Profile.ID
-	organizeSuccess(t, "", "profile", "use", "Work projects")
 	out = organizeSuccess(t, "", "profile", "ls")
-	var listed struct {
-		ActiveProfile string
-		Profiles      []profileView
-	}
-	if err := json.Unmarshal([]byte(out), &listed); err != nil || listed.ActiveProfile != id || len(listed.Profiles) != 2 || !listed.Profiles[1].Active {
+	var listed struct{ Profiles []profileView }
+	if err := json.Unmarshal([]byte(out), &listed); err != nil || len(listed.Profiles) != 2 {
 		t.Fatalf("ls: %s (%v)", out, err)
 	}
-	organizeSuccess(t, "", "profile", "use", "--none")
-	organizeSuccess(t, "", "profile", "use", id[:len(id)-1])
-	for _, action := range []string{"start", "stop"} {
-		organizeSuccess(t, "", "profile", action, id)
-	}
-	organizeSuccess(t, "", "profile", "autostart", "Operations", "Database", "on")
 	out = organizeSuccess(t, "", "profile", "show", "op")
 	var shown struct{ Profile profileView }
-	if err := json.Unmarshal([]byte(out), &shown); err != nil || len(shown.Profile.Members) != 1 || !shown.Profile.Members[0].Autostart || shown.Profile.Members[0].ID != "db" {
+	if err := json.Unmarshal([]byte(out), &shown); err != nil || len(shown.Profile.Members) != 1 || shown.Profile.Members[0].ID != "db" {
 		t.Fatalf("show: %s (%v)", out, err)
 	}
-	organizeSuccess(t, "", "profile", "autostart", "ops", "db", "off")
 	organizeSuccess(t, "", "profile", "rm", id)
 	organizeSuccess(t, "", "profile", "rm", "ops")
 	out = organizeSuccess(t, "", "profile", "ls")
-	if err := json.Unmarshal([]byte(out), &listed); err != nil || listed.ActiveProfile != "" || len(listed.Profiles) != 0 {
+	if err := json.Unmarshal([]byte(out), &listed); err != nil || len(listed.Profiles) != 0 {
 		t.Fatalf("after rm: %s (%v)", out, err)
 	}
 	saved, err := config.Load(path)
-	if err != nil || len(saved.Tunnels) != 1 || saved.Tunnels[0].ID != "db" || len(saved.Tunnels[0].Profiles) != 0 {
+	if err != nil || len(saved.Tunnels) != 1 || saved.Tunnels[0].ID != "db" || saved.Tunnels[0].Profile != "" {
 		t.Fatalf("tunnels not kept: %+v (%v)", saved, err)
+	}
+}
+
+func TestGroupRoundTripRealDaemon(t *testing.T) {
+	command := func(id string) model.Tunnel {
+		return model.Tunnel{ID: id, Name: id, Type: model.TypeCommand, Command: &model.Command{Line: "echo ready"}}
+	}
+	cfg := model.Config{Tunnels: []model.Tunnel{command("db"), command("api")}}
+	path := organizeDaemon(t, &cfg, nil)
+	out := organizeSuccess(t, "", "group", "add", "Backend", "--description", "Stack")
+	var added struct{ Group model.Group }
+	if err := json.Unmarshal([]byte(out), &added); err != nil || added.Group.ID != "backend" {
+		t.Fatalf("add: %s (%v)", out, err)
+	}
+	organizeSuccess(t, "", "group", "add", "Staging")
+	organizeSuccess(t, "", "group", "assign", "Backend", "db", "api")
+	organizeSuccess(t, "", "group", "assign", "staging", "db")
+	organizeSuccess(t, "", "group", "unassign", "back", "api")
+	out = organizeSuccess(t, "", "group", "show", "backend")
+	var shown struct{ Group groupView }
+	if err := json.Unmarshal([]byte(out), &shown); err != nil || len(shown.Group.Members) != 1 || shown.Group.Members[0].ID != "db" {
+		t.Fatalf("show: %s (%v)", out, err)
+	}
+	for _, action := range []string{"start", "stop"} {
+		organizeSuccess(t, "", "group", action, "backend")
+	}
+	saved, err := config.Load(path)
+	if err != nil || !slices.Equal(saved.Tunnels[0].Groups, []string{"backend", "staging"}) || len(saved.Tunnels[1].Groups) != 0 {
+		t.Fatalf("membership: %+v (%v)", saved, err)
+	}
+	organizeSuccess(t, "", "group", "rm", "backend")
+	saved, err = config.Load(path)
+	if err != nil || len(saved.Tunnels) != 2 || !slices.Equal(saved.Tunnels[0].Groups, []string{"staging"}) || len(saved.Groups) != 1 {
+		t.Fatalf("after rm: %+v (%v)", saved, err)
 	}
 }
 
@@ -160,9 +184,9 @@ func TestProfileReferenceResolution(t *testing.T) {
 func TestProfileUsage(t *testing.T) {
 	organizeDaemon(t, &model.Config{Profiles: []model.Profile{{ID: "work", Name: "Work"}}, Tunnels: []model.Tunnel{{ID: "db", Name: "Database", Type: model.TypeCommand, Command: &model.Command{Line: "echo ready"}}}}, nil)
 	for _, args := range [][]string{
-		{"profile", "add", " "}, {"profile", "add", "bad", "--on-activate", "invalid"},
-		{"profile", "use"}, {"profile", "use", "work", "--none"}, {"profile", "show", "missing"},
-		{"profile", "autostart", "work", "db", "maybe"}, {"profile", "autostart", "work", "db", "on"},
+		{"profile", "add", " "}, {"profile", "show", "missing"},
+		{"profile", "use", "work"}, {"profile", "start", "work"},
+		{"group", "add", " "}, {"group", "show", "missing"}, {"group", "assign", "missing", "db"},
 	} {
 		code, out, diagnostics := organizeInvoke("", args...)
 		if code != 2 || out != "" || !strings.Contains(diagnostics, `"code":"usage"`) {

@@ -34,7 +34,7 @@ func doctorCommand(a *app) *cobra.Command {
 				return err
 			}
 			var hosts api.SSHHostList
-			if err := a.call(cmd.Context(), "ssh.hosts", api.SSHParams{ProfileID: overview.ActiveProfile}, &hosts); err != nil {
+			if err := a.call(cmd.Context(), "ssh.hosts", api.SSHParams{}, &hosts); err != nil {
 				return err
 			}
 			findings := doctorFindings(status, overview, tools, hosts)

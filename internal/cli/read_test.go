@@ -128,11 +128,11 @@ func TestReadCommands(t *testing.T) {
 		{[]string{"hosts"}, 0, "server1"},
 		{[]string{"hosts", "--resolve", "server1"}, 0, "server1.example"},
 		{[]string{"hosts", "--json"}, 0, `"warnings":["test SSH warning"]`},
-		{[]string{"doctor"}, 0, "daemon test (API 1), pid 123"},
+		{[]string{"doctor"}, 0, "daemon test (API 2), pid 123"},
 		{[]string{"doctor", "--json"}, 0, `"available":true`},
-		{[]string{"version"}, 0, "daemon test (API 1), pid 123"},
-		{[]string{"daemon", "status"}, 0, "daemon test (API 1), pid 123"},
-		{[]string{"daemon", "status", "--json"}, 0, `"apiVersion":1`},
+		{[]string{"version"}, 0, "daemon test (API 2), pid 123"},
+		{[]string{"daemon", "status"}, 0, "daemon test (API 2), pid 123"},
+		{[]string{"daemon", "status", "--json"}, 0, `"apiVersion":2`},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			var out, diagnostics bytes.Buffer

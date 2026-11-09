@@ -85,9 +85,9 @@ func TestLifecycleStartIdempotentAndQuiet(t *testing.T) {
 	}
 }
 
-func TestLifecycleStopAllAndProfile(t *testing.T) {
+func TestLifecycleStopAllAndGroup(t *testing.T) {
 	var stopped []string
-	var profileStops []string
+	var groupStops []string
 	fakeDaemon(t, func(method string, params json.RawMessage) (any, *api.Error) {
 		var p api.IDParams
 		_ = json.Unmarshal(params, &p)
@@ -104,10 +104,10 @@ func TestLifecycleStopAllAndProfile(t *testing.T) {
 		case "tunnel.stop":
 			stopped = append(stopped, p.ID)
 			return api.Empty{}, nil
-		case "profile.list":
-			return []model.Profile{{ID: "work", Name: "Work Profile"}}, nil
-		case "profile.stop":
-			profileStops = append(profileStops, p.ID)
+		case "group.list":
+			return []model.Group{{ID: "work", Name: "Work Group"}}, nil
+		case "group.stop":
+			groupStops = append(groupStops, p.ID)
 			return api.Empty{}, nil
 		}
 		return nil, api.NewError(api.Internal, "unexpected "+method)
@@ -118,11 +118,11 @@ func TestLifecycleStopAllAndProfile(t *testing.T) {
 	if !slices.Equal(stopped, []string{"db-prod", "db-test", "web"}) {
 		t.Fatalf("stopped=%v", stopped)
 	}
-	if code, out, diagnostics := lifecycleRun(context.Background(), "stop", "--profile", "Work Profile"); code != 0 || out != "db-prod stopped\n" || diagnostics != "" {
-		t.Fatalf("profile stop: code=%d stdout=%s stderr=%s", code, out, diagnostics)
+	if code, out, diagnostics := lifecycleRun(context.Background(), "stop", "--group", "Work Group"); code != 0 || out != "db-prod stopped\n" || diagnostics != "" {
+		t.Fatalf("group stop: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 	}
-	if !slices.Equal(profileStops, []string{"work"}) || len(stopped) != 3 {
-		t.Fatalf("profileStops=%v stopped=%v", profileStops, stopped)
+	if !slices.Equal(groupStops, []string{"work"}) || len(stopped) != 3 {
+		t.Fatalf("groupStops=%v stopped=%v", groupStops, stopped)
 	}
 }
 
@@ -138,7 +138,7 @@ func TestLifecycleValidatesBeforeMutation(t *testing.T) {
 	for _, args := range [][]string{
 		{"start", "db-prod", "missing"}, {"restart", "db-prod", "missing"},
 		{"stop", "db-prod", "missing"}, {"stop"}, {"stop", "--all", "db-prod"},
-		{"stop", "--all", "--profile", "work"}, {"stop", "--profile", ""},
+		{"stop", "--all", "--group", "work"}, {"stop", "--group", ""},
 		{"start"}, {"wait", "db-prod", "web"},
 	} {
 		if code, _, diagnostics := lifecycleRun(context.Background(), args...); code != 2 {

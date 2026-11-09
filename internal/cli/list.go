@@ -15,6 +15,7 @@ func init() { register(listCommand) }
 type listFilter struct {
 	running, favorites bool
 	kind, profile      string
+	group              string
 }
 
 func listCommand(a *app) *cobra.Command {
@@ -40,6 +41,7 @@ func listCommand(a *app) *cobra.Command {
 	flags.BoolVar(&filter.running, "running", false, "Only running tunnels")
 	flags.StringVar(&filter.kind, "type", "", "Filter by ssh, ngrok, cloudflared or command")
 	flags.StringVar(&filter.profile, "profile", "", "Filter by profile ID")
+	flags.StringVar(&filter.group, "group", "", "Filter by group ID")
 	flags.BoolVar(&filter.favorites, "favorites", false, "Only favorite tunnels")
 	return cmd
 }
@@ -49,7 +51,8 @@ func filterTunnels(tunnels []api.TunnelView, filter listFilter) []api.TunnelView
 	for _, tunnel := range tunnels {
 		t := tunnel.Tunnel
 		if filter.running && tunnel.Status.State != supervisor.StateRunning || filter.favorites && !t.Favorite ||
-			filter.kind != "" && string(t.Type) != filter.kind || filter.profile != "" && !slices.Contains(t.Profiles, filter.profile) {
+			filter.kind != "" && string(t.Type) != filter.kind || filter.profile != "" && t.Profile != filter.profile ||
+			filter.group != "" && !slices.Contains(t.Groups, filter.group) {
 			continue
 		}
 		out = append(out, tunnel)

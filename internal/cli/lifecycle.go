@@ -76,19 +76,19 @@ func startOrRestartCommand(a *app, restart bool) *cobra.Command {
 
 func stopCommand(a *app) *cobra.Command {
 	var all bool
-	var profile string
+	var group string
 	cmd := &cobra.Command{
 		Use: "stop [t]...", Short: "Stop tunnels and their process trees",
-		Long:    "Stop saved tunnels and their entire process trees, replacing kill <pid>. Select tunnel references, --all, or --profile P, but do not combine these selectors. Stopping an already stopped tunnel succeeds.",
-		Example: "  dtt stop db web\n  dtt stop --all\n  dtt stop --profile work",
+		Long:    "Stop saved tunnels and their entire process trees, replacing kill <pid>. Select tunnel references, --all, or --group G, but do not combine these selectors. Stopping an already stopped tunnel succeeds.",
+		Example: "  dtt stop db web\n  dtt stop --all\n  dtt stop --group backend",
 		RunE: func(cmd *cobra.Command, refs []string) error {
-			byProfile := cmd.Flags().Changed("profile")
-			if byProfile && profile == "" || all && byProfile || len(refs) != 0 && (all || byProfile) || len(refs) == 0 && !all && !byProfile {
-				return usageError("choose tunnel references, --all, or --profile P")
+			byGroup := cmd.Flags().Changed("group")
+			if byGroup && group == "" || all && byGroup || len(refs) != 0 && (all || byGroup) || len(refs) == 0 && !all && !byGroup {
+				return usageError("choose tunnel references, --all, or --group G")
 			}
 			var views []api.TunnelView
 			var err error
-			if all || byProfile {
+			if all || byGroup {
 				if err = a.call(cmd.Context(), "tunnel.list", api.Empty{}, &views); err != nil {
 					return err
 				}
@@ -98,13 +98,13 @@ func stopCommand(a *app) *cobra.Command {
 					return err
 				}
 			}
-			if byProfile {
-				p, err := a.resolveProfile(cmd.Context(), profile)
+			if byGroup {
+				g, err := a.resolveGroup(cmd.Context(), group)
 				if err != nil {
 					return err
 				}
-				views = filterTunnels(views, listFilter{profile: p.ID})
-				if err := a.call(cmd.Context(), "profile.stop", api.IDParams{ID: p.ID}, nil); err != nil {
+				views = filterTunnels(views, listFilter{group: g.ID})
+				if err := a.call(cmd.Context(), "group.stop", api.IDParams{ID: g.ID}, nil); err != nil {
 					return err
 				}
 			} else {
@@ -129,7 +129,7 @@ func stopCommand(a *app) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "Stop all tunnels")
-	cmd.Flags().StringVar(&profile, "profile", "", "Stop members of a profile (ID, name or unique ID prefix)")
+	cmd.Flags().StringVar(&group, "group", "", "Stop members of a group (ID, name or unique ID prefix)")
 	return cmd
 }
 

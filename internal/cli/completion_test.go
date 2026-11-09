@@ -35,6 +35,9 @@ func TestCompletionScripts(t *testing.T) {
 
 func TestDynamicCompletions(t *testing.T) {
 	fakeDaemon(t, func(method string, params json.RawMessage) (any, *api.Error) {
+		if method == "group.list" {
+			return []model.Group{{ID: "backend", Name: "Backend"}}, nil
+		}
 		if method == "profile.list" {
 			return []model.Profile{{ID: "work", Name: "Work projects"}, {ID: "home", Name: "home"}}, nil
 		}
@@ -51,10 +54,10 @@ func TestDynamicCompletions(t *testing.T) {
 		{[]string{"show"}, []string{"db-prod"}, "", nil},
 		{[]string{"start"}, []string{"db-prod"}, "db-t", []string{"db-test"}},
 		{[]string{"profile", "show"}, nil, "W", []string{"Work projects"}},
-		{[]string{"profile", "use"}, nil, "wo", []string{"work"}},
-		{[]string{"profile", "autostart"}, nil, "home", []string{"home"}},
-		{[]string{"profile", "autostart"}, []string{"work"}, "db", []string{"db-prod", "db-test"}},
-		{[]string{"profile", "autostart"}, []string{"work", "db-prod"}, "o", []string{"off", "on"}},
+		{[]string{"profile", "rm"}, nil, "wo", []string{"work"}},
+		{[]string{"group", "start"}, nil, "back", []string{"backend"}},
+		{[]string{"group", "assign"}, nil, "Back", []string{"Backend"}},
+		{[]string{"group", "assign"}, []string{"backend"}, "db", []string{"db-prod", "db-test"}},
 		{[]string{"set"}, []string{"db-prod"}, "", nil},
 	} {
 		a := newApp(IO{}, Options{})
@@ -71,7 +74,7 @@ func TestDynamicCompletions(t *testing.T) {
 			t.Fatal("completion mutated the executing app")
 		}
 	}
-	for _, path := range [][]string{{"ls"}, {"stop"}, {"add", "ssh"}, {"hosts"}} {
+	for _, path := range [][]string{{"ls"}, {"forward"}, {"add", "ssh"}, {"hosts"}} {
 		root := newRoot(newApp(IO{}, Options{}))
 		cmd, _, err := root.Find(path)
 		if err != nil {

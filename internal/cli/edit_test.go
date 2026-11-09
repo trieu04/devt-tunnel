@@ -73,7 +73,7 @@ func TestEditRejectsInvalidFragmentsWithoutChangingSavedTunnel(t *testing.T) {
 			}
 			t.Setenv("EDITOR", script)
 			code, out, diagnostics := defineRun("edit", "Original", "--json")
-			if code != tc.code || !strings.Contains(out+diagnostics, tc.message) || !strings.Contains(diagnostics, `"apiVersion":1`) {
+			if code != tc.code || !strings.Contains(out+diagnostics, tc.message) || !strings.Contains(diagnostics, `"apiVersion":2`) {
 				t.Fatalf("code=%d stdout=%s stderr=%s", code, out, diagnostics)
 			}
 			saved := defineSavedTunnel(t, "Original")

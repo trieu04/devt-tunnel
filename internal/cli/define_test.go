@@ -145,7 +145,7 @@ func TestDefineSaveSetDuplicateRemoveRoundTrip(t *testing.T) {
 		t.Fatalf("add result: %+v", added)
 	}
 	saved := defineSavedTunnel(t, "Original")
-	if saved.ID != "original" || !saved.Favorite || !saved.StartOnLaunch || saved.Reconnect || len(saved.Profiles) != 1 || saved.Profiles[0] != "work" || saved.Command.Line != "printf ready" {
+	if saved.ID != "original" || !saved.Favorite || !saved.StartOnLaunch || saved.Reconnect || saved.Profile != "work" || saved.Command.Line != "printf ready" {
 		t.Fatalf("round trip: %+v", saved)
 	}
 	changed := defineReadResult(t, "set", "original", "name=Renamed", "favorite=false", "reconnect=true", "start_on_launch=false")
@@ -161,7 +161,7 @@ func TestDefineSaveSetDuplicateRemoveRoundTrip(t *testing.T) {
 		t.Fatalf("dup: %+v", duplicate)
 	}
 	copy := defineSavedTunnel(t, "copy")
-	if copy.Command.Line != saved.Command.Line || len(copy.Profiles) != 1 || copy.Profiles[0] != "work" || copy.Name != "Copy" {
+	if copy.Command.Line != saved.Command.Line || copy.Profile != "work" || copy.Name != "Copy" {
 		t.Fatalf("duplicate did not preserve definition: %+v", copy)
 	}
 	// Resolve all refs before mutation; a later bad ref must leave the first intact.
@@ -199,7 +199,7 @@ func TestDefineUsageBeforeConnecting(t *testing.T) {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			args := append(tc.args, "--json")
 			code, out, diagnostics := defineRun(args...)
-			if code != 2 || out != "" || !strings.Contains(diagnostics, tc.text) || !strings.Contains(diagnostics, `"apiVersion":1`) || !strings.Contains(diagnostics, `"code":"usage"`) {
+			if code != 2 || out != "" || !strings.Contains(diagnostics, tc.text) || !strings.Contains(diagnostics, `"apiVersion":2`) || !strings.Contains(diagnostics, `"code":"usage"`) {
 				t.Fatalf("code=%d stdout=%s stderr=%s", code, out, diagnostics)
 			}
 		})
@@ -225,7 +225,7 @@ func TestDefineImportQuotesWarningsAndNoCredentials(t *testing.T) {
 			t.Fatalf("import: code=%d stdout=%s stderr=%s decode=%v", code, out, diagnostics, err)
 		}
 		saved := defineSavedTunnel(t, tc.name)
-		if saved.Command == nil || saved.Command.Line != tc.line || !saved.Reconnect || strings.Join(saved.Profiles, ",") != "work" {
+		if saved.Command == nil || saved.Command.Line != tc.line || !saved.Reconnect || saved.Profile != "work" {
 			t.Fatalf("import round trip: %+v command=%+v want=%s", saved, saved.Command, tc.line)
 		}
 		if tc.name == "pasted" {
