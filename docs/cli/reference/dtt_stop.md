@@ -4,7 +4,7 @@ Stop tunnels and their process trees
 
 ### Synopsis
 
-Stop saved tunnels and their entire process trees, replacing kill <pid>. Select tunnel references, --all, or --profile P, but do not combine these selectors. Stopping an already stopped tunnel succeeds.
+Stop saved tunnels and their entire process trees, replacing kill <pid>. Select tunnel references, --all, or --group G, but do not combine these selectors. Stopping an already stopped tunnel succeeds.
 
 ```
 dtt stop [t]... [flags]
@@ -15,15 +15,15 @@ dtt stop [t]... [flags]
 ```
   dtt stop db web
   dtt stop --all
-  dtt stop --profile work
+  dtt stop --group backend
 ```
 
 ### Options
 
 ```
-      --all              Stop all tunnels
-  -h, --help             help for stop
-      --profile string   Stop members of a profile (ID, name or unique ID prefix)
+      --all            Stop all tunnels
+      --group string   Stop members of a group (ID, name or unique ID prefix)
+  -h, --help           help for stop
 ```
 
 ### Options inherited from parent commands

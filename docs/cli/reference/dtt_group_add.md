@@ -1,26 +1,27 @@
-## dtt profile start
+## dtt group add
 
-Start all members of a profile
+Create a group
 
 ### Synopsis
 
-Start every tunnel belonging to a profile, without changing the active profile or its autostart settings.
+Create an empty group. Assign tunnels with dtt group assign or dtt add --group.
 
 ```
-dtt profile start <p> [flags]
+dtt group add <name> [flags]
 ```
 
 ### Examples
 
 ```
-  dtt profile start work
-  dtt profile start work --json
+  dtt group add Backend
+  dtt group add Staging --description 'Everything for staging'
 ```
 
 ### Options
 
 ```
-  -h, --help   help for start
+      --description string   What the group is for
+  -h, --help                 help for add
 ```
 
 ### Options inherited from parent commands
@@ -36,5 +37,5 @@ dtt profile start <p> [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt group](dtt_group.md)	 - Operate on sets of tunnels together
 

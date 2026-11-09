@@ -31,7 +31,7 @@ Phase 15 adds typed readiness errors, shared endpoint lists and loopback port ch
 
 ## Storage
 
-- Definitions: `tunnels.toml` (tunnels, profiles) in `~/.config/devt-tunnel/` on macOS, `$XDG_CONFIG_HOME/devt-tunnel/` on Linux and `%APPDATA%\devt-tunnel\` on Windows. Kept free of runtime state so it stays diffable and shareable.
+- Definitions: `tunnels.toml` (tunnels, profiles, groups) in `~/.config/devt-tunnel/` on macOS, `$XDG_CONFIG_HOME/devt-tunnel/` on Linux and `%APPDATA%\devt-tunnel\` on Windows. Kept free of runtime state so it stays diffable and shareable.
 - Runtime state lives in `state.json` under the OS state directory; crash process records remain in `processes.json`. Per-machine tool paths, shortcut and shell live in `settings.toml` beside the definitions. Config writes detect outside changes, keep `tunnels.toml.bak`, validate before replacement and write atomically; hand-written comments are not preserved.
 
 ```toml
@@ -39,15 +39,17 @@ Phase 15 adds typed readiness errors, shared endpoint lists and loopback port ch
 id = "work"
 name = "Work"
 ssh_config = "~/.ssh/config"
-on_activate = "start_autostart"   # or "filter"
-stop_non_members = false
-autostart = ["srv1"]
+
+[[group]]
+id = "backend"
+name = "Backend"
 
 [[tunnel]]
 id = "srv1"
 name = "SSH Server 1"
 type = "ssh"                      # ssh | cloudflared | ngrok | command
-profiles = ["work", "home"]       # membership lives on the tunnel
+profile = "work"                  # at most one; membership lives on the tunnel
+groups = ["backend"]              # any number
 favorite = true
 start_on_launch = false
 reconnect = true
@@ -67,7 +69,7 @@ target = "192.168.0.24:8000"      # omitted for D
 id = "web"
 name = "Ngrok"
 type = "ngrok"
-profiles = ["home"]
+groups = ["backend"]
 
 [tunnel.ngrok]
 proto = "http"
@@ -90,7 +92,7 @@ SSH remains responsible for detecting dead connections; new SSH drafts set `Serv
 - **No `-f`:** background mode hides the PID and exit status the supervisor needs.
 - **Keychain-only secrets:** the definitions file can be committed or shared safely.
 - **`listen → target` for all forward kinds:** one reading direction; the badge carries the side.
-- **Many-to-many profiles, single active profile:** keeps filtering predictable while letting a tunnel serve several contexts.
+- **Profiles configure, groups act:** a tunnel has at most one profile, so its SSH config never depends on app state. Starting and stopping sets of tunnels belongs to groups, which are many-to-many and have no effect on how a tunnel is built.
 - **No quick-phrase aliases:** quick launch search over name, host and port covers the use case with less to maintain.
 - **Wails v3 with a Go core:** first-party tray and global shortcuts, and the core stays free of GUI dependencies. See [platform.md](platform.md).
 - **On-demand daemon, GUI as a client:** the CLI and agents need tunnels with no desktop and one shared registry, so this replaces "one process, no daemon" (2026-11-04). ⌘Q still stops all tunnels. See [design/control-plane.md](design/control-plane.md#why-a-daemon).

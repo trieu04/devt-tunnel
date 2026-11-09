@@ -24,6 +24,7 @@ dtt add ssh <name> --host H -L M [flags]
       --dry-run              Print the exact evaluated command and findings without saving or starting
       --favorite             Mark as a favorite
       --flag stringArray     Additional SSH boolean flag, e.g. C or -v (repeatable)
+      --group stringArray    Add to an existing group by ID, name or unique ID prefix (repeatable)
   -h, --help                 help for ssh
       --host string          SSH config host alias (alternative to --hostname)
       --hostname string      Manual SSH hostname (alternative to --host)
@@ -32,7 +33,7 @@ dtt add ssh <name> --host H -L M [flags]
       --no-reconnect         Disable automatic reconnection
       --option stringArray   SSH option KEY=VALUE (repeatable)
       --port int             SSH port for --hostname (default: SSH's port)
-      --profile string       Add to an existing profile by ID, name or unique ID prefix
+      --profile string       Put in an existing profile by ID, name or unique ID prefix
   -R, --remote stringArray   Remote forward port:port, port:host:port or bind:port:host:port (repeatable)
   -D, --socks stringArray    SOCKS listen port or bind:port (repeatable)
       --start                Save and start the tunnel

@@ -1,26 +1,25 @@
-## dtt profile stop
+## dtt group assign
 
-Stop all members of a profile
+Add tunnels to a group
 
 ### Synopsis
 
-Stop every tunnel belonging to a profile, without changing the active profile or its autostart settings.
+Add tunnels to a group. Tunnels keep their other groups and their profile, and running tunnels are left running.
 
 ```
-dtt profile stop <p> [flags]
+dtt group assign <g> <t>... [flags]
 ```
 
 ### Examples
 
 ```
-  dtt profile stop work
-  dtt profile stop work --json
+  dtt group assign backend db api
 ```
 
 ### Options
 
 ```
-  -h, --help   help for stop
+  -h, --help   help for assign
 ```
 
 ### Options inherited from parent commands
@@ -36,5 +35,5 @@ dtt profile stop <p> [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt group](dtt_group.md)	 - Operate on sets of tunnels together
 

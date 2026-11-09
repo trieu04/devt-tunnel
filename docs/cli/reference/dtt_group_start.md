@@ -1,26 +1,26 @@
-## dtt profile autostart
+## dtt group start
 
-Set a profile member's autostart behavior
+Start all members of a group
 
 ### Synopsis
 
-Enable or disable autostart for an existing member. Autostart members run when a profile with start_autostart activation behavior is activated.
+Start every tunnel belonging to a group.
 
 ```
-dtt profile autostart <p> <t> on|off [flags]
+dtt group start <g> [flags]
 ```
 
 ### Examples
 
 ```
-  dtt profile autostart work db on
-  dtt profile autostart work db off --json
+  dtt group start backend
+  dtt group start backend --json
 ```
 
 ### Options
 
 ```
-  -h, --help   help for autostart
+  -h, --help   help for start
 ```
 
 ### Options inherited from parent commands
@@ -36,5 +36,5 @@ dtt profile autostart <p> <t> on|off [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt group](dtt_group.md)	 - Operate on sets of tunnels together
 

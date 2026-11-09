@@ -4,7 +4,7 @@ Create a profile
 
 ### Synopsis
 
-Create an empty profile with optional SSH config and activation behavior. Assign tunnels with dtt add --profile or dtt set. By default activating the profile only changes the filter.
+Create an empty profile with an optional SSH config. Put tunnels in it with dtt add --profile or dtt save --profile.
 
 ```
 dtt profile add <name> [flags]
@@ -14,16 +14,14 @@ dtt profile add <name> [flags]
 
 ```
   dtt profile add Work --ssh-config ~/.ssh/work
-  dtt profile add Work --on-activate start_autostart --stop-non-members
 ```
 
 ### Options
 
 ```
+      --description string   What the profile is for
   -h, --help                 help for add
-      --on-activate string   Activation behavior: filter or start_autostart (default "filter")
       --ssh-config string    SSH configuration file used by members
-      --stop-non-members     Stop running non-members on activation
 ```
 
 ### Options inherited from parent commands
@@ -39,5 +37,5 @@ dtt profile add <name> [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt profile](dtt_profile.md)	 - Manage configuration shared by tunnels
 

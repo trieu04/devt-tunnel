@@ -4,7 +4,7 @@ Inspect a profile and its members
 
 ### Synopsis
 
-Show a profile's active state, SSH config, activation behavior, members and each member's autostart setting.
+Show a profile's description, SSH config and members.
 
 ```
 dtt profile show <p> [flags]
@@ -36,5 +36,5 @@ dtt profile show <p> [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt profile](dtt_profile.md)	 - Manage configuration shared by tunnels
 

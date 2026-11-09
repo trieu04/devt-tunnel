@@ -4,7 +4,7 @@ List profiles and their members
 
 ### Synopsis
 
-List profiles with an active marker, member IDs and autostart member IDs. Deleting a profile never deletes its tunnels.
+List profiles with their SSH config and member IDs. Deleting a profile never deletes its tunnels.
 
 ```
 dtt profile ls [flags]
@@ -36,5 +36,5 @@ dtt profile ls [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt profile](dtt_profile.md)	 - Manage configuration shared by tunnels
 

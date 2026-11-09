@@ -48,6 +48,7 @@ dtt [flags]
 * [dtt edit](dtt_edit.md)	 - Edit a tunnel as a TOML fragment
 * [dtt expose](dtt_expose.md)	 - Expose a local service publicly through ngrok or cloudflared
 * [dtt forward](dtt_forward.md)	 - Open a background ephemeral SSH forward
+* [dtt group](dtt_group.md)	 - Operate on sets of tunnels together
 * [dtt hosts](dtt_hosts.md)	 - List SSH config aliases or resolve one
 * [dtt import](dtt_import.md)	 - Save a traditional command as a tunnel
 * [dtt leases](dtt_leases.md)	 - List clients holding tunnels and their expiries
@@ -56,7 +57,7 @@ dtt [flags]
 * [dtt man](dtt_man.md)	 - Write man pages for every command
 * [dtt mcp](dtt_mcp.md)	 - Connect agents through the policy-controlled MCP adapter
 * [dtt orphans](dtt_orphans.md)	 - List tunnel processes left after a crash
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt profile](dtt_profile.md)	 - Manage configuration shared by tunnels
 * [dtt prompts](dtt_prompts.md)	 - List SSH questions waiting for an answer
 * [dtt restart](dtt_restart.md)	 - Restart tunnels and wait until ready
 * [dtt rm](dtt_rm.md)	 - Delete saved tunnel definitions

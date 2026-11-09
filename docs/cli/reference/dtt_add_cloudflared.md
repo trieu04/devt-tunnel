@@ -22,10 +22,11 @@ dtt add cloudflared <name> --url U [flags]
 ```
       --dry-run              Print the exact evaluated command and findings without saving or starting
       --favorite             Mark as a favorite
+      --group stringArray    Add to an existing group by ID, name or unique ID prefix (repeatable)
   -h, --help                 help for cloudflared
       --hostname string      Public hostname metadata for a named tunnel (routing is managed by Cloudflare)
       --no-reconnect         Disable automatic reconnection
-      --profile string       Add to an existing profile by ID, name or unique ID prefix
+      --profile string       Put in an existing profile by ID, name or unique ID prefix
       --secret string        Existing keychain secret NAME for the named tunnel; never a secret value
       --start                Save and start the tunnel
       --start-on-launch      Start when the app launches

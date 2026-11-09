@@ -25,7 +25,7 @@ This file is the interface contract. User-facing guides and the generated refere
 
 | Command | Purpose | Main flags |
 |---|---|---|
-| `dtt ls` | List tunnels | `--running` `--type T` `--profile P` `--favorites` |
+| `dtt ls` | List tunnels | `--running` `--type T` `--profile P` `--group G` `--favorites` |
 | `dtt show <t>` | Definition, state, endpoints, command, leases, findings | |
 | `dtt addr <t>` | Print only the address | `--port` `--all` |
 | `dtt logs <t>` | Retained output | `-f` `-n N` `--since D` |
@@ -39,7 +39,7 @@ This file is the interface contract. User-facing guides and the generated refere
 | Command | Purpose | Main flags |
 |---|---|---|
 | `dtt start <t>...` | Start saved tunnels and wait until ready | `--no-wait` `--timeout D` |
-| `dtt stop <t>...` | Stop now, revoking any leases | `--all` `--profile P` |
+| `dtt stop <t>...` | Stop now, revoking any leases | `--all` `--group G` |
 | `dtt restart <t>...` | Stop, then start | |
 | `dtt run -- <cmd>` | Supervise a traditional command, in the foreground | `--detach` `--ttl D` `--name N` `--dry-run` |
 | `dtt forward <host> [map...]` | Ephemeral SSH tunnel, in the background | `--remote M` `--socks P` `--ttl D` `--foreground` `--save NAME` `--dry-run` |
@@ -76,18 +76,25 @@ Port maps use the form `listen:target`:
 | `dtt dup <t> --name N` | Copy a tunnel |
 | `dtt rm <t>` | Delete, asking first on a TTY. `--yes` is required otherwise |
 
-All of `add` take `--profile P`, `--favorite`, `--start-on-launch`, `--no-reconnect`, `--start` and `--dry-run`. `--dry-run` prints the exact command and the check results without saving.
+All of `add` take `--profile P`, `--group G` (repeatable), `--favorite`, `--start-on-launch`, `--no-reconnect`, `--start` and `--dry-run`. `--dry-run` prints the exact command and the check results without saving.
 
 ### Profiles
 
 | Command | Purpose |
 |---|---|
 | `dtt profile ls` / `show <p>` | List and inspect |
-| `dtt profile add <name> [--ssh-config F] [--on-activate filter\|start_autostart] [--stop-non-members]` | Create |
-| `dtt profile use <p>` / `use --none` | Set the active profile, running its activation behavior |
-| `dtt profile start <p>` / `stop <p>` | Start or stop members |
-| `dtt profile autostart <p> <t> on\|off` | Set auto-start for a member |
+| `dtt profile add <name> [--ssh-config F] [--description D]` | Create |
 | `dtt profile rm <p>` | Delete. Tunnels are kept |
+
+### Groups
+
+| Command | Purpose |
+|---|---|
+| `dtt group ls` / `show <g>` | List and inspect |
+| `dtt group add <name> [--description D]` | Create |
+| `dtt group assign <g> <t>...` / `unassign <g> <t>...` | Change members |
+| `dtt group start <g>` / `stop <g>` | Start or stop members |
+| `dtt group rm <g>` | Delete. Tunnels are kept |
 
 ### Secrets
 
@@ -130,7 +137,7 @@ There is no `reveal`. It requires OS authentication, which the desktop app provi
 | `dtt config path\|reload\|edit` | Work with `tunnels.toml` |
 | `dtt tools` / `dtt tools set <tool> <path>` | Binaries used, with per-machine paths |
 | `dtt mcp serve` / `config` / `tools` | MCP server, see [mcp.md](mcp.md) |
-| `dtt completion bash\|zsh\|fish\|powershell` | Shell completion, including tunnel IDs/names and profile names; never starts a daemon |
+| `dtt completion bash\|zsh\|fish\|powershell` | Shell completion, including tunnel IDs/names, profile names and group names; never starts a daemon |
 | `dtt docs [topic]` / `dtt man [--dir DIR]` | Embedded offline guides / section 1 pages (default directory: current) |
 | `dtt version` | CLI and daemon versions |
 
@@ -202,7 +209,7 @@ On a TTY, `dtt start`, `run` and `forward` show SSH questions for their own tunn
 
 | Source | Used for |
 |---|---|
-| `tunnels.toml` | Saved tunnels and profiles |
+| `tunnels.toml` | Saved tunnels, profiles and groups |
 | `settings.toml` | Per-machine tool paths and the `[agent]` policy (`default_expose` is not implemented) |
 | `DTT_SOCKET` | Use a different daemon socket. For tests |
 | `NO_COLOR` | Turn off color |

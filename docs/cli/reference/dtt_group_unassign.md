@@ -1,27 +1,25 @@
-## dtt profile use
+## dtt group unassign
 
-Set or clear the active profile
+Remove tunnels from a group
 
 ### Synopsis
 
-Activate a profile, applying its start-autostart and stop-non-members behavior. --none clears the active profile without starting or stopping tunnels.
+Remove tunnels from a group. Tunnels keep their other groups and their profile, and running tunnels are left running.
 
 ```
-dtt profile use <p> | --none [flags]
+dtt group unassign <g> <t>... [flags]
 ```
 
 ### Examples
 
 ```
-  dtt profile use work
-  dtt profile use --none
+  dtt group unassign backend db api
 ```
 
 ### Options
 
 ```
-  -h, --help   help for use
-      --none   Clear the active profile
+  -h, --help   help for unassign
 ```
 
 ### Options inherited from parent commands
@@ -37,5 +35,5 @@ dtt profile use <p> | --none [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt group](dtt_group.md)	 - Operate on sets of tunnels together
 

@@ -4,7 +4,7 @@ Promote an ephemeral tunnel to a saved definition
 
 ### Synopsis
 
-Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process or losing its leases. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile adds it to an existing profile after promotion; saving does not pin it or remove its lease expiry.
+Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process or losing its leases. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile puts it in an existing profile after promotion; saving does not pin it or remove its lease expiry.
 
 ```
 dtt save <tmp-id> --name N [flags]
@@ -22,7 +22,7 @@ dtt save <tmp-id> --name N [flags]
 ```
   -h, --help             help for save
       --name string      Name of the saved tunnel (required)
-      --profile string   Add the promoted tunnel to an existing profile
+      --profile string   Put the promoted tunnel in an existing profile
 ```
 
 ### Options inherited from parent commands

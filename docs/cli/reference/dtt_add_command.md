@@ -23,10 +23,11 @@ dtt add command <name> --line L [flags]
       --dir string               Command working directory
       --dry-run                  Print the exact evaluated command and findings without saving or starting
       --favorite                 Mark as a favorite
+      --group stringArray        Add to an existing group by ID, name or unique ID prefix (repeatable)
   -h, --help                     help for command
       --line string              Shell command line (required)
       --no-reconnect             Disable automatic reconnection
-      --profile string           Add to an existing profile by ID, name or unique ID prefix
+      --profile string           Put in an existing profile by ID, name or unique ID prefix
       --ready-log string         Regular expression that marks readiness when matched in the log
       --secret-env stringArray   ENV=NAME mapping to an existing keychain secret name; never a secret value (repeatable)
       --start                    Save and start the tunnel

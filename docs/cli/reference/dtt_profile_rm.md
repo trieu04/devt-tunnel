@@ -4,7 +4,7 @@ Delete a profile, keeping its tunnels
 
 ### Synopsis
 
-Delete a profile and remove its membership from tunnels. Tunnel definitions and running processes are kept. Removing the active profile clears the active selection.
+Delete a profile. Its tunnels are kept, left running, and go back to the default SSH config.
 
 ```
 dtt profile rm <p> [flags]
@@ -36,5 +36,5 @@ dtt profile rm <p> [flags]
 
 ### SEE ALSO
 
-* [dtt profile](dtt_profile.md)	 - Organize tunnels into profiles
+* [dtt profile](dtt_profile.md)	 - Manage configuration shared by tunnels
 

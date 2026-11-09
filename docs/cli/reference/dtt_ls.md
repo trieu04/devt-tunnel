@@ -22,6 +22,7 @@ dtt ls [flags]
 
 ```
       --favorites        Only favorite tunnels
+      --group string     Filter by group ID
   -h, --help             help for ls
       --profile string   Filter by profile ID
       --running          Only running tunnels

@@ -14,7 +14,8 @@ Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions, managi
 |---|---|
 | Tunnel | One supervised process with its configuration. Types: SSH, Cloudflared, ngrok, Command. |
 | Forward | One port mapping of an SSH tunnel: `-L` (listen locally), `-R` (listen on the SSH host), `-D` (local SOCKS5). |
-| Profile | Named group of tunnels (e.g. Work, Home, Client ABC). A tunnel can be in many profiles. |
+| Profile | Named configuration shared by its tunnels, such as the SSH config file (e.g. Work, Home, Client ABC). A tunnel uses at most one profile. |
+| Group | Named set of tunnels started and stopped together (e.g. Backend stack). A tunnel can be in many groups, whatever its profile. |
 | Secret | API key, tunnel token, SSH key passphrase or env value, kept in the OS keychain and referenced by name. |
 | Ephemeral tunnel (planned) | A temporary tunnel from `dtt` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
 | Lease (planned) | A client's claim to use a tunnel until a set time. A person's stop always wins. |
@@ -38,24 +39,25 @@ Forwards are always displayed as `listen → target` for every kind; the `-L/-R/
 
 **Launch:** open the app, the tray or global quick launch → search by name, host or port → Enter starts or stops → if a secret is missing, add it in the Vault and the start retries → running: copy address, view log. No search result offers "create tunnel from host" for matching SSH config hosts.
 
-**Create / edit:** New (⌘N), Edit (⌘E) or Duplicate → choose source (SSH config host, pasted command, manual) → configure forwards, flags, profiles → review live command preview and checks → Save or Save & start.
+**Create / edit:** New (⌘N), Edit (⌘E) or Duplicate → choose source (SSH config host, pasted command, manual) → configure forwards, flags, profile, groups → review live command preview and checks → Save or Save & start.
 
 Editor checks: resolved binary; host alias in the scanned SSH config; local listen ports (`-L`, `-D`) not used by another tunnel or process; shared ngrok/cloudflared targets reported separately; unsafe SSH flags; missing `-N` and keepalive warnings; required secret present.
 
 ## Screens
 
-- **Main:** sidebar filters (All, Running, Favorites, by type), active-profile selector, search, tunnel list with nested forwards, detail panel (command, PID, uptime, profiles, log).
+- **Main:** sidebar with views (All, Running, Favorites), groups with one-click start/stop, search, tunnel list with nested forwards, detail panel (command, PID, uptime, profile, groups, log).
 - **Quick launch (⌘K / global):** results grouped as tunnels, SSH hosts without a tunnel, actions; recently used first.
 - **Tray:** running tunnels and favorites as check items (native tray menus have no switches); links to quick launch and main window. The tray is optional: without a tray host, closing the main window quits the app instead of leaving tunnels running invisibly.
-- **Editor:** type selector, basics (name, profiles multi-select, favorite, start on launch, reconnect), type-specific connection, forwards, flags/options, command preview and checks.
-- **Profiles:** profile list; per profile: name, description, SSH config file, behavior on activation, member tunnels with per-tunnel auto-start, delete (tunnels are kept).
+- **Editor:** type selector, basics (name, profile, groups multi-select, favorite, start on launch, reconnect), type-specific connection, forwards, flags/options, command preview and checks.
+- **Profiles:** profile list; per profile: name, description, SSH config file, member tunnels (checking one moves it from its other profile), delete (tunnels are kept).
+- **Groups:** group list with running counts; per group: name, description, Start all, Stop all, member tunnels, delete (tunnels are kept).
 - **Vault:** secrets with kind, masked value, users, last use; reveal requires OS authentication.
 
-## Profiles
+## Profiles and groups
 
-- Tunnel ↔ profile is many-to-many. One profile (or "All profiles") is active at a time; it filters the main list and the tray.
-- On activation a profile either only filters, or also starts its auto-start tunnels. Optionally it stops running tunnels that are not members.
-- Each profile may use its own SSH config file.
+- A profile is configuration. A tunnel uses at most one, and always gets that profile's SSH config file; a tunnel with no profile uses the default one.
+- A group is a task. Tunnel ↔ group is many-to-many, and starting or stopping a group acts on all its members, reporting every failure together.
+- Selecting a group on the main window only filters the list. Starting or stopping it is a separate action.
 
 ## Shortcuts
 

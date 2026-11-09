@@ -122,7 +122,7 @@ type Lease struct {
 3. **Closing or expiring removes a lease.** The tunnel stops when no leases remain, it is not pinned, and a lease started it. A tunnel that was already running stays up.
 4. **A person always wins.** `dtt stop` and the GUI stop the tunnel at once and revoke its leases. The agent's next call returns `lease_revoked`. An agent can only release its own lease, never stop a tunnel directly.
 5. **Limits:** MCP sessions may hold at most 32 live leases in total, including ephemeral-tunnel leases. Overlapping connections with the same session token share that cap. Person clients are not subject to this count limit. Default TTL 30 minutes, maximum 8 hours, renewable up to the maximum per renewal. When a lease-holding client's last connection drops, its leases end after a 2-minute grace period, so a restarted adapter can continue. Reconnect with the same `client.session` token and the same client kind/name before the grace deadline; a matching name alone does not resume claims. A daemon restart starts this grace for still-valid leases, without extending an earlier disconnect deadline.
-6. **Bulk starts:** GUI launch and `StartProfile` skip every `tmp-` tunnel, including legacy/person-created ephemerals with launch/profile metadata. An explicit person start may still pin an ephemeral. Agents cannot request launch/profile/favorite metadata, even when saving or promoting.
+6. **Bulk starts:** GUI launch and `StartGroup` skip every `tmp-` tunnel, including legacy/person-created ephemerals with launch/profile metadata. An explicit person start may still pin an ephemeral. Agents cannot request launch/profile/favorite metadata, even when saving or promoting.
 7. **Crash safety:** leases and ephemeral definitions are written before the spawn. After a daemon restart, expired ones are stopped and removed; the rest continue if the process survived.
 
 ### Port allocation
@@ -147,7 +147,8 @@ JSON-RPC 2.0, one message per line, over a Unix socket. Go's `AF_UNIX` is alread
 | `tunnel.*` | `list` `get` `save` `delete` `start` `stop` `restart` `evaluateDraft` `import` `newDraft` `duplicateDraft` `setFavorite` `promote` `runEphemeral` |
 | `lease.*` | `open` `renew` `close` `list` `revoke` (person only) |
 | `logs.*` | `read` `since`. Clients poll `since`, as `WatchLogs` polls `LogsSince` today |
-| `profile.*` | `list` `save` `delete` `duplicate` `activate` `setAutostart` `start` `stop` |
+| `profile.*` | `list` `save` `delete` `duplicate` |
+| `group.*` | `list` `save` `delete` `duplicate` `start` `stop` |
 | `secret.*` | `list` `set` `delete` `rename` `forget`. Values go in only |
 | `prompt.*` | `list` `answer` |
 | `approval.*` | `list` `get` `decide` (person only) |
@@ -232,7 +233,7 @@ The daemon uses a **constant allow-list**, independent of handler registration a
 - `tunnel.save`, `tunnel.promote`, both behind approval;
 - `tunnel.openRequest`, `tunnel.waitRequest` for engine-owned idempotent opens/polling, `tunnel.checkRequest` for a dry-run effective open decision, and `policy.get` for the fixed non-sensitive effective agent policy resource.
 
-Every other method, including unknown/new methods, returns `policy_denied`. In particular, no `secret.*`, `settings.*`, `profile.*`, `orphan.*`, `config.*`, direct start/stop/restart, prompt answer, tool-path change or shutdown is available. `ssh.resolve` accepts only an alias literally present in the host list for the selected SSH config, rejecting arbitrary manual hosts, wildcard matches and option-shaped aliases. Person resolution is unchanged. Lease renew/close/list are restricted to the caller's actor **and session**, and MCP `lease.open` resolves only daemon-loaded saved definitions, never a client-provided saved classification. `tunnel.save` can add a new definition only (`id` empty, `start` false); promote requires a live lease belonging to the caller. Editing an existing saved definition is refused.
+Every other method, including unknown/new methods, returns `policy_denied`. In particular, no `secret.*`, `settings.*`, `profile.*`, `group.*`, `orphan.*`, `config.*`, direct start/stop/restart, prompt answer, tool-path change or shutdown is available. `ssh.resolve` accepts only an alias literally present in the host list for the selected SSH config, rejecting arbitrary manual hosts, wildcard matches and option-shaped aliases. Person resolution is unchanged. Lease renew/close/list are restricted to the caller's actor **and session**, and MCP `lease.open` resolves only daemon-loaded saved definitions, never a client-provided saved classification. `tunnel.save` can add a new definition only (`id` empty, `start` false); promote requires a live lease belonging to the caller. Editing an existing saved definition is refused.
 
 The engine reads `[agent]` from its loaded `settings.toml`. `enabled = false` returns `agent_disabled` for every MCP method except `daemon.hello`, `daemon.status` (connection/version recovery), and `policy.get` (explaining the disabled policy). This phase-20 hardening also hides tunnel lists, logs, approvals and polls from disabled MCP callers. The status exception returns daemon recovery metadata with no tunnel statuses, and existing MCP event subscriptions stop receiving events while disabled (queued events are suppressed too). GUI/CLI callers are unchanged. The configured `default_ttl` and `max_ttl` apply to MCP opens and renewals; person clients retain the ordinary lease defaults. `port_range` supplies the engine's allocator range unless an embedding caller explicitly overrides `Options.PortRange`. Alias allow-list grants require an actual alias in the selected SSH config; a manual hostname disguised as an alias cannot acquire an "always" grant. Public exposure is derived from the actual definition, not a request label.
 
@@ -240,7 +241,7 @@ The engine reads `[agent]` from its loaded `settings.toml`. `enabled = false` re
 
 Additional admission rules apply to **new MCP-built definitions**, including saves and promotions (not to person-authored saved opens):
 
-- `startOnLaunch: true`, any profile membership, and `favorite: true` are refused with `policy_denied`. Approval fingerprints cover commands, not future launch/profile behavior. A person may later edit a saved definition deliberately.
+- `startOnLaunch: true`, any profile or group membership, and `favorite: true` are refused with `policy_denied`. Approval fingerprints cover commands, not future launch/profile behavior. A person may later edit a saved definition deliberately.
 - Names must be printable UTF-8 without control/format characters or line separators, at most 64 characters. Names are untrusted display data, never part of the daemon-authored approval summary.
 - `ssh.passphraseSecret` requires `Host` alone (no manual `Hostname`) and a literal alias in the actual config selected by the built command. Secret names and the destination are quoted in the daemon-authored approval summary. This constrains secret use to owner-authored destinations; approval does not permit an agent to send a vault passphrase to an arbitrary manual host.
 - Manual SSH hostnames use only ASCII letters/digits and `._:-`, or a parsed bracketed IPv6 literal. Ngrok `addr`/`domain` and cloudflared `name`/`url`/`hostname` reject leading `-`, whitespace and controls; the extra-argument channel remains denied.

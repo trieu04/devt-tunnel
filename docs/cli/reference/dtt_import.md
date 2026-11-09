@@ -20,14 +20,15 @@ dtt import [--name N] -- <cmd> [args...] [flags]
 ### Options
 
 ```
-      --dry-run           Print the exact evaluated command and findings without saving or starting
-      --favorite          Mark as a favorite
-  -h, --help              help for import
-      --name string       Name for the imported tunnel (default: TYPE tunnel)
-      --no-reconnect      Disable automatic reconnection
-      --profile string    Add to an existing profile by ID, name or unique ID prefix
-      --start             Save and start the tunnel
-      --start-on-launch   Start when the app launches
+      --dry-run             Print the exact evaluated command and findings without saving or starting
+      --favorite            Mark as a favorite
+      --group stringArray   Add to an existing group by ID, name or unique ID prefix (repeatable)
+  -h, --help                help for import
+      --name string         Name for the imported tunnel (default: TYPE tunnel)
+      --no-reconnect        Disable automatic reconnection
+      --profile string      Put in an existing profile by ID, name or unique ID prefix
+      --start               Save and start the tunnel
+      --start-on-launch     Start when the app launches
 ```
 
 ### Options inherited from parent commands

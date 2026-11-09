@@ -20,17 +20,18 @@ dtt add ngrok <name> --proto http --addr A [flags]
 ### Options
 
 ```
-      --addr string       Local service address (required)
-      --domain string     Public ngrok domain
-      --dry-run           Print the exact evaluated command and findings without saving or starting
-      --favorite          Mark as a favorite
-  -h, --help              help for ngrok
-      --no-reconnect      Disable automatic reconnection
-      --profile string    Add to an existing profile by ID, name or unique ID prefix
-      --proto string      ngrok protocol: http, tcp or tls (default "http")
-      --secret string     Existing keychain secret NAME for ngrok authentication; never a secret value
-      --start             Save and start the tunnel
-      --start-on-launch   Start when the app launches
+      --addr string         Local service address (required)
+      --domain string       Public ngrok domain
+      --dry-run             Print the exact evaluated command and findings without saving or starting
+      --favorite            Mark as a favorite
+      --group stringArray   Add to an existing group by ID, name or unique ID prefix (repeatable)
+  -h, --help                help for ngrok
+      --no-reconnect        Disable automatic reconnection
+      --profile string      Put in an existing profile by ID, name or unique ID prefix
+      --proto string        ngrok protocol: http, tcp or tls (default "http")
+      --secret string       Existing keychain secret NAME for ngrok authentication; never a secret value
+      --start               Save and start the tunnel
+      --start-on-launch     Start when the app launches
 ```
 
 ### Options inherited from parent commands

@@ -1,10 +1,10 @@
 ## dtt profile
 
-Organize tunnels into profiles
+Manage configuration shared by tunnels
 
 ### Synopsis
 
-Manage named tunnel groups, their SSH configuration and activation behavior. Profile references accept an exact ID, exact name or unique ID prefix.
+Manage named configurations, such as the SSH config file, used by the tunnels that belong to them. A tunnel belongs to at most one profile. To start or stop tunnels together, use dtt group. Profile references accept an exact ID, exact name or unique ID prefix.
 
 ```
 dtt profile [flags]
@@ -14,7 +14,7 @@ dtt profile [flags]
 
 ```
   dtt profile ls
-  dtt profile use work
+  dtt profile add Work --ssh-config ~/.ssh/work
 ```
 
 ### Options
@@ -38,11 +38,7 @@ dtt profile [flags]
 
 * [dtt](dtt.md)	 - Supervise and inspect development tunnels
 * [dtt profile add](dtt_profile_add.md)	 - Create a profile
-* [dtt profile autostart](dtt_profile_autostart.md)	 - Set a profile member's autostart behavior
 * [dtt profile ls](dtt_profile_ls.md)	 - List profiles and their members
 * [dtt profile rm](dtt_profile_rm.md)	 - Delete a profile, keeping its tunnels
 * [dtt profile show](dtt_profile_show.md)	 - Inspect a profile and its members
-* [dtt profile start](dtt_profile_start.md)	 - Start all members of a profile
-* [dtt profile stop](dtt_profile_stop.md)	 - Stop all members of a profile
-* [dtt profile use](dtt_profile_use.md)	 - Set or clear the active profile
 
