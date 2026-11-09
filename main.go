@@ -26,6 +26,7 @@ func main() {
 			log.SetOutput(io.MultiWriter(log.Writer(), file))
 		}
 	}
+	log.Printf("starting devt-tunnel %s", version)
 	dist, err := fs.Sub(assets, "frontend/dist")
 	if err != nil {
 		log.Fatal(err)
@@ -47,6 +48,7 @@ func main() {
 		OnShutdown: svc.Shutdown,
 	})
 	host.Attach(app, svc)
+	log.Printf("running application loop")
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
