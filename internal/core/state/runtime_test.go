@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func TestRuntimeAtomicRoundTripAndPermissions(t *testing.T) {
 		t.Fatalf("loaded=%+v %v", loaded, err)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatalf("permissions=%v %v", info, err)
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".state-*.tmp"))

@@ -31,7 +31,20 @@ func defineDaemon(t *testing.T, prepare ...func(*engine.Options)) *engine.Engine
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell fixture")
 	}
-	root := t.TempDir()
+	root, err := os.MkdirTemp("", "devt-tunnel-state-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Registered first so it runs last. The engine may still be flushing state
+	// right after Shutdown on slow runners, so retry instead of failing.
+	t.Cleanup(func() {
+		for i := 0; i < 20; i++ {
+			if os.RemoveAll(root) == nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	})
 	runDir, err := os.MkdirTemp("", "devt-tunnel-define-")
 	if err != nil {
 		t.Fatal(err)

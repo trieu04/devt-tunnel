@@ -393,6 +393,13 @@ func TestPublicDeniedAndDisabled(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(disabled), func(t *testing.T) {
 			f := newFixture(t, func(a *settings.Agent) { a.Enabled = !disabled; a.Public = "deny" })
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.e.SetToolPath("cloudflared", executable); err != nil {
+				t.Fatal(err)
+			}
 			args := map[string]any{"request_id": "public", "purpose": "test public denial", "wait_seconds": 0, "spec": map[string]any{"type": "cloudflared_quick", "local_url": "http://127.0.0.1:3000"}}
 			res, v := f.tool(t, "tunnel_open", args)
 			if !res.IsError {

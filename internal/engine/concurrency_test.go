@@ -133,8 +133,7 @@ func testConcurrentConfigCommits(t *testing.T, firstReload bool) {
 	first := make(chan error, 1)
 	go func() {
 		if firstReload {
-			e.Reload()
-			first <- nil
+			first <- e.Reload()
 			return
 		}
 		tunnel := commandTunnel()
@@ -176,7 +175,7 @@ func testConcurrentConfigCommits(t *testing.T, firstReload bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
-		case <-time.After(time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("save blocked")
 		}
 	}

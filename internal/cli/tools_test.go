@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -25,6 +26,10 @@ func TestToolsListRealDaemon(t *testing.T) {
 }
 
 func TestToolsSetParameters(t *testing.T) {
+	toolPath := "/test/ssh"
+	if runtime.GOOS == "windows" {
+		toolPath = `C:\test\ssh`
+	}
 	var paths []api.ToolPathParams
 	fakeDaemon(t, func(method string, params json.RawMessage) (any, *api.Error) {
 		if method != "tool.setPath" {
@@ -37,15 +42,15 @@ func TestToolsSetParameters(t *testing.T) {
 		paths = append(paths, p)
 		return []api.ToolInfo{{Name: p.Tool, Path: p.Path, Source: "override", Version: "test-version"}}, nil
 	})
-	for _, args := range [][]string{{"tools", "set", "ssh", "/test/ssh"}, {"tools", "set", "ssh", ""}, {"tools", "set", "ssh", "--clear"}} {
+	for _, args := range [][]string{{"tools", "set", "ssh", toolPath}, {"tools", "set", "ssh", ""}, {"tools", "set", "ssh", "--clear"}} {
 		organizeSuccess(t, "", args...)
 	}
-	if len(paths) != 3 || paths[0].Path != "/test/ssh" || paths[0].Tool != "ssh" || paths[1].Path != "" || paths[2].Path != "" {
+	if len(paths) != 3 || paths[0].Path != toolPath || paths[0].Tool != "ssh" || paths[1].Path != "" || paths[2].Path != "" {
 		t.Fatalf("params: %+v", paths)
 	}
 	for _, args := range [][]string{
 		{"tools", "set", "ssh"}, {"tools", "set", "unsupported", "/test/tool"},
-		{"tools", "set", "ssh", "relative"}, {"tools", "set", "ssh", "/test/ssh", "--clear"},
+		{"tools", "set", "ssh", "relative"}, {"tools", "set", "ssh", toolPath, "--clear"},
 	} {
 		code, out, diagnostics := organizeInvoke("", args...)
 		if code != 2 || out != "" || !strings.Contains(diagnostics, `"code":"usage"`) {

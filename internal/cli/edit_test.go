@@ -90,7 +90,11 @@ func TestEditNeedsTTYOrExplicitEditor(t *testing.T) {
 	if code, out, diagnostics := defineRun("edit", "db", "--json"); code != 2 || out != "" || !strings.Contains(diagnostics, "requires a TTY") {
 		t.Fatalf("code=%d stdout=%s stderr=%s", code, out, diagnostics)
 	}
-	t.Setenv("EDITOR", "'unterminated")
+	unterminated := "'unterminated"
+	if runtime.GOOS == "windows" {
+		unterminated = `"unterminated`
+	}
+	t.Setenv("EDITOR", unterminated)
 	if code, out, diagnostics := defineRun("edit", "db", "--json"); code != 2 || out != "" || !strings.Contains(diagnostics, "invalid VISUAL or EDITOR") {
 		t.Fatalf("code=%d stdout=%s stderr=%s", code, out, diagnostics)
 	}

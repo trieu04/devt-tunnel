@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -25,7 +26,7 @@ func TestStoreUpdateAndCorruptFile(t *testing.T) {
 		t.Fatalf("state: %+v", got)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Fatalf("mode=%v err=%v", info, err)
 	}
 	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {

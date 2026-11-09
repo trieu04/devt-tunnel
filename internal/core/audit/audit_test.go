@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -80,7 +81,7 @@ func TestAppendClockPermissionsAndRestart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != mode {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != mode {
 			t.Errorf("%s mode %o, want %o", path, info.Mode().Perm(), mode)
 		}
 	}
@@ -103,7 +104,7 @@ func TestAppendClockPermissionsAndRestart(t *testing.T) {
 		t.Fatalf("batch = %#v", batch)
 	}
 	info, _ := os.Stat(filepath.Join(dir, FileName))
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("existing file mode = %o", info.Mode().Perm())
 	}
 }
@@ -126,7 +127,7 @@ func TestRotationRetentionOffsetsAndRestart(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Size() > 480 || info.Size() == 0 || info.Mode().Perm() != 0o600 {
+		if info.Size() > 480 || info.Size() == 0 || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 			t.Fatalf("%s: size %d, mode %o", name, info.Size(), info.Mode().Perm())
 		}
 	}

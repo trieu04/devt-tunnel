@@ -246,9 +246,10 @@ func cliPTYStart(t *testing.T, ctx context.Context, cliBin, question, answer str
 		args = []string{"-q", "/dev/null", cliBin, "--no-daemon-start", "start", "t", "--timeout", "15s"}
 	} else {
 		quoted := "'" + strings.ReplaceAll(cliBin, "'", "'\\''") + "'"
-		args = []string{"-q", "-e", "-c", quoted + " --no-daemon-start start t --timeout 15s", "/dev/null"}
+		args = []string{"-q", "-e", "-c", "SHELL= exec " + quoted + " --no-daemon-start start t --timeout 15s", "/dev/null"}
 	}
 	command := exec.CommandContext(ctx, script, args...)
+	command.Env = append(os.Environ(), "SHELL=/bin/sh")
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
