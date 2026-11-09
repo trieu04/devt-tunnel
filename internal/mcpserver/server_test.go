@@ -262,7 +262,7 @@ func TestSchemasForbidExecutionExtensions(t *testing.T) {
 	}
 	defer c.Close()
 	for _, change := range []func(*model.Tunnel){
-		func(t *model.Tunnel) { t.StartOnLaunch = true }, func(t *model.Tunnel) { t.Profiles = []string{"x"} }, func(t *model.Tunnel) { t.SSH.Identity = "/tmp/key" }, func(t *model.Tunnel) { t.SSH.Flags = []string{"-vvv"} }, func(t *model.Tunnel) { t.SSH.Options = map[string]string{"ProxyCommand": "id"} }, func(t *model.Tunnel) { t.SSH.ExtraArgs = "-oProxyCommand=id" }, func(t *model.Tunnel) { t.Type = model.TypeCommand; t.Command = &model.Command{Line: "id"} },
+		func(t *model.Tunnel) { t.StartOnLaunch = true }, func(t *model.Tunnel) { t.Profile = "x" }, func(t *model.Tunnel) { t.Groups = []string{"x"} }, func(t *model.Tunnel) { t.SSH.Identity = "/tmp/key" }, func(t *model.Tunnel) { t.SSH.Flags = []string{"-vvv"} }, func(t *model.Tunnel) { t.SSH.Options = map[string]string{"ProxyCommand": "id"} }, func(t *model.Tunnel) { t.SSH.ExtraArgs = "-oProxyCommand=id" }, func(t *model.Tunnel) { t.Type = model.TypeCommand; t.Command = &model.Command{Line: "id"} },
 	} {
 		tun := model.Tunnel{Name: "smuggled", Type: model.TypeSSH, SSH: &model.SSH{Host: "allowed"}, Forwards: []model.Forward{{Kind: model.ForwardLocal, ListenPort: "auto", Target: "127.0.0.1:5432"}}}
 		change(&tun)

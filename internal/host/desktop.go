@@ -40,6 +40,7 @@ type desktop struct {
 func Attach(app *application.App, svc *Service) {
 	d := &desktop{app: app, svc: svc, hasTray: trayAvailable()}
 	d.createWindows()
+	d.createMenu()
 	if d.hasTray {
 		d.createTray()
 	}
@@ -212,4 +213,31 @@ func (d *desktop) createTray() {
 	}
 	d.tray.SetTooltip(mainTitle)
 	d.tray.AttachWindow(d.popup).WindowOffset(4)
+}
+
+// createMenu installs the macOS menu bar with an app-menu "Settings…" entry (Cmd+,).
+func (d *desktop) createMenu() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	menu := d.app.Menu.New()
+
+	appMenu := menu.AddSubmenu(mainTitle)
+	appMenu.AddRole(application.About)
+	appMenu.AddSeparator()
+	appMenu.Add("Settings…").SetAccelerator("CmdOrCtrl+,").OnClick(func(*application.Context) {
+		d.svc.OpenIn("settings", "")
+	})
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.ServicesMenu)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.Hide)
+	appMenu.AddRole(application.HideOthers)
+	appMenu.AddRole(application.UnHide)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.Quit)
+
+	menu.AddRole(application.EditMenu)
+	menu.AddRole(application.WindowMenu)
+	d.app.Menu.Set(menu)
 }

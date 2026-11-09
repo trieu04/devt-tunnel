@@ -107,13 +107,12 @@ type Status struct {
 type Manager struct {
 	deps Deps
 
-	mu            sync.Mutex
-	config        model.Config
-	tunnels       map[string]*entry
-	closed        bool
-	activeProfile string
-	pendingStart  map[string]bool
-	waiters       map[string][]chan Status
+	mu           sync.Mutex
+	config       model.Config
+	tunnels      map[string]*entry
+	closed       bool
+	pendingStart map[string]bool
+	waiters      map[string][]chan Status
 }
 
 type entry struct {
@@ -517,42 +516,16 @@ func (m *Manager) entryLocked(id string) *entry {
 	return e
 }
 
-// optionsLocked picks the SSH config of the tunnel's first profile that sets one.
+// optionsLocked applies the SSH config of the tunnel's profile, if it sets one.
 func (m *Manager) optionsLocked(t model.Tunnel) command.Options {
 	opts := command.Options{Shell: m.deps.Shell, Home: m.deps.Home, Dialect: m.deps.Dialect}
-	if m.activeProfile != "" {
-		for _, pid := range t.Profiles {
-			if pid != m.activeProfile {
-				continue
-			}
-			for _, p := range m.config.Profiles {
-				if p.ID == pid && p.SSHConfig != "" {
-					opts.SSHConfig = p.SSHConfig
-					return opts
-				}
-			}
-		}
-	}
-	for _, pid := range t.Profiles {
-		for _, p := range m.config.Profiles {
-			if p.ID == pid && p.SSHConfig != "" {
-				opts.SSHConfig = p.SSHConfig
-				return opts
-			}
+	for _, p := range m.config.Profiles {
+		if p.ID == t.Profile {
+			opts.SSHConfig = p.SSHConfig
+			break
 		}
 	}
 	return opts
-}
-
-func (m *Manager) SetActiveProfile(id string) {
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-		return
-	}
-	m.activeProfile = id
-	m.mu.Unlock()
-	m.changed()
 }
 
 func (m *Manager) secretState(t model.Tunnel) State {

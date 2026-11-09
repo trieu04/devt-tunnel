@@ -44,10 +44,10 @@ type Overview struct {
 	Shortcut          string               `json:"shortcut"`
 	ShortcutError     string               `json:"shortcutError"`
 	Profiles          []model.Profile      `json:"profiles"`
+	Groups            []model.Group        `json:"groups"`
 	Tunnels           []TunnelView         `json:"tunnels"`
 	Orphans           []supervisor.Record  `json:"orphans"`
 	Prompts           []PendingPrompt      `json:"prompts"`
-	ActiveProfile     string               `json:"activeProfile"`
 	LastUsed          map[string]time.Time `json:"lastUsed"`
 	KeychainAvailable bool                 `json:"keychainAvailable"`
 	KeychainName      string               `json:"keychainName"`

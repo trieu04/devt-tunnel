@@ -34,13 +34,45 @@ func decode(path string, data []byte) (model.Config, error) {
 	if err != nil {
 		return model.Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
-		return model.Config{}, fmt.Errorf("parse %s: unknown key %q", path, undecoded[0])
+	for _, key := range meta.Undecoded() {
+		if !legacyKeys[key.String()] {
+			return model.Config{}, fmt.Errorf("parse %s: unknown key %q", path, key)
+		}
+	}
+	if err := upgradeLegacy(data, &cfg); err != nil {
+		return model.Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if err := ValidateSaved(cfg); err != nil {
 		return model.Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// legacyKeys are accepted from files written before a tunnel had a single
+// profile and activation moved out of profiles. The next save drops them.
+var legacyKeys = map[string]bool{
+	"tunnel.profiles":          true,
+	"profile.on_activate":      true,
+	"profile.stop_non_members": true,
+	"profile.autostart":        true,
+}
+
+// upgradeLegacy gives each tunnel the first entry of its old profiles list.
+func upgradeLegacy(data []byte, cfg *model.Config) error {
+	var legacy struct {
+		Tunnels []struct {
+			Profiles []string `toml:"profiles"`
+		} `toml:"tunnel"`
+	}
+	if _, err := toml.Decode(string(data), &legacy); err != nil {
+		return err
+	}
+	for n := range cfg.Tunnels {
+		if cfg.Tunnels[n].Profile == "" && len(legacy.Tunnels[n].Profiles) > 0 {
+			cfg.Tunnels[n].Profile = legacy.Tunnels[n].Profiles[0]
+		}
+	}
+	return nil
 }
 
 // Save validates and writes the file atomically, so a crash cannot truncate it.

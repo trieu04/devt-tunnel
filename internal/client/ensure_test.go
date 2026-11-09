@@ -22,13 +22,13 @@ func TestEnsureVersionPolicy(t *testing.T) {
 		build                                    string
 		active, noStart, wantShutdown, wantError bool
 	}{
-		{"same", 1, "ours", false, false, false, false},
-		{"active build", 1, "older", true, false, false, false},
-		{"idle build", 1, "older", false, false, true, false},
-		{"active incompatible", 2, "other", true, false, false, true},
-		{"idle incompatible", 2, "other", false, false, true, false},
-		{"no start compatible", 1, "older", false, true, false, false},
-		{"no start incompatible", 2, "other", false, true, false, true},
+		{"same", api.Version, "ours", false, false, false, false},
+		{"active build", api.Version, "older", true, false, false, false},
+		{"idle build", api.Version, "older", false, false, true, false},
+		{"active incompatible", api.Version + 1, "other", true, false, false, true},
+		{"idle incompatible", api.Version + 1, "other", false, false, true, false},
+		{"no start compatible", api.Version, "older", false, true, false, false},
+		{"no start incompatible", api.Version + 1, "other", false, true, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "dttv")

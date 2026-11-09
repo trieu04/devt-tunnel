@@ -117,7 +117,7 @@ func TestShutdownDuringBlockedMutation(t *testing.T) {
 	}{
 		{"tunnel.start", api.IDParams{ID: "secret"}},
 		{"tunnel.restart", api.IDParams{ID: "secret"}},
-		{"profile.start", api.IDParams{ID: "profile"}},
+		{"group.start", api.IDParams{ID: "group"}},
 		{"secret.set", api.SetSecretParams{Name: "disposable", Value: "test"}},
 		{"secret.delete", api.SecretNameParams{Name: "disposable"}},
 		{"secret.rename", api.RenameSecretParams{From: "disposable", To: "renamed"}},
@@ -126,7 +126,7 @@ func TestShutdownDuringBlockedMutation(t *testing.T) {
 			t.Run(request.method+"/"+mode, func(t *testing.T) {
 				s := isolated(t)
 				path := filepath.Join(s.root, "config", "tunnels.toml")
-				cfg := model.Config{Profiles: []model.Profile{{ID: "profile", Name: "Profile"}}, Tunnels: []model.Tunnel{{ID: "secret", Name: "Secret", Profiles: []string{"profile"}, Type: model.TypeCommand, Command: &model.Command{Line: "unused", SecretEnvs: map[string]string{"TOKEN": "disposable"}}}}}
+				cfg := model.Config{Groups: []model.Group{{ID: "group", Name: "Group"}}, Tunnels: []model.Tunnel{{ID: "secret", Name: "Secret", Groups: []string{"group"}, Type: model.TypeCommand, Command: &model.Command{Line: "unused", SecretEnvs: map[string]string{"TOKEN": "disposable"}}}}}
 				if err := config.Save(path, cfg); err != nil {
 					t.Fatal(err)
 				}

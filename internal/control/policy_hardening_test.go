@@ -38,10 +38,11 @@ func policyHostConfig(t *testing.T, opts *engine.Options, text string) string {
 }
 
 func TestMCPRejectsPersistenceMetadata(t *testing.T) {
-	for _, field := range []string{"startOnLaunch", "profiles", "favorite"} {
+	for _, field := range []string{"startOnLaunch", "profile", "groups", "favorite"} {
 		t.Run(field, func(t *testing.T) {
 			_, socket, _ := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
 				cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
+				cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 			})
 			mcp := leasedDial(t, socket, "mcp", "metadata-agent", "")
 			person := leasedDial(t, socket, "gui", "person", "")
@@ -52,8 +53,10 @@ func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 			switch field {
 			case "startOnLaunch":
 				p.Tunnel.StartOnLaunch = true
-			case "profiles":
-				p.Tunnel.Profiles = []string{"work"}
+			case "profile":
+				p.Tunnel.Profile = "work"
+			case "groups":
+				p.Tunnel.Groups = []string{"stack"}
 			case "favorite":
 				p.Tunnel.Favorite = true
 			}
@@ -63,7 +66,7 @@ func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 					params = api.RunEphemeralParams{Tunnel: p.Tunnel}
 				}
 				err := policyError(t, policyCall(t, mcp, method, params, nil), api.PolicyDenied)
-				if !strings.Contains(err.Message, "startOnLaunch, profiles or favorite") {
+				if !strings.Contains(err.Message, "startOnLaunch, profile, groups or favorite") {
 					t.Fatalf("unclear denial: %v", err)
 				}
 			}
@@ -82,15 +85,16 @@ func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 func TestPersonBulkStartsSkipEphemeralTunnels(t *testing.T) {
 	s, socket, clock := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
+		cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 	})
 	person := leasedDial(t, socket, "gui", "person", "")
 	tunnel := policySSH("")
-	tunnel.StartOnLaunch, tunnel.Favorite, tunnel.Profiles = true, true, []string{"work"}
+	tunnel.StartOnLaunch, tunnel.Favorite, tunnel.Profile, tunnel.Groups = true, true, "work", []string{"stack"}
 	var result api.RunEphemeralResult
 	policyOK(t, person, "tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: tunnel, TTL: "1m"}, &result)
 	policyOK(t, person, "tunnel.waitReady", api.IDParams{ID: result.ID}, nil)
 	policyOK(t, person, "tunnel.startOnLaunch", api.Empty{}, nil)
-	policyOK(t, person, "profile.start", api.IDParams{ID: "work"}, nil)
+	policyOK(t, person, "group.start", api.IDParams{ID: "stack"}, nil)
 	if view := policyTunnel(t, person, result.ID); view.Owner.Pinned {
 		t.Fatal("bulk start pinned an ephemeral tunnel")
 	}
@@ -590,16 +594,19 @@ func TestMCPLiveLeaseAndEphemeralCapIsSharedPerSession(t *testing.T) {
 }
 
 func TestMCPPromotionRejectsLegacyPersistenceMetadata(t *testing.T) {
-	for _, field := range []string{"startOnLaunch", "profiles", "favorite"} {
+	for _, field := range []string{"startOnLaunch", "profile", "groups", "favorite"} {
 		t.Run(field, func(t *testing.T) {
 			_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, cfg *model.Config) {
 				cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
+				cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 				tunnel := policySSH("tmp-legacy")
 				switch field {
 				case "startOnLaunch":
 					tunnel.StartOnLaunch = true
-				case "profiles":
-					tunnel.Profiles = []string{"work"}
+				case "profile":
+					tunnel.Profile = "work"
+				case "groups":
+					tunnel.Groups = []string{"stack"}
 				case "favorite":
 					tunnel.Favorite = true
 				}

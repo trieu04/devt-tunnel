@@ -236,7 +236,6 @@ func New(opts Options) (*Engine, error) {
 		Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), Askpass: s.broker,
 		Records: s.records, OnChange: s.managerChanged, RetryForward: s.retryForward,
 	})
-	s.manager.SetActiveProfile(s.stateStore.Get().ActiveProfile)
 	s.findOrphans()
 	s.recoverPromotions()
 	s.loadConfig()
@@ -289,20 +288,6 @@ func (s *Engine) loadConfig() error {
 		s.notify()
 		return err
 	}
-	active := s.stateStore.Get().ActiveProfile
-	if active != "" {
-		found := false
-		for _, profile := range cfg.Profiles {
-			found = found || profile.ID == active
-		}
-		if !found {
-			if err := s.lifetimeError(); err != nil {
-				return err
-			}
-			_ = s.stateStore.Update(func(st *corestate.State) { st.ActiveProfile = "" })
-			active = ""
-		}
-	}
 	if err := s.lifetimeError(); err != nil {
 		return err
 	}
@@ -311,7 +296,6 @@ func (s *Engine) loadConfig() error {
 		s.configError = ""
 		s.mu.Unlock()
 		s.setManagerConfig(s.merged(cfg))
-		s.manager.SetActiveProfile(active)
 	})
 }
 
@@ -378,7 +362,6 @@ func (s *Engine) Overview() api.Overview {
 	s.promptMu.Unlock()
 	sort.Slice(o.Prompts, func(i, j int) bool { return o.Prompts[i].ID < o.Prompts[j].ID })
 	state := s.stateStore.Get()
-	o.ActiveProfile = state.ActiveProfile
 	o.LastUsed = state.LastUsed
 	if o.LastUsed == nil {
 		o.LastUsed = map[string]time.Time{}
@@ -387,6 +370,7 @@ func (s *Engine) Overview() api.Overview {
 	_, keychainErr := secret.Has(s.secrets, "__devt_tunnel_availability_probe__")
 	o.KeychainAvailable = keychainErr == nil || errors.Is(keychainErr, secret.ErrNotFound)
 	o.Profiles = s.manager.Config().Profiles
+	o.Groups = s.manager.Config().Groups
 	o.Tunnels = s.views()
 	return o
 }
@@ -621,11 +605,16 @@ const configTemplate = `# devt-tunnel tunnel definitions. See docs/architecture.
 # id = "work"
 # name = "Work"
 
+# [[group]]
+# id = "backend"
+# name = "Backend"
+
 # [[tunnel]]
 # id = "db"
 # name = "Production DB"
 # type = "ssh"
-# profiles = ["work"]
+# profile = "work"
+# groups = ["backend"]
 # favorite = true
 # reconnect = true
 #

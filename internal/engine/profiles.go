@@ -1,57 +1,14 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/trieu04/devt-tunnel/internal/core/model"
-	"github.com/trieu04/devt-tunnel/internal/core/profiles"
-	"github.com/trieu04/devt-tunnel/internal/core/state"
-	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
-func (s *Engine) ActivateProfile(id string) error {
-	cfg := s.manager.Config()
-	var selected *model.Profile
-	if id != "" {
-		for n := range cfg.Profiles {
-			if cfg.Profiles[n].ID == id {
-				selected = &cfg.Profiles[n]
-				break
-			}
-		}
-		if selected == nil {
-			return fmt.Errorf("unknown profile %q", id)
-		}
-	}
-	running := map[string]bool{}
-	for _, status := range s.manager.Statuses() {
-		running[status.ID] = status.State == supervisor.StateRunning || status.State == supervisor.StateStarting || status.State == supervisor.StateReconnecting
-	}
-	if selected != nil {
-		plan := profiles.Activation(cfg, *selected, running)
-		for _, tunnelID := range plan.Stop {
-			s.Stop(tunnelID)
-		}
-		for _, tunnelID := range plan.Start {
-			_ = s.Start(tunnelID)
-		}
-	}
-	// Serialize the selected SSH configuration with fingerprint authorization
-	// and StartFingerprint; profile changes must not slip between the two builds.
-	s.configMu.Lock()
-	defer s.configMu.Unlock()
-	if err := s.lifetimeError(); err != nil {
-		return err
-	}
-	if err := s.stateStore.Update(func(st *state.State) { st.ActiveProfile = id }); err != nil {
-		return err
-	}
-	s.manager.SetActiveProfile(id)
-	return nil
-}
-
+// SaveProfile stores the profile and makes members exactly its tunnels. A member
+// that was in another profile moves here, since a tunnel has only one.
 func (s *Engine) SaveProfile(profile model.Profile, members []string) (string, error) {
 	err := s.updateConfig(func(cfg *model.Config) error {
 		if profile.ID == "" {
@@ -73,25 +30,12 @@ func (s *Engine) SaveProfile(profile model.Profile, members []string) (string, e
 				return fmt.Errorf("unknown profile %q", profile.ID)
 			}
 		}
-		memberSet := map[string]bool{}
-		for _, id := range members {
-			memberSet[id] = true
-		}
+		memberSet := stringSet(members)
 		for n := range cfg.Tunnels {
-			cfg.Tunnels[n].Profiles = removeString(cfg.Tunnels[n].Profiles, profile.ID)
 			if memberSet[cfg.Tunnels[n].ID] {
-				cfg.Tunnels[n].Profiles = append(cfg.Tunnels[n].Profiles, profile.ID)
-			}
-		}
-		validAutostart := profile.Autostart[:0]
-		for _, id := range profile.Autostart {
-			if memberSet[id] {
-				validAutostart = append(validAutostart, id)
-			}
-		}
-		for n := range cfg.Profiles {
-			if cfg.Profiles[n].ID == profile.ID {
-				cfg.Profiles[n].Autostart = validAutostart
+				cfg.Tunnels[n].Profile = profile.ID
+			} else if cfg.Tunnels[n].Profile == profile.ID {
+				cfg.Tunnels[n].Profile = ""
 			}
 		}
 		return nil
@@ -99,63 +43,51 @@ func (s *Engine) SaveProfile(profile model.Profile, members []string) (string, e
 	return profile.ID, err
 }
 
+// DeleteProfile keeps the tunnels, which fall back to the default SSH config.
 func (s *Engine) DeleteProfile(id string) error {
-	err := s.updateConfig(func(cfg *model.Config) error { profiles.Remove(cfg, id); return nil })
-	if err != nil {
-		return err
-	}
-	if s.stateStore.Get().ActiveProfile == id {
-		return s.ActivateProfile("")
-	}
-	return nil
+	return s.updateConfig(func(cfg *model.Config) error {
+		profiles := cfg.Profiles[:0]
+		for _, profile := range cfg.Profiles {
+			if profile.ID != id {
+				profiles = append(profiles, profile)
+			}
+		}
+		cfg.Profiles = profiles
+		for n := range cfg.Tunnels {
+			if cfg.Tunnels[n].Profile == id {
+				cfg.Tunnels[n].Profile = ""
+			}
+		}
+		return nil
+	})
 }
 
+// DuplicateProfile copies the settings only: its tunnels cannot be in two profiles.
 func (s *Engine) DuplicateProfile(id string) (string, error) {
 	var duplicate model.Profile
 	err := s.updateConfig(func(cfg *model.Config) error {
-		duplicate = profiles.Duplicate(cfg, id)
+		taken := map[string]bool{}
+		for _, profile := range cfg.Profiles {
+			taken[profile.ID] = true
+			if profile.ID == id {
+				duplicate = profile
+			}
+		}
 		if duplicate.ID == "" {
 			return fmt.Errorf("unknown profile %q", id)
 		}
+		duplicate.Name = strings.TrimSpace(duplicate.Name) + " copy"
+		duplicate.ID = model.NewID(duplicate.Name, taken)
+		cfg.Profiles = append(cfg.Profiles, duplicate)
 		return nil
 	})
 	return duplicate.ID, err
 }
 
-func (s *Engine) SetProfileAutostart(id, tunnelID string, on bool) error {
-	err := s.updateConfig(func(cfg *model.Config) error {
-		for n := range cfg.Profiles {
-			if cfg.Profiles[n].ID == id {
-				cfg.Profiles[n].Autostart = removeString(cfg.Profiles[n].Autostart, tunnelID)
-				if on {
-					cfg.Profiles[n].Autostart = append(cfg.Profiles[n].Autostart, tunnelID)
-				}
-				return nil
-			}
-		}
-		return fmt.Errorf("unknown profile %q", id)
-	})
-	return err
-}
-
-func (s *Engine) StartProfile(id string) error {
-	var failures []string
-	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
-		if strings.HasPrefix(tunnel.ID, "tmp-") {
-			continue
-		}
-		if err := s.Start(tunnel.ID); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", tunnel.Name, err))
-		}
+func stringSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
 	}
-	if len(failures) > 0 {
-		return errors.New(strings.Join(failures, "; "))
-	}
-	return nil
-}
-
-func (s *Engine) StopProfile(id string) {
-	for _, tunnel := range profiles.Members(s.manager.Config(), id) {
-		s.Stop(tunnel.ID)
-	}
+	return set
 }

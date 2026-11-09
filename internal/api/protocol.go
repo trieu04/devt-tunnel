@@ -12,7 +12,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
 )
 
-const Version = 1
+const Version = 2
 const MaxMessageSize = 4 * 1024 * 1024
 
 type Request struct {
@@ -128,10 +128,9 @@ type SaveProfileParams struct {
 	Profile model.Profile `json:"profile"`
 	Members []string      `json:"members"`
 }
-type AutostartParams struct {
-	ID       string `json:"id"`
-	TunnelID string `json:"tunnelId"`
-	On       bool   `json:"on"`
+type SaveGroupParams struct {
+	Group   model.Group `json:"group"`
+	Members []string    `json:"members"`
 }
 type SecretNameParams struct {
 	Name string `json:"name"`
@@ -189,7 +188,8 @@ var Methods = []string{
 	"approval.list", "approval.get", "approval.decide", "audit.read",
 	"tunnel.promote", "tunnel.runEphemeral", "lease.open", "lease.renew", "lease.close", "lease.list", "lease.revoke",
 	"tunnel.list", "tunnel.get", "tunnel.save", "tunnel.delete", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.waitReady", "tunnel.evaluateDraft", "tunnel.import", "tunnel.newDraft", "tunnel.duplicateDraft", "tunnel.setFavorite", "tunnel.findings", "tunnel.recordUsed", "tunnel.startOnLaunch",
-	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate", "profile.activate", "profile.setAutostart", "profile.start", "profile.stop",
+	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate",
+	"group.list", "group.save", "group.delete", "group.duplicate", "group.start", "group.stop",
 	"secret.list", "secret.set", "secret.delete", "secret.rename", "secret.forget", "prompt.list", "prompt.answer",
 	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.getAgent", "settings.setAgent", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
 }

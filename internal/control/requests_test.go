@@ -318,7 +318,8 @@ func TestOpenRequestStrictDecodeAndUnsafeSmuggling(t *testing.T) {
 		func(t *model.Tunnel) { t.SSH.ExtraArgs = "-oLocalCommand=bad" },
 		func(t *model.Tunnel) { t.SSH.Identity = "/private/key" },
 		func(t *model.Tunnel) { t.StartOnLaunch = true },
-		func(t *model.Tunnel) { t.Profiles = []string{"work"} },
+		func(t *model.Tunnel) { t.Profile = "work" },
+		func(t *model.Tunnel) { t.Groups = []string{"work"} },
 		func(t *model.Tunnel) { t.Favorite = true },
 		func(t *model.Tunnel) { t.Name = "bad\nname" },
 	} {

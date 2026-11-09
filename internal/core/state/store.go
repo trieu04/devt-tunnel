@@ -13,9 +13,8 @@ import (
 type Bounds struct{ X, Y, Width, Height int }
 
 type State struct {
-	ActiveProfile string               `json:"activeProfile,omitempty"`
-	LastUsed      map[string]time.Time `json:"lastUsed,omitempty"`
-	Windows       map[string]Bounds    `json:"windows,omitempty"`
+	LastUsed map[string]time.Time `json:"lastUsed,omitempty"`
+	Windows  map[string]Bounds    `json:"windows,omitempty"`
 }
 
 type Store struct {

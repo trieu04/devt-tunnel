@@ -52,9 +52,8 @@ func (s *Engine) checkDeps(t model.Tunnel) checks.Deps {
 			}
 		}
 	}
-	profileID := firstProfile(t)
 	return checks.Deps{
-		Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), ProfileID: profileID,
+		Resolve: s.tools.Resolve, Secrets: s.secrets, Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect(), ProfileID: t.Profile,
 		Listening: func(address string) bool { return !own[address] && s.listening(address) },
 		Hosts: func(id string) ([]string, error) {
 			list := s.SSHHosts(id)
@@ -65,13 +64,6 @@ func (s *Engine) checkDeps(t model.Tunnel) checks.Deps {
 			return hosts, nil
 		},
 	}
-}
-
-func firstProfile(t model.Tunnel) string {
-	if len(t.Profiles) > 0 {
-		return t.Profiles[0]
-	}
-	return ""
 }
 
 func (s *Engine) NewDraft(kind model.TunnelType) model.Tunnel {
@@ -90,8 +82,7 @@ func (s *Engine) NewDraft(kind model.TunnelType) model.Tunnel {
 }
 
 func (s *Engine) ImportCommand(line string) (importer.Result, error) {
-	profileID := s.stateStore.Get().ActiveProfile
-	hostList := s.SSHHosts(profileID)
+	hostList := s.SSHHosts("")
 	hosts := make([]string, 0, len(hostList.Hosts))
 	for _, host := range hostList.Hosts {
 		hosts = append(hosts, host.Alias)
@@ -179,7 +170,6 @@ func (s *Engine) DeleteTunnel(id string) error {
 			return fmt.Errorf("unknown tunnel %q", id)
 		}
 		cfg.Tunnels = out
-		model.RemoveTunnelReferences(cfg, id)
 		return nil
 	})
 	if err != nil {

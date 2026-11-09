@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,9 +19,6 @@ const sample = `
 id = "work"
 name = "Work"
 ssh_config = "~/.ssh/config"
-on_activate = "start_autostart"
-stop_non_members = false
-autostart = ["srv1"]
 
 [[profile]]
 id = "home"
@@ -30,7 +28,7 @@ name = "Home"
 id = "srv1"
 name = "SSH Server 1"
 type = "ssh"
-profiles = ["work", "home"]
+profile = "work"
 favorite = true
 start_on_launch = false
 reconnect = true
@@ -50,7 +48,7 @@ target = "192.168.0.24:8000"
 id = "web"
 name = "Ngrok"
 type = "ngrok"
-profiles = ["home"]
+profile = "home"
 
 [tunnel.ngrok]
 proto = "http"
@@ -85,6 +83,76 @@ func TestLoadDocumentedExample(t *testing.T) {
 	}
 	if cfg.Tunnels[1].Ngrok.Secret != "ngrok-personal" {
 		t.Errorf("ngrok: %+v", cfg.Tunnels[1].Ngrok)
+	}
+}
+
+func TestLoadUpgradesLegacyProfileFields(t *testing.T) {
+	cfg, err := Load(write(t, `
+[[profile]]
+id = "work"
+name = "Work"
+on_activate = "start_autostart"
+stop_non_members = true
+autostart = ["a"]
+
+[[profile]]
+id = "home"
+name = "Home"
+
+[[tunnel]]
+id = "a"
+type = "command"
+profiles = ["home", "work"]
+[tunnel.command]
+line = "ls"
+
+[[tunnel]]
+id = "b"
+type = "command"
+[tunnel.command]
+line = "ls"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tunnels[0].Profile != "home" || cfg.Tunnels[1].Profile != "" {
+		t.Fatalf("profiles: %+v", cfg.Tunnels)
+	}
+	path := filepath.Join(t.TempDir(), "tunnels.toml")
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, legacy := range []string{"profiles =", "on_activate", "stop_non_members", "autostart"} {
+		if strings.Contains(string(data), legacy) {
+			t.Errorf("saved file keeps %s:\n%s", legacy, data)
+		}
+	}
+	if !strings.Contains(string(data), `profile = "home"`) {
+		t.Errorf("saved file lost the profile:\n%s", data)
+	}
+}
+
+func TestValidateGroups(t *testing.T) {
+	tunnel := "[[tunnel]]\nid='a'\ntype='command'\n%s\n[tunnel.command]\nline='ls'\n"
+	for name, tc := range map[string]struct{ body, want string }{
+		"unknown group":   {fmt.Sprintf(tunnel, "groups=['x']"), "unknown group"},
+		"repeated group":  {"[[group]]\nid='x'\nname='X'\n" + fmt.Sprintf(tunnel, "groups=['x','x']"), "twice"},
+		"duplicate group": {"[[group]]\nid='x'\nname='X'\n[[group]]\nid='x'\nname='Y'\n", "duplicate group"},
+		"no group id":     {"[[group]]\nname='X'\n", "no id"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, tc.body)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err=%v want %q", err, tc.want)
+			}
+		})
+	}
+	cfg, err := Load(write(t, "[[group]]\nid='x'\nname='X'\n[[group]]\nid='y'\nname='Y'\n"+fmt.Sprintf(tunnel, "groups=['x','y']")))
+	if err != nil || len(cfg.Tunnels[0].Groups) != 2 {
+		t.Fatalf("many groups: %+v %v", cfg, err)
 	}
 }
 

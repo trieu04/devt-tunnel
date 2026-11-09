@@ -508,10 +508,6 @@ func (s *Service) SetFavorite(id string, favorite bool) error {
 
 func (s *Service) Restart(id string) error { return action(s, "tunnel.restart", api.IDParams{ID: id}) }
 
-func (s *Service) ActivateProfile(id string) error {
-	return action(s, "profile.activate", api.IDParams{ID: id})
-}
-
 func (s *Service) SaveProfile(profile model.Profile, members []string) (string, error) {
 	return call[string](s, "profile.save", api.SaveProfileParams{Profile: profile, Members: members})
 }
@@ -524,18 +520,24 @@ func (s *Service) DuplicateProfile(id string) (string, error) {
 	return call[string](s, "profile.duplicate", api.IDParams{ID: id})
 }
 
-func (s *Service) SetProfileAutostart(id, tunnelID string, on bool) error {
-	return action(s, "profile.setAutostart", api.AutostartParams{ID: id, TunnelID: tunnelID, On: on})
+func (s *Service) SaveGroup(group model.Group, members []string) (string, error) {
+	return call[string](s, "group.save", api.SaveGroupParams{Group: group, Members: members})
 }
 
-func (s *Service) StartProfile(id string) error {
-	return action(s, "profile.start", api.IDParams{ID: id})
+func (s *Service) DeleteGroup(id string) error {
+	return action(s, "group.delete", api.IDParams{ID: id})
 }
 
-func (s *Service) StopProfile(id string) {
-	if err := action(s, "profile.stop", api.IDParams{ID: id}); err != nil {
-		log.Printf("stop profile %s: %v", id, err)
-	}
+func (s *Service) DuplicateGroup(id string) (string, error) {
+	return call[string](s, "group.duplicate", api.IDParams{ID: id})
+}
+
+func (s *Service) StartGroup(id string) error {
+	return action(s, "group.start", api.IDParams{ID: id})
+}
+
+func (s *Service) StopGroup(id string) error {
+	return action(s, "group.stop", api.IDParams{ID: id})
 }
 
 func (s *Service) SSHHosts(profileID string) api.SSHHostList {

@@ -77,7 +77,7 @@ func TestEphemeralNamespaceAndMergedValidation(t *testing.T) {
 		t.Fatal("accepted saved namespace for ephemeral")
 	}
 	tunnel.ID = "tmp-one"
-	tunnel.Profiles = []string{"p"}
+	tunnel.Profile = "p"
 	result, err := e.RunEphemeral(a, s, api.RunEphemeralParams{Tunnel: tunnel})
 	if err != nil {
 		t.Fatal(err)

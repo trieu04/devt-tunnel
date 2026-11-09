@@ -31,8 +31,8 @@ func (s *Engine) agentBuilt(actor api.Actor, session string, t model.Tunnel) err
 // Pure admission diagnostics shared with dry runs. No approval, audit or
 // mutation is performed; configMu must be held for the saved-port snapshot.
 func (s *Engine) agentBuiltReason(t model.Tunnel) string {
-	if t.StartOnLaunch || len(t.Profiles) != 0 || t.Favorite {
-		return "agents cannot set startOnLaunch, profiles or favorite; saved and ephemeral agent tunnels must remain lease-controlled"
+	if t.StartOnLaunch || t.Profile != "" || len(t.Groups) != 0 || t.Favorite {
+		return "agents cannot set startOnLaunch, profile, groups or favorite; saved and ephemeral agent tunnels must remain lease-controlled"
 	}
 	if !utf8.ValidString(t.Name) || utf8.RuneCountInString(t.Name) > 64 || strings.ContainsFunc(t.Name, func(r rune) bool { return !unicode.IsPrint(r) }) {
 		return "agent-provided name must be printable UTF-8, without control characters, and at most 64 characters"

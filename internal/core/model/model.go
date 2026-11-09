@@ -1,4 +1,4 @@
-// Package model defines tunnels and profiles as stored in tunnels.toml.
+// Package model defines tunnels, profiles and groups as stored in tunnels.toml.
 package model
 
 import (
@@ -30,24 +30,33 @@ const (
 // Config is the content of tunnels.toml.
 type Config struct {
 	Profiles []Profile `toml:"profile" json:"profiles"`
+	Groups   []Group   `toml:"group" json:"groups"`
 	Tunnels  []Tunnel  `toml:"tunnel" json:"tunnels"`
 }
 
+// Profile is configuration shared by the tunnels that belong to it. A tunnel
+// belongs to at most one profile.
 type Profile struct {
-	ID             string   `toml:"id" json:"id"`
-	Name           string   `toml:"name" json:"name"`
-	Description    string   `toml:"description,omitempty" json:"description,omitempty"`
-	SSHConfig      string   `toml:"ssh_config,omitempty" json:"sshConfig,omitempty"`
-	OnActivate     string   `toml:"on_activate,omitempty" json:"onActivate,omitempty"`
-	StopNonMembers bool     `toml:"stop_non_members,omitempty" json:"stopNonMembers,omitempty"`
-	Autostart      []string `toml:"autostart,omitempty" json:"autostart,omitempty"`
+	ID          string `toml:"id" json:"id"`
+	Name        string `toml:"name" json:"name"`
+	Description string `toml:"description,omitempty" json:"description,omitempty"`
+	SSHConfig   string `toml:"ssh_config,omitempty" json:"sshConfig,omitempty"`
+}
+
+// Group is a named set of tunnels operated on together. A tunnel can be in any
+// number of groups, whatever its profile.
+type Group struct {
+	ID          string `toml:"id" json:"id"`
+	Name        string `toml:"name" json:"name"`
+	Description string `toml:"description,omitempty" json:"description,omitempty"`
 }
 
 type Tunnel struct {
 	ID            string     `toml:"id" json:"id"`
 	Name          string     `toml:"name" json:"name"`
 	Type          TunnelType `toml:"type" json:"type"`
-	Profiles      []string   `toml:"profiles,omitempty" json:"profiles,omitempty"`
+	Profile       string     `toml:"profile,omitempty" json:"profile,omitempty"`
+	Groups        []string   `toml:"groups,omitempty" json:"groups,omitempty"`
 	Favorite      bool       `toml:"favorite,omitempty" json:"favorite,omitempty"`
 	StartOnLaunch bool       `toml:"start_on_launch,omitempty" json:"startOnLaunch,omitempty"`
 	Reconnect     bool       `toml:"reconnect,omitempty" json:"reconnect,omitempty"`
@@ -117,11 +126,16 @@ func (c Config) Validate() error {
 			return fmt.Errorf("duplicate profile id %q", p.ID)
 		}
 		profiles[p.ID] = true
-		switch p.OnActivate {
-		case "", "filter", "start_autostart":
-		default:
-			return fmt.Errorf("profile %q has invalid on_activate %q", p.ID, p.OnActivate)
+	}
+	groups := map[string]bool{}
+	for _, g := range c.Groups {
+		if g.ID == "" {
+			return fmt.Errorf("group %q has no id", g.Name)
 		}
+		if groups[g.ID] {
+			return fmt.Errorf("duplicate group id %q", g.ID)
+		}
+		groups[g.ID] = true
 	}
 	tunnels := map[string]bool{}
 	for _, t := range c.Tunnels {
@@ -132,27 +146,21 @@ func (c Config) Validate() error {
 			return fmt.Errorf("duplicate tunnel id %q", t.ID)
 		}
 		tunnels[t.ID] = true
-		for _, p := range t.Profiles {
-			if !profiles[p] {
-				return fmt.Errorf("tunnel %q uses unknown profile %q", t.ID, p)
+		if t.Profile != "" && !profiles[t.Profile] {
+			return fmt.Errorf("tunnel %q uses unknown profile %q", t.ID, t.Profile)
+		}
+		member := map[string]bool{}
+		for _, g := range t.Groups {
+			if !groups[g] {
+				return fmt.Errorf("tunnel %q uses unknown group %q", t.ID, g)
 			}
+			if member[g] {
+				return fmt.Errorf("tunnel %q lists group %q twice", t.ID, g)
+			}
+			member[g] = true
 		}
 		if err := t.validateSettings(); err != nil {
 			return fmt.Errorf("tunnel %q: %w", t.ID, err)
-		}
-	}
-	for _, p := range c.Profiles {
-		for _, id := range p.Autostart {
-			found := false
-			for _, t := range c.Tunnels {
-				if t.ID == id && contains(t.Profiles, p.ID) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("profile %q autostart tunnel %q is not a member", p.ID, id)
-			}
 		}
 	}
 	return nil
@@ -227,15 +235,6 @@ func validateAddress(value string) error {
 	return nil
 }
 
-func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
-}
-
 // NewID returns a stable slug, adding a numeric suffix when it is already taken.
 func NewID(name string, taken map[string]bool) string {
 	var b strings.Builder
@@ -261,19 +260,6 @@ func NewID(name string, taken map[string]bool) string {
 		if !taken[candidate] {
 			return candidate
 		}
-	}
-}
-
-// RemoveTunnelReferences removes an id from profile autostart lists.
-func RemoveTunnelReferences(c *Config, id string) {
-	for i := range c.Profiles {
-		out := c.Profiles[i].Autostart[:0]
-		for _, candidate := range c.Profiles[i].Autostart {
-			if candidate != id {
-				out = append(out, candidate)
-			}
-		}
-		c.Profiles[i].Autostart = out
 	}
 }
 
