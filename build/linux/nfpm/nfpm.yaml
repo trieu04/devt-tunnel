@@ -13,7 +13,7 @@ maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
 description: "Run SSH, cloudflared, ngrok and custom-command tunnels from one place"
 vendor: "trieu04"
 homepage: "https://github.com/trieu04/devt-tunnel"
-license: "UNLICENSED"
+license: "Apache-2.0"
 release: "1"
 
 contents:

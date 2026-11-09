@@ -16,7 +16,7 @@ Early code base. It has run on macOS only; Windows and Linux compile but have no
 | Secrets and Vault metadata | Implemented; native macOS authentication and reveal passed after correcting the device-owner policy |
 | Main window, editor, quick launch, profiles, Vault and Settings | Implemented; phase 17 native macOS acceptance passed, while Windows and Linux remain pending |
 | SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
-| Installers and release workflow | Unsigned builds automated; signing, notarization, license and clean-machine checks need owner infrastructure |
+| Installers and release workflow | Unsigned builds automated; signing, notarization and clean-machine checks need owner infrastructure |
 | Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; the daemon now owns the engine; native-window regression check pending |
 | Typed readiness errors, endpoint lists and live port checks (phase 15) | Implemented and unit tested; editor/native-window warning acceptance pending |
 | Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
@@ -130,6 +130,6 @@ The headless CLI has its own [install and usage instructions](#dtt-headless-inst
 - [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API, GUI migration and phases 18–20 CLI/MCP commands are implemented with automated checks; the MCP real-client check remains pending.
 - [docs/plans/README.md](docs/plans/README.md): implementation plans.
 
-## Design
+## License
 
-UI and flow mockups: [docs/devTTunel UI.html](docs/devTTunel%20UI.html).
+Licensed under the [Apache License, Version 2.0](LICENSE). Bundled fonts keep their own licenses (SIL OFL) in `frontend/public`.

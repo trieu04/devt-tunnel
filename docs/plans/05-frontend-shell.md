@@ -2,7 +2,7 @@
 
 **Goal:** structure the UI to hold the coming screens, align it with the mockups, and finish the main window.
 
-**Depends on:** phases 2 and 3 (host list and tool info for the empty search and status bar). **Mockups:** open `docs/devTTunel UI.html` in a browser; boards "Main" and "Luồng hoạt động". The mockups use the name `devTTunel` and the path `~/.config/devttunel/`; the code's `devt-tunnel` is correct.
+**Depends on:** phases 2 and 3 (host list and tool info for the empty search and status bar). **Mockups:** boards "Main" and "Luồng hoạt động" (the mockup file is no longer in the repository). The mockups use the name `devTTunel` and the path `~/.config/devttunel/`; the code's `devt-tunnel` is correct.
 
 ## 5.1 File layout
 

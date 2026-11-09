@@ -91,7 +91,6 @@ Written to `docs/release.md`:
 - README: install section per OS, prerequisites (the app does not bundle `ssh`, `ngrok` or `cloudflared`), supported platforms, and known limits such as GNOME's tray.
 - Security notes: where secrets live, what `tunnels.toml` contains, that the file can be shared, and the update check.
 - A short guide for the first tunnel, using screenshots from the native build.
-- README's Design link points to a private artifact. Link to the checked-in `docs/devTTunel UI.html` instead.
 
 ## Done when
 

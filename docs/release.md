@@ -9,4 +9,4 @@
 7. Record installer size and idle memory for each OS in `docs/platform.md`, then publish the draft release.
 8. Update the Homebrew tap after the notarized macOS artifact is public.
 
-The release workflow can produce unsigned tester artifacts without signing secrets. Publishing v1 requires an Apple Developer identity, Apple notarization API key, a Windows signing certificate and a project license selected by the owner.
+The release workflow can produce unsigned tester artifacts without signing secrets. Publishing v1 requires an Apple Developer identity, Apple notarization API key and a Windows signing certificate.
