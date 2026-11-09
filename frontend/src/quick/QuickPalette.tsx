@@ -30,9 +30,9 @@ export function QuickPalette({
 
   useEffect(() => {
     reset();
-    Service.SSHHosts(overview?.activeProfile ?? "").then((result) => setHosts(result.hosts ?? []));
+    Service.SSHHosts("").then((result) => setHosts(result.hosts ?? []));
     return embedded ? undefined : onQuickOpened(reset);
-  }, [embedded, overview?.activeProfile]);
+  }, [embedded]);
 
   const groups = useMemo(
     () =>
@@ -42,7 +42,6 @@ export function QuickPalette({
         tunnels: overview?.tunnels ?? [],
         hosts,
         recents: overview?.lastUsed ?? {},
-        activeProfile: overview?.activeProfile ?? "",
       }),
     [query, scope, overview, hosts],
   );

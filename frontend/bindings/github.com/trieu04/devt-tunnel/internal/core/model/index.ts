@@ -11,6 +11,7 @@ export type {
     Cloudflared,
     Command,
     Forward,
+    Group,
     Lease,
     Ngrok,
     Profile,

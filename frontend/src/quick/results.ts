@@ -31,12 +31,9 @@ export function buildResults(input: {
   tunnels: TunnelView[];
   hosts: Host[];
   recents: Record<string, string | undefined>;
-  activeProfile: string;
 }): Group[] {
   const query = input.query.trim().toLowerCase();
-  const visible = input.tunnels.filter(
-    (v) => !input.activeProfile || (v.tunnel.profiles ?? []).includes(input.activeProfile),
-  );
+  const visible = input.tunnels;
   const usedHosts = new Set(input.tunnels.map((v) => v.tunnel.ssh?.host).filter(Boolean));
   const tunnels = visible
     .filter((v) => matchesSearch(v, query))

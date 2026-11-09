@@ -34,10 +34,6 @@ import * as supervisor$0 from "../core/supervisor/models.js";
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function ActivateProfile(id: string): $CancellablePromise<void> {
-    return $Call.ByID(1135488226, id);
-}
-
 export function AgentSettings(): $CancellablePromise<settings$0.Agent> {
     return $Call.ByID(1688787100);
 }
@@ -58,6 +54,10 @@ export function DecideApproval(params: api$0.DecideApprovalParams): $Cancellable
     return $Call.ByID(3956075075, params);
 }
 
+export function DeleteGroup(id: string): $CancellablePromise<void> {
+    return $Call.ByID(646878978, id);
+}
+
 export function DeleteProfile(id: string): $CancellablePromise<void> {
     return $Call.ByID(1838220660, id);
 }
@@ -72,6 +72,10 @@ export function DeleteTunnel(id: string): $CancellablePromise<void> {
 
 export function DuplicateDraft(id: string): $CancellablePromise<model$0.Tunnel> {
     return $Call.ByID(3961818488, id);
+}
+
+export function DuplicateGroup(id: string): $CancellablePromise<string> {
+    return $Call.ByID(378625544, id);
 }
 
 export function DuplicateProfile(id: string): $CancellablePromise<string> {
@@ -166,6 +170,10 @@ export function SSHHosts(profileID: string): $CancellablePromise<api$0.SSHHostLi
     return $Call.ByID(2010502573, profileID);
 }
 
+export function SaveGroup(group: model$0.Group, members: string[] | null): $CancellablePromise<string> {
+    return $Call.ByID(433535540, group, members);
+}
+
 export function SaveProfile(profile: model$0.Profile, members: string[] | null): $CancellablePromise<string> {
     return $Call.ByID(4056232342, profile, members);
 }
@@ -180,10 +188,6 @@ export function SetAgentSettings(agent: settings$0.Agent): $CancellablePromise<v
 
 export function SetFavorite(id: string, favorite: boolean): $CancellablePromise<void> {
     return $Call.ByID(1477876364, id, favorite);
-}
-
-export function SetProfileAutostart(id: string, tunnelID: string, on: boolean): $CancellablePromise<void> {
-    return $Call.ByID(1476010998, id, tunnelID, on);
 }
 
 export function SetSecret(name: string, value: string, kind: secret$0.Kind): $CancellablePromise<void> {
@@ -230,20 +234,20 @@ export function StartAndCopy(id: string): $CancellablePromise<void> {
     return $Call.ByID(2749213260, id);
 }
 
-export function StartProfile(id: string): $CancellablePromise<void> {
-    return $Call.ByID(4097054905, id);
+export function StartGroup(id: string): $CancellablePromise<void> {
+    return $Call.ByID(187998271, id);
 }
 
 export function Stop(id: string): $CancellablePromise<void> {
     return $Call.ByID(3413023976, id);
 }
 
-export function StopOrphan(pid: number): $CancellablePromise<void> {
-    return $Call.ByID(167127862, pid);
+export function StopGroup(id: string): $CancellablePromise<void> {
+    return $Call.ByID(525888747, id);
 }
 
-export function StopProfile(id: string): $CancellablePromise<void> {
-    return $Call.ByID(2691935373, id);
+export function StopOrphan(pid: number): $CancellablePromise<void> {
+    return $Call.ByID(167127862, pid);
 }
 
 export function Toggle(id: string): $CancellablePromise<void> {

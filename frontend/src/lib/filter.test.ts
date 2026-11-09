@@ -14,7 +14,7 @@ const db = view(
   {
     id: "db",
     name: "Production DB",
-    profiles: ["work"],
+    profile: "work",
     favorite: true,
     ssh: { host: "server1" },
     forwards: [{ kind: "L", bind: "127.0.0.1:5433", target: "10.0.0.1:5432" }],
@@ -25,10 +25,11 @@ const web = view({
   id: "web",
   name: "Web",
   type: "ngrok",
-  profiles: ["home"],
+  profile: "home",
+  groups: ["stack", "public"],
   ngrok: { proto: "http", addr: "127.0.0.1:3000" },
 });
-const none = { query: "", view: "all", type: "all", profile: "all" } as const;
+const none = { query: "", view: "all", group: null } as const;
 
 describe("search and filters", () => {
   it("matches name, host and port", () => {
@@ -36,9 +37,11 @@ describe("search and filters", () => {
     expect(matchesSearch(db, "SERVER1")).toBe(true);
     expect(matchesSearch(db, "5433")).toBe(true);
   });
-  it("filters view, type and profile", () => {
-    expect(filterTunnels([db, web], { ...none, view: "running" }).map((v) => v.tunnel.id)).toEqual(["db"]);
-    expect(filterTunnels([db, web], { ...none, type: "ngrok" }).map((v) => v.tunnel.id)).toEqual(["web"]);
-    expect(filterTunnels([db, web], { ...none, profile: "work" }).map((v) => v.tunnel.id)).toEqual(["db"]);
+  it("filters view and group", () => {
+    const ids = (opts: Partial<Parameters<typeof filterTunnels>[1]>) =>
+      filterTunnels([db, web], { ...none, ...opts }).map((v) => v.tunnel.id);
+    expect(ids({ view: "running" })).toEqual(["db"]);
+    expect(ids({ group: "public" })).toEqual(["web"]);
+    expect(ids({ group: "missing" })).toEqual([]);
   });
 });

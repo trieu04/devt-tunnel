@@ -100,7 +100,7 @@ export function SSHFields({
     setReloading(true);
     try {
       await Service.ReloadSSHHosts();
-      const result = await Service.SSHHosts("");
+      const result = await Service.SSHHosts(draft.profile ?? "");
       onHostsReloaded(result.hosts ?? [], result.configPath || configPath);
     } finally {
       setReloading(false);

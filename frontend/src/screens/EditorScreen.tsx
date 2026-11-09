@@ -8,9 +8,10 @@ import { SecretOption, Field, Toggle } from "./editor/controls";
 import { NgrokFields } from "./editor/NgrokFields";
 import { SSHFields, SSHHost } from "./editor/SSHFields";
 
-type Props = { source?: string; onDone: (id?: string) => void; profiles: { id: string; name: string }[] };
+type Named = { id: string; name: string };
+type Props = { source?: string; onDone: (id?: string) => void; profiles: Named[]; groups: Named[] };
 
-export function EditorScreen({ source = "", onDone, profiles }: Props) {
+export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
   const [draft, setDraft] = useState<Tunnel | null>(null);
   const [original, setOriginal] = useState("");
   const [paste, setPaste] = useState(source === "paste" ? "" : "");
@@ -49,12 +50,16 @@ export function EditorScreen({ source = "", onDone, profiles }: Props) {
       setOriginal(stable(value));
     };
     load().catch((reason) => setError(String(reason)));
-    Service.SSHHosts("").then((result) => {
+    Service.ListSecrets().then((result) => setSecrets(result ?? []));
+  }, [source]);
+
+  const draftProfile = draft?.profile ?? "";
+  useEffect(() => {
+    Service.SSHHosts(draftProfile).then((result) => {
       setHosts(result.hosts ?? []);
       setSSHConfigPath(result.configPath || "~/.ssh/config");
     });
-    Service.ListSecrets().then((result) => setSecrets(result ?? []));
-  }, [source]);
+  }, [draftProfile]);
 
   useEffect(() => {
     if (!draft) return;
@@ -126,7 +131,8 @@ export function EditorScreen({ source = "", onDone, profiles }: Props) {
     setDraft({
       ...fresh,
       name: draft?.name ?? "",
-      profiles: draft?.profiles,
+      profile: draft?.profile,
+      groups: draft?.groups,
       favorite: draft?.favorite,
       reconnect: draft?.reconnect,
       startOnLaunch: draft?.startOnLaunch,
@@ -231,31 +237,41 @@ export function EditorScreen({ source = "", onDone, profiles }: Props) {
                 <Field label="Name">
                   <input value={draft.name} required onChange={(event) => update({ name: event.target.value })} />
                 </Field>
-                <div className="field profile-field">
-                  <span className="field-label">Profiles</span>
+                <Field label="Profile">
+                  <select value={draft.profile ?? ""} onChange={(event) => update({ profile: event.target.value })}>
+                    <option value="">No profile (default SSH config)</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <div className="field full">
+                  <span className="field-label">Groups</span>
                   <div className="profile-options">
-                    {profiles.length ? (
-                      profiles.map((profile) => {
-                        const pressed = (draft.profiles ?? []).includes(profile.id);
+                    {groups.length ? (
+                      groups.map((group) => {
+                        const pressed = (draft.groups ?? []).includes(group.id);
                         return (
                           <button
-                            key={profile.id}
+                            key={group.id}
                             aria-pressed={pressed}
                             onClick={() =>
                               update({
-                                profiles: pressed
-                                  ? (draft.profiles ?? []).filter((id) => id !== profile.id)
-                                  : [...(draft.profiles ?? []), profile.id],
+                                groups: pressed
+                                  ? (draft.groups ?? []).filter((id) => id !== group.id)
+                                  : [...(draft.groups ?? []), group.id],
                               })
                             }
                           >
                             {pressed ? "✓ " : "+ "}
-                            {profile.name}
+                            {group.name}
                           </button>
                         );
                       })
                     ) : (
-                      <span className="muted">No profiles yet</span>
+                      <span className="muted">No groups yet</span>
                     )}
                   </div>
                 </div>

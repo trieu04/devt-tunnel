@@ -1,18 +1,19 @@
 import type { Lease } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/model";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Overview, Service, TunnelView, onLogsAppended, openURL } from "../api";
 import { AgentBadge, EphemeralTag } from "../AgentBadge";
 import { SaveTunnelDialog } from "../SaveTunnelDialog";
 import { applyLogUpdate } from "../lib/logs";
-import { TypeFilter, ViewFilter, filterTunnels, isActive } from "../lib/filter";
+import { commandSummary, fitCount } from "../lib/summary";
+import { ViewFilter, filterTunnels, inGroup, isActive } from "../lib/filter";
 import {
   ChevronGlyph,
   CopyGlyph,
-  KeyGlyph,
-  ListGlyph,
+  HoverTip,
   PlayGlyph,
   PlusGlyph,
   SearchGlyph,
+  SettingsGlyph,
   StateBadge,
   StopGlyph,
   TunnelGlyph,
@@ -24,18 +25,21 @@ export function TunnelsScreen({
   onSelect,
   onNavigate,
   refresh,
+  group: requestedGroup,
+  onGroup,
 }: {
   overview: Overview;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onNavigate: (screen: string, param?: string) => void;
   refresh: () => void;
+  group: string | null;
+  onGroup: (group: string | null) => void;
 }) {
   const [leases, setLeases] = useState<Lease[] | undefined>();
   const [saving, setSaving] = useState<TunnelView | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
-  const [type, setType] = useState<TypeFilter>("all");
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
   const [sshInfo, setSSHInfo] = useState<{ path: string; hosts: { alias: string }[] }>({
@@ -56,26 +60,17 @@ export function TunnelsScreen({
       mounted = false;
     };
   }, [overview]);
-  const profileNames = useMemo(
-    () => new Map((overview.profiles ?? []).map((profile) => [profile.id, profile.name])),
-    [overview.profiles],
-  );
-  const profileTunnels = overview.activeProfile
-    ? tunnels.filter((item) => (item.tunnel.profiles ?? []).includes(overview.activeProfile))
-    : tunnels;
-  const visible = useMemo(
-    () => filterTunnels(tunnels, { query, view, type, profile: overview.activeProfile || "all" }),
-    [tunnels, query, view, type, overview.activeProfile],
-  );
+  const profiles = overview.profiles ?? [];
+  const groups = overview.groups ?? [];
+  const profileNames = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile.name])), [profiles]);
+  const groupNames = useMemo(() => new Map(groups.map((group) => [group.id, group.name])), [groups]);
+  // A group deleted elsewhere must not leave the list filtered by nothing.
+  const group = requestedGroup !== null && groupNames.has(requestedGroup) ? requestedGroup : null;
+  const scoped = tunnels.filter((item) => inGroup(item, group));
+  const visible = useMemo(() => filterTunnels(tunnels, { query, view, group }), [tunnels, query, view, group]);
   const selected = visible.find((item) => item.tunnel.id === selectedId) ?? visible[0] ?? null;
   const running = tunnels.filter((item) => isActive(item.status.state)).length;
   const favorites = tunnels.filter((item) => item.tunnel.favorite).length;
-  const activeOutside = tunnels.filter(
-    (item) =>
-      isActive(item.status.state) &&
-      overview.activeProfile &&
-      !(item.tunnel.profiles ?? []).includes(overview.activeProfile),
-  ).length;
 
   useEffect(() => {
     if ((selected?.tunnel.id ?? null) !== selectedId) onSelect(selected?.tunnel.id ?? null);
@@ -85,10 +80,10 @@ export function TunnelsScreen({
     return () => clearInterval(timer);
   }, []);
   useEffect(() => {
-    Service.SSHHosts(overview.activeProfile)
+    Service.SSHHosts("")
       .then((result) => setSSHInfo({ path: result.configPath || "~/.ssh/config", hosts: result.hosts ?? [] }))
       .catch(() => undefined);
-  }, [overview.activeProfile]);
+  }, []);
   useEffect(() => {
     const moveSelection = (event: KeyboardEvent) => {
       if (document.querySelector('[aria-modal="true"]')) return;
@@ -113,7 +108,8 @@ export function TunnelsScreen({
     setError("");
     operation.catch((reason) => setError(String(reason))).finally(refresh);
   };
-  const profileLabel = overview.activeProfile ? (profileNames.get(overview.activeProfile) ?? "Profile") : "All tunnels";
+  const activeGroup = groups.find((item) => item.id === group);
+  const scopedRunning = scoped.filter((item) => isActive(item.status.state)).length;
 
   return (
     <div className="tunnels-layout">
@@ -139,21 +135,6 @@ export function TunnelsScreen({
           <kbd>⌘K</kbd>
         </div>
         <div className="topbar-spacer" />
-        <label className="profile-picker">
-          <span>Profile</span>
-          <select
-            aria-label="Active profile"
-            value={overview.activeProfile}
-            onChange={(event) => run(Service.ActivateProfile(event.target.value))}
-          >
-            <option value="">All profiles</option>
-            {(overview.profiles ?? []).map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </label>
         <button className="primary new-tunnel" onClick={() => onNavigate("editor")}>
           <PlusGlyph />
           New tunnel
@@ -161,11 +142,6 @@ export function TunnelsScreen({
       </header>
       {overview.configError && <div className="banner banner-error">{overview.configError}</div>}
       {error && <div className="banner banner-error">{error}</div>}
-      {activeOutside > 0 && (
-        <button className="banner profile-notice" onClick={() => run(Service.ActivateProfile(""))}>
-          {activeOutside} running in other profiles · Show all
-        </button>
-      )}
       <div className="body tunnel-workspace">
         <nav className="sidebar" aria-label="Filters">
           <div className="sidebar-group">
@@ -175,57 +151,80 @@ export function TunnelsScreen({
                 <span>{capitalize(value)}</span>
                 <span className="nav-count">
                   {value === "all"
-                    ? profileTunnels.length
+                    ? scoped.length
                     : value === "running"
-                      ? profileTunnels.filter((item) => isActive(item.status.state)).length
-                      : profileTunnels.filter((item) => item.tunnel.favorite).length}
+                      ? scopedRunning
+                      : scoped.filter((item) => item.tunnel.favorite).length}
                 </span>
               </button>
             ))}
           </div>
           <div className="sidebar-group">
-            <h2>Type</h2>
-            {(["ssh", "cloudflared", "ngrok", "command"] as TypeFilter[]).map((value) => (
-              <button
-                className="nav"
-                key={value}
-                aria-pressed={type === value}
-                onClick={() => setType(type === value ? "all" : value)}
-              >
-                <span>{value === "ssh" ? "SSH" : capitalize(value)}</span>
-                <span className="nav-count">{profileTunnels.filter((item) => item.tunnel.type === value).length}</span>
+            <div className="sidebar-heading">
+              <h2>Groups</h2>
+              <button className="sidebar-add" aria-label="New group" onClick={() => onNavigate("groups", "new")}>
+                <PlusGlyph />
               </button>
+            </div>
+            {groups.map((item) => (
+              <GroupNav
+                key={item.id}
+                name={item.name}
+                members={tunnels.filter((view) => inGroup(view, item.id))}
+                selected={group === item.id}
+                onSelect={() => onGroup(group === item.id ? null : item.id)}
+                onStart={() => run(Service.StartGroup(item.id))}
+                onStop={() => run(Service.StopGroup(item.id))}
+              />
             ))}
+            {groups.length === 0 && (
+              <button className="nav nav-hint" onClick={() => onNavigate("groups", "new")}>
+                <span>Group tunnels to start them together</span>
+              </button>
+            )}
           </div>
           <div className="sidebar-manage">
-            <button className="nav" onClick={() => onNavigate("settings", "vault")}>
-              <span>
-                <KeyGlyph />
-                Vault & keys
-              </span>
-            </button>
-            <button className="nav" onClick={() => onNavigate("profiles")}>
-              <span>
-                <ListGlyph />
-                Profiles
-              </span>
-            </button>
             <button className="nav" onClick={() => onNavigate("settings")}>
-              <span>Settings</span>
+              <span>
+                <SettingsGlyph />
+                Settings
+              </span>
             </button>
           </div>
         </nav>
         <main className="tunnel-list" role="list">
           <div className="list-heading">
-            <h1>{profileLabel}</h1>
-            <span>
-              {visible.length} shown · {running} running{favorites ? ` · ${favorites} favorites` : ""}
-            </span>
+            <div className="list-title">
+              <h1>{activeGroup?.name ?? "All tunnels"}</h1>
+              {activeGroup?.description && <p className="muted">{activeGroup.description}</p>}
+              <span className="list-summary">
+                {visible.length} shown · {activeGroup ? `${scopedRunning} of ${scoped.length}` : running} running
+                {favorites && !activeGroup ? ` · ${favorites} favorites` : ""}
+              </span>
+            </div>
+            {activeGroup && (
+              <div className="actions">
+                <button
+                  className="primary"
+                  disabled={scoped.length === 0}
+                  onClick={() => run(Service.StartGroup(activeGroup.id))}
+                >
+                  <PlayGlyph />
+                  Start all
+                </button>
+                <button disabled={scopedRunning === 0} onClick={() => run(Service.StopGroup(activeGroup.id))}>
+                  <StopGlyph />
+                  Stop all
+                </button>
+                <button onClick={() => onNavigate("groups", activeGroup.id)}>Edit group</button>
+              </div>
+            )}
           </div>
           {visible.length === 0 ? (
             <Empty
               query={query}
               hasTunnels={tunnels.length > 0}
+              group={activeGroup && scoped.length === 0 ? activeGroup : undefined}
               matchingHost={
                 sshInfo.hosts.find((host) => host.alias.toLowerCase().includes(query.trim().toLowerCase()))?.alias
               }
@@ -239,6 +238,7 @@ export function TunnelsScreen({
                 leases={leases}
                 selected={selected?.tunnel.id === item.tunnel.id}
                 profileNames={profileNames}
+                groupNames={groupNames}
                 now={now}
                 onSelect={() => onSelect(item.tunnel.id)}
                 onToggle={() => run(Service.Toggle(item.tunnel.id))}
@@ -255,6 +255,7 @@ export function TunnelsScreen({
             view={selected}
             leases={leases}
             profileNames={profileNames}
+            groupNames={groupNames}
             now={now}
             onNavigate={onNavigate}
             run={run}
@@ -280,14 +281,35 @@ export function TunnelsScreen({
 function Empty({
   query,
   hasTunnels,
+  group,
   matchingHost,
   onNavigate,
 }: {
   query: string;
   hasTunnels: boolean;
+  group?: { id: string; name: string };
   matchingHost?: string;
   onNavigate: (screen: string, param?: string) => void;
 }) {
+  if (group)
+    return (
+      <div className="empty">
+        <h1>{group.name} has no tunnels</h1>
+        <p className="muted">Choose the tunnels this group should start and stop together.</p>
+        <div className="actions">
+          <button className="primary" onClick={() => onNavigate("groups", group.id)}>
+            Choose tunnels
+          </button>
+        </div>
+      </div>
+    );
+  if (hasTunnels && !query)
+    return (
+      <div className="empty">
+        <h1>No tunnels match these filters</h1>
+        <p className="muted">Clear the view or group in the sidebar to see more.</p>
+      </div>
+    );
   return (
     <div className="empty">
       <h1>{hasTunnels ? `No tunnel matches “${query}”` : "No tunnels yet"}</h1>
@@ -314,11 +336,99 @@ function Empty({
   );
 }
 
+/** A sidebar group: selecting filters the list, the button acts on the whole group. */
+function GroupNav({
+  name,
+  members,
+  selected,
+  onSelect,
+  onStart,
+  onStop,
+}: {
+  name: string;
+  members: TunnelView[];
+  selected: boolean;
+  onSelect: () => void;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const running = members.filter((item) => isActive(item.status.state)).length;
+  const failed = members.some((item) => item.status.state === "failed");
+  const state = failed ? "failed" : running === 0 ? "stopped" : running === members.length ? "running" : "starting";
+  return (
+    <div className={`group-nav ${selected ? "group-nav-selected" : ""}`}>
+      <button className="nav" aria-pressed={selected} onClick={onSelect}>
+        <span className={`status-dot status-dot-${state}`} />
+        <span className="nav-label">{name}</span>
+        <span className="nav-count">
+          {running}/{members.length}
+        </span>
+      </button>
+      <button
+        className="group-action"
+        disabled={members.length === 0}
+        aria-label={`${running ? "Stop" : "Start"} group ${name}`}
+        title={running ? "Stop all" : "Start all"}
+        onClick={running ? onStop : onStart}
+      >
+        {running ? <StopGlyph /> : <PlayGlyph />}
+      </button>
+    </div>
+  );
+}
+
+/** As many groups as the row has room for; the rest are behind +N. */
+function GroupChips({ labels }: { labels: string[] }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const sizer = useRef<HTMLSpanElement>(null);
+  const [fit, setFit] = useState(labels.length);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    const measure = () => {
+      const widths = Array.from(sizer.current?.children ?? []).map((chip) => chip.getBoundingClientRect().width);
+      const more = widths.pop() ?? 0;
+      setFit(fitCount(widths, more, element.clientWidth, parseFloat(getComputedStyle(element).columnGap) || 0));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    // Inter loads after first paint and changes every width.
+    document.fonts.ready.then(measure);
+    return () => observer.disconnect();
+  }, [labels.join("\0")]);
+  if (labels.length === 0) return null;
+  const hidden = labels.slice(fit);
+  return (
+    <span className="group-chips" ref={box}>
+      {labels.slice(0, fit).map((label, index) => (
+        <span className="group-chip" key={index} title={label}>
+          {label}
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <HoverTip className="group-chip group-more" lines={hidden}>
+          +{hidden.length}
+        </HoverTip>
+      )}
+      <span className="group-chips-sizer" ref={sizer} aria-hidden="true">
+        {labels.map((label, index) => (
+          <span className="group-chip" key={index}>
+            {label}
+          </span>
+        ))}
+        <span className="group-chip">+{labels.length}</span>
+      </span>
+    </span>
+  );
+}
+
 function TunnelRow({
   view,
   leases,
   selected,
   profileNames,
+  groupNames,
   now,
   onSelect,
   onToggle,
@@ -331,6 +441,7 @@ function TunnelRow({
   leases?: Lease[];
   selected: boolean;
   profileNames: Map<string, string>;
+  groupNames: Map<string, string>;
   now: number;
   onSelect: () => void;
   onToggle: () => void;
@@ -342,8 +453,9 @@ function TunnelRow({
   const forwards = displayForwards(view);
   const [expanded, setExpanded] = useState(forwards.length > 0 || !!view.status.error);
   const active = isActive(view.status.state);
-  const subtitle = tunnelSubtitle(view);
-  const flags = view.tunnel.type === "ssh" ? (view.tunnel.ssh?.flags ?? []) : [];
+  const command = commandSummary(view.tunnel);
+  const uptime = runningTime(view, now);
+  const groupLabels = (view.tunnel.groups ?? []).map((group) => groupNames.get(group) ?? group);
   return (
     <article
       role="listitem"
@@ -359,40 +471,42 @@ function TunnelRow({
           <ChevronGlyph expanded={expanded} />
         </button>
         <span className={`status-dot status-dot-${view.status.state}`} />
-        <button className="row-main">
-          <span className="row-title">
-            <span className="name">{view.tunnel.name}</span>
-            <span className="row-subtitle">{subtitle}</span>
-            {flags.map((flag) => (
-              <span className="flag" key={flag}>
-                {flag}
-              </span>
-            ))}
+        <div className="row-main">
+          <span className="row-line-top">
+            <span className="row-title">
+              <button
+                className={`favorite-action ${view.tunnel.favorite ? "favorite-on" : ""}`}
+                aria-label={`${view.tunnel.favorite ? "Remove from" : "Add to"} favorites`}
+                onClick={onFavorite}
+              >
+                {view.tunnel.favorite ? "★" : "☆"}
+              </button>
+              <button className="name row-name" title={view.tunnel.name}>
+                {view.tunnel.name}
+              </button>
+            </span>
+            <span className="row-tags">
+              {view.tunnel.profile && (
+                <span className="profile-chip" title="Profile">
+                  {profileNames.get(view.tunnel.profile) ?? view.tunnel.profile}
+                </span>
+              )}
+              <GroupChips labels={groupLabels} />
+            </span>
+          </span>
+          <span className="row-line-bottom">
+            <span className="row-command" title={command}>
+              {command}
+            </span>
             <AgentBadge owner={view.owner} now={now} tunnelID={view.tunnel.id} leases={leases} />
             {view.status.stale && <span className="stale-pill">Restart to apply changes</span>}
           </span>
-        </button>
-        {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
-        <div className="row-profiles">
-          {(view.tunnel.profiles ?? []).map((profile) => (
-            <span className="profile-chip" key={profile}>
-              {profileNames.get(profile) ?? profile}
-            </span>
-          ))}
         </div>
+        {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
         <span className="row-state">
           <StateBadge state={view.status.state} />
-          {view.status.state !== "starting" && active && view.status.startedAt && (
-            <span> · {formatUptime(view.status.startedAt, now)}</span>
-          )}
+          {uptime && <span className="row-uptime">{uptime}</span>}
         </span>
-        <button
-          className={`favorite-action ${view.tunnel.favorite ? "favorite-on" : ""}`}
-          aria-label={`${view.tunnel.favorite ? "Remove from" : "Add to"} favorites`}
-          onClick={onFavorite}
-        >
-          {view.tunnel.favorite ? "★" : "☆"}
-        </button>
         <button
           className={`row-action ${active ? "row-action-stop" : "row-action-start"}`}
           onClick={onToggle}
@@ -451,6 +565,7 @@ function Detail({
   view,
   leases,
   profileNames,
+  groupNames,
   now,
   onNavigate,
   run,
@@ -459,6 +574,7 @@ function Detail({
   view: TunnelView;
   leases?: Lease[];
   profileNames: Map<string, string>;
+  groupNames: Map<string, string>;
   now: number;
   onNavigate: (screen: string, param?: string) => void;
   run: (operation: Promise<unknown>) => void;
@@ -497,16 +613,17 @@ function Detail({
   }, [view.tunnel.id]);
   const facts = [
     { key: "Source", value: tunnelSubtitle(view) },
-    { key: "Profiles", value: view.tunnel.profiles?.map((id) => profileNames.get(id) ?? id).join(", ") || "All" },
+    {
+      key: "Profile",
+      value: view.tunnel.profile ? (profileNames.get(view.tunnel.profile) ?? view.tunnel.profile) : "None",
+    },
+    { key: "Groups", value: view.tunnel.groups?.map((id) => groupNames.get(id) ?? id).join(", ") || "None" },
     { key: "Forwards", value: String(displayForwards(view).length) },
     { key: "Auto-reconnect", value: view.tunnel.reconnect ? "On" : "Off" },
     { key: "PID", value: view.status.pid ? String(view.status.pid) : "—" },
     {
       key: "Uptime",
-      value:
-        view.status.state !== "starting" && active && view.status.startedAt
-          ? formatUptime(view.status.startedAt, now)
-          : "—",
+      value: runningTime(view, now) || "—",
     },
     { key: "Tool", value: view.toolPath || "Not found" },
   ];
@@ -766,6 +883,11 @@ function isLocalHost(host: string): boolean {
     host === "::1" ||
     /^127(?:\.\d{1,3}){3}$/.test(host)
   );
+}
+
+/** Only a running tunnel has a meaningful uptime. */
+function runningTime(view: TunnelView, now: number): string {
+  return view.status.state === "running" && view.status.startedAt ? formatUptime(view.status.startedAt, now) : "";
 }
 
 function formatUptime(startedAt: string, now: number): string {

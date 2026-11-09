@@ -71,17 +71,13 @@ export function TrayPopup() {
   const groups = useMemo<TrayGroup[]>(() => {
     if (!overview) return [];
     const normalized = query.trim();
-    const inActiveProfile = (view: TunnelView) =>
-      !overview.activeProfile || (view.tunnel.profiles ?? []).includes(overview.activeProfile);
     const visible = (view: TunnelView) =>
       !normalized ||
       matchesSearch(view, normalized) ||
       tunnelDetail(view).toLowerCase().includes(normalized.toLowerCase());
     const running = overview.tunnels?.filter((view) => isActive(view.status.state) && visible(view)) ?? [];
     const favorites =
-      overview.tunnels?.filter(
-        (view) => !isActive(view.status.state) && view.tunnel.favorite && inActiveProfile(view) && visible(view),
-      ) ?? [];
+      overview.tunnels?.filter((view) => !isActive(view.status.state) && view.tunnel.favorite && visible(view)) ?? [];
     return [
       { label: "Running", items: running },
       { label: "Favorites", items: favorites },
@@ -91,7 +87,6 @@ export function TrayPopup() {
   if (!overview) return <div className="tray-loading">Loading devt-tunnel…</div>;
 
   const runningCount = overview.tunnels?.filter((view) => isActive(view.status.state)).length ?? 0;
-  const activeProfile = overview.profiles?.find((profile) => profile.id === overview.activeProfile)?.name || "All";
   const openTunnel = (view: TunnelView) => {
     const needsFix = requiresAppFix(view);
     Service.OpenIn(needsFix ? "editor" : "tunnels", needsFix ? `edit:${view.tunnel.id}` : `select:${view.tunnel.id}`);
@@ -116,9 +111,6 @@ export function TrayPopup() {
           <strong>devt-tunnel</strong>
           <span>{runningCount} running</span>
         </div>
-        <span className="tray-profile" title={`Active profile: ${activeProfile}`}>
-          {activeProfile}
-        </span>
       </header>
 
       <div className="tray-search">

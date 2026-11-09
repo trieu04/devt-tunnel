@@ -89,10 +89,10 @@ export interface Overview {
     "shortcut": string;
     "shortcutError": string;
     "profiles": model$0.Profile[] | null;
+    "groups": model$0.Group[] | null;
     "tunnels": TunnelView[] | null;
     "orphans": supervisor$0.Record[] | null;
     "prompts": PendingPrompt[] | null;
-    "activeProfile": string;
     "lastUsed": { [_ in string]?: string } | null;
     "keychainAvailable": boolean;
     "keychainName": string;

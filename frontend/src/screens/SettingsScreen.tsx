@@ -1,37 +1,54 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Kind } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/secret/models";
 import { onSettingsChanged, Overview, Service } from "../api";
 import { SHORTCUTS } from "../app/shortcuts";
 import { AgentsSettings } from "./AgentsSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { BackGlyph } from "../parts";
+import { GroupsScreen } from "./GroupsScreen";
+import { ProfilesScreen } from "./ProfilesScreen";
 
-type Page = "agents" | "general" | "vault" | "ssh" | "binaries" | "shortcuts";
+type Page = "agents" | "general" | "vault" | "profiles" | "groups" | "ssh" | "binaries" | "shortcuts";
+
+const PAGES: [Page, string][] = [
+  ["general", "General"],
+  ["agents", "Agents"],
+  ["vault", "Vault"],
+  ["profiles", "Profiles"],
+  ["groups", "Groups"],
+  ["ssh", "Config files"],
+  ["binaries", "Binaries"],
+  ["shortcuts", "Shortcuts"],
+];
 
 export function SettingsScreen({
   overview,
   initial = "general",
+  item,
   onBack,
-  onProfiles,
+  refresh,
 }: {
   overview: Overview;
   initial?: string;
+  /** The profile or group to open first, or "new". */
+  item?: string;
   onBack: () => void;
-  onProfiles: () => void;
+  refresh: () => void;
 }) {
-  const [page, setPage] = useState<Page>(
-    (["general", "agents", "vault", "ssh", "binaries", "shortcuts"].includes(initial) ? initial : "general") as Page,
-  );
+  const [page, setPage] = useState<Page>(PAGES.some(([id]) => id === initial) ? (initial as Page) : "general");
+  const leaveGuard = useRef<((next: () => void) => void) | null>(null);
+  const leave = (next: () => void) => (leaveGuard.current ? leaveGuard.current(next) : next());
   const title = page === "ssh" ? "SSH & config files" : capitalize(page);
+  const organizing = page === "profiles" || page === "groups";
+  const organizeItem = page === initial ? item : undefined;
   return (
     <main className="screen settings">
       <header className="screen-header page-header">
-        <div className="page-title">
-          <span className="breadcrumb">
-            <button className="breadcrumb-button" onClick={onBack}>
-              Tunnels
-            </button>{" "}
-            / Settings
-          </span>
+        <div className="settings-title">
+          <button className="back-button" onClick={() => leave(onBack)}>
+            <BackGlyph />
+            Back
+          </button>
           <h1>{title}</h1>
         </div>
         {page === "vault" && (
@@ -42,30 +59,22 @@ export function SettingsScreen({
       </header>
       <div className="settings-shell">
         <nav className="settings-nav">
-          <button aria-pressed={page === "general"} onClick={() => setPage("general")}>
-            General
-          </button>
-          <button aria-pressed={page === "agents"} onClick={() => setPage("agents")}>
-            Agents
-          </button>
-          <button aria-pressed={page === "vault"} onClick={() => setPage("vault")}>
-            Vault
-          </button>
-          <button onClick={onProfiles}>Profiles</button>
-          <button aria-pressed={page === "ssh"} onClick={() => setPage("ssh")}>
-            SSH & config files
-          </button>
-          <button aria-pressed={page === "binaries"} onClick={() => setPage("binaries")}>
-            Binaries (ssh, ngrok, cloudflared)
-          </button>
-          <button aria-pressed={page === "shortcuts"} onClick={() => setPage("shortcuts")}>
-            Shortcuts
-          </button>
+          {PAGES.map(([id, label]) => (
+            <button key={id} aria-pressed={page === id} onClick={() => page !== id && leave(() => setPage(id))}>
+              {label}
+            </button>
+          ))}
         </nav>
-        <section className="settings-page">
+        <section className={`settings-page ${organizing ? "settings-page-organize" : ""}`}>
           {page === "general" && <General overview={overview} />}
           {page === "agents" && <AgentsSettings />}
           {page === "vault" && <Vault overview={overview} />}
+          {page === "profiles" && (
+            <ProfilesScreen overview={overview} initial={organizeItem} refresh={refresh} leaveGuard={leaveGuard} />
+          )}
+          {page === "groups" && (
+            <GroupsScreen overview={overview} initial={organizeItem} refresh={refresh} leaveGuard={leaveGuard} />
+          )}
           {page === "ssh" && <SSHConfig overview={overview} />}
           {page === "binaries" && <Binaries />}
           {page === "shortcuts" && <Shortcuts overview={overview} />}
@@ -310,10 +319,10 @@ function SSHConfig({ overview }: { overview: Overview }) {
   const [hosts, setHosts] = useState<{ configPath: string; hosts: unknown[] | null; warnings: string[] | null } | null>(
     null,
   );
-  const load = () => Service.SSHHosts(overview.activeProfile).then(setHosts);
+  const load = () => Service.SSHHosts("").then(setHosts);
   useEffect(() => {
     void load();
-  }, [overview.activeProfile]);
+  }, []);
   return (
     <div className="card">
       <h1>SSH & config files</h1>

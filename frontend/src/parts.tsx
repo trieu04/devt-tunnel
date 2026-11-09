@@ -1,3 +1,5 @@
+import { ReactNode, SyntheticEvent, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Forward } from "../bindings/github.com/trieu04/devt-tunnel/internal/core/model";
 import { STATE_LABELS } from "./lib/filter";
 
@@ -109,7 +111,7 @@ export function StopGlyph() {
   );
 }
 
-export function KeyGlyph() {
+export function SettingsGlyph() {
   return (
     <svg
       aria-hidden="true"
@@ -119,14 +121,16 @@ export function KeyGlyph() {
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <circle cx="8" cy="15" r="4" />
-      <path d="m11 12 9-9M17 6l3 3" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0-1.17-2.82H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }
 
-export function ListGlyph() {
+export function BackGlyph() {
   return (
     <svg
       aria-hidden="true"
@@ -136,8 +140,10 @@ export function ListGlyph() {
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <path d="M4 6h16M4 12h10M4 18h6" />
+      <path d="M19 12H5M12 19l-7-7 7-7" />
     </svg>
   );
 }
@@ -157,5 +163,44 @@ export function ForwardLine({ forward }: { forward: Forward }) {
         {forward.target || "SOCKS5"}
       </span>
     </div>
+  );
+}
+
+/** Tooltip that does not depend on the webview showing native title text and is not clipped by the row. */
+export function HoverTip({ className, lines, children }: { className?: string; lines: string[]; children: ReactNode }) {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const show = (event: SyntheticEvent<HTMLElement>) => setAnchor(event.currentTarget.getBoundingClientRect());
+  const hide = () => setAnchor(null);
+  const above = anchor !== null && anchor.top > window.innerHeight / 2;
+  return (
+    <>
+      <span
+        className={className}
+        tabIndex={0}
+        aria-label={lines.join(", ")}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        {children}
+      </span>
+      {anchor &&
+        createPortal(
+          <div
+            className="hover-tip"
+            role="tooltip"
+            style={{
+              right: window.innerWidth - anchor.right,
+              ...(above ? { bottom: window.innerHeight - anchor.top + 4 } : { top: anchor.bottom + 4 }),
+            }}
+          >
+            {lines.map((line, index) => (
+              <div key={index}>{line}</div>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

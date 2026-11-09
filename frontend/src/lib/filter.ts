@@ -1,7 +1,6 @@
 import type { TunnelView } from "../api";
 
 export type ViewFilter = "all" | "running" | "favorites";
-export type TypeFilter = "all" | "ssh" | "cloudflared" | "ngrok" | "command";
 
 const ACTIVE = new Set(["starting", "running", "reconnecting"]);
 
@@ -36,15 +35,19 @@ export function matchesSearch(v: TunnelView, query: string): boolean {
     .every((word) => text.includes(word));
 }
 
+/** A group of null means every tunnel. */
+export function inGroup(v: TunnelView, group: string | null): boolean {
+  return group === null || (v.tunnel.groups ?? []).includes(group);
+}
+
 export function filterTunnels(
   tunnels: TunnelView[],
-  opts: { query: string; view: ViewFilter; type: TypeFilter; profile: string },
+  opts: { query: string; view: ViewFilter; group: string | null },
 ): TunnelView[] {
   return tunnels.filter((v) => {
     if (opts.view === "running" && !isActive(v.status.state)) return false;
     if (opts.view === "favorites" && !v.tunnel.favorite) return false;
-    if (opts.type !== "all" && v.tunnel.type !== opts.type) return false;
-    if (opts.profile !== "all" && !(v.tunnel.profiles ?? []).includes(opts.profile)) return false;
+    if (!inGroup(v, opts.group)) return false;
     return matchesSearch(v, opts.query);
   });
 }

@@ -6,19 +6,19 @@ import { ApprovalDialog, useApprovals } from "../ApprovalDialog";
 import { PromptDialog } from "../PromptDialog";
 import { QuickPalette } from "../quick/QuickPalette";
 import { EditorScreen } from "../screens/EditorScreen";
-import { ProfilesScreen } from "../screens/ProfilesScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { TunnelsScreen } from "../screens/TunnelsScreen";
 import { useOverview } from "../useOverview";
 import { shortcutAction } from "./shortcuts";
 
-type Navigation = { screen: "tunnels" | "editor" | "profiles" | "settings"; param?: string };
+type Navigation = { screen: "tunnels" | "editor" | "profiles" | "groups" | "settings"; param?: string };
 
 export function App() {
   const { overview, refresh } = useOverview();
   const approvalQueue = useApprovals();
   const [nav, navigate] = useReducer((_state: Navigation, next: Navigation) => next, { screen: "tunnels" });
   const [selected, setSelected] = useState<string | null>(null);
+  const [group, setGroup] = useState<string | null>(null);
   const [quick, setQuick] = useState(false);
   const [update, setUpdate] = useState<{ available: boolean; latest: string; url: string } | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
@@ -90,12 +90,15 @@ export function App() {
           onSelect={setSelected}
           onNavigate={open}
           refresh={refresh}
+          group={group}
+          onGroup={setGroup}
         />
       )}
       {nav.screen === "editor" && (
         <EditorScreen
           source={nav.param}
           profiles={overview.profiles ?? []}
+          groups={overview.groups ?? []}
           onDone={(id) => {
             if (id) setSelected(id);
             refresh();
@@ -103,15 +106,14 @@ export function App() {
           }}
         />
       )}
-      {nav.screen === "profiles" && (
-        <ProfilesScreen overview={overview} refresh={refresh} onBack={() => open("tunnels")} />
-      )}
-      {nav.screen === "settings" && (
+      {(nav.screen === "settings" || nav.screen === "profiles" || nav.screen === "groups") && (
         <SettingsScreen
+          key={`${nav.screen}:${nav.param ?? ""}`}
           overview={overview}
-          initial={nav.param}
+          initial={nav.screen === "settings" ? nav.param : nav.screen}
+          item={nav.screen === "settings" ? undefined : nav.param}
           onBack={() => open("tunnels")}
-          onProfiles={() => open("profiles")}
+          refresh={refresh}
         />
       )}
       {quick && (

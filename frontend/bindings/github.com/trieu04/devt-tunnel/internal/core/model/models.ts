@@ -54,6 +54,16 @@ export enum ForwardKind {
     ForwardDynamic = "D",
 };
 
+/**
+ * Group is a named set of tunnels operated on together. A tunnel can be in any
+ * number of groups, whatever its profile.
+ */
+export interface Group {
+    "id": string;
+    "name": string;
+    "description"?: string;
+}
+
 export interface Lease {
     "id": string;
     "tunnelId": string;
@@ -80,14 +90,15 @@ export interface Ngrok {
     "extraArgs"?: string;
 }
 
+/**
+ * Profile is configuration shared by the tunnels that belong to it. A tunnel
+ * belongs to at most one profile.
+ */
 export interface Profile {
     "id": string;
     "name": string;
     "description"?: string;
     "sshConfig"?: string;
-    "onActivate"?: string;
-    "stopNonMembers"?: boolean;
-    "autostart"?: string[] | null;
 }
 
 /**
@@ -109,7 +120,8 @@ export interface Tunnel {
     "id": string;
     "name": string;
     "type": TunnelType;
-    "profiles"?: string[] | null;
+    "profile"?: string;
+    "groups"?: string[] | null;
     "favorite"?: boolean;
     "startOnLaunch"?: boolean;
     "reconnect"?: boolean;
