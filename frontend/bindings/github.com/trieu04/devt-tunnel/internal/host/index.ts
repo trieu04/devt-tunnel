@@ -7,5 +7,6 @@ export {
 };
 
 export type {
+    CLIStatus,
     UpdateInfo
 } from "./models.js";

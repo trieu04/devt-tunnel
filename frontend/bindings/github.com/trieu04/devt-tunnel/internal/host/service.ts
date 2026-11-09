@@ -46,6 +46,10 @@ export function AppVersion(): $CancellablePromise<string> {
     return $Call.ByID(1195868565);
 }
 
+export function CLIStatus(): $CancellablePromise<$models.CLIStatus> {
+    return $Call.ByID(2126226956);
+}
+
 export function CheckForUpdate(force: boolean): $CancellablePromise<$models.UpdateInfo> {
     return $Call.ByID(1607546054, force);
 }
@@ -96,6 +100,14 @@ export function HideQuickLaunch(): $CancellablePromise<void> {
 
 export function ImportCommand(line: string): $CancellablePromise<importer$0.Result> {
     return $Call.ByID(2915497514, line);
+}
+
+/**
+ * InstallCLI links the bundled dtt binary into a directory on the user's PATH
+ * and returns the link path. It never overwrites a file it did not create.
+ */
+export function InstallCLI(): $CancellablePromise<$models.CLIStatus> {
+    return $Call.ByID(3605337799);
 }
 
 export function ListApprovals(): $CancellablePromise<api$0.Approval[] | null> {

@@ -89,11 +89,15 @@ function General({ overview }: { overview: Overview }) {
   const [update, setUpdate] = useState<{ available: boolean; latest: string; url: string } | null>(null);
   const [checksEnabled, setChecksEnabled] = useState(false);
   const [error, setError] = useState("");
+  const [cli, setCli] = useState<{ supported: boolean; installed: boolean; link: string; onPath: boolean } | null>(
+    null,
+  );
   useEffect(() => {
     const load = () => {
       Service.UpdateChecksEnabled().then(setChecksEnabled);
     };
     const off = onSettingsChanged(load);
+    Service.CLIStatus().then(setCli);
     Service.AppVersion().then(setVersion);
     load();
     return off;
@@ -112,6 +116,29 @@ function General({ overview }: { overview: Overview }) {
         <dd>Closing keeps tunnels running when a tray is available.</dd>
         <dt>Secrets</dt>
         <dd>{overview.keychainName}</dd>
+        {cli?.supported && (
+          <>
+            <dt>Command line</dt>
+            <dd>
+              {cli.installed ? (
+                <>
+                  <code>dtt</code> is linked at <code>{cli.link}</code>
+                  {!cli.onPath && <> (add its folder to your PATH)</>}
+                </>
+              ) : (
+                <button
+                  onClick={() =>
+                    Service.InstallCLI()
+                      .then(setCli)
+                      .catch((reason) => setError(String(reason)))
+                  }
+                >
+                  Install dtt command
+                </button>
+              )}
+            </dd>
+          </>
+        )}
         <dt>Updates</dt>
         <dd>
           {update?.available ? <a href={update.url}>Version {update.latest} is available</a> : "Up to date"}{" "}
