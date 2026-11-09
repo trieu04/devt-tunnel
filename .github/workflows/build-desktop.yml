@@ -1,0 +1,98 @@
+name: Build Desktop
+
+# Unsigned desktop packages for testing. Signed/notarized release builds
+# stay in release.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        default: all
+        options: [all, macos, windows, linux]
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          all='[{"target":"macos","arch":"arm64","os":"macos-14"},{"target":"macos","arch":"amd64","os":"macos-15-intel"},{"target":"windows","arch":"amd64","os":"windows-latest"},{"target":"linux","arch":"amd64","os":"ubuntu-24.04"}]'
+          if [ -z "$PLATFORM" ] || [ "$PLATFORM" = all ]; then
+            echo "matrix={\"include\":$all}" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"include\":$(echo "$all" | jq -c --arg p "$PLATFORM" 'map(select(.target==$p))')}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: plan
+    name: ${{ matrix.target }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install Linux build dependencies
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev rpm
+      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Package macOS
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          wails3 task darwin:package ARCH=${{ matrix.arch }}
+          ditto -c -k --keepParent bin/devt-tunnel.app "bin/devt-tunnel-${{ matrix.arch }}-unsigned.app.zip"
+          wails3 task darwin:create:dmg
+          mv bin/devt-tunnel.dmg "bin/devt-tunnel-${{ matrix.arch }}-unsigned.dmg"
+      - name: Package Windows
+        if: matrix.target == 'windows'
+        run: |
+          wails3 task windows:build ARCH=${{ matrix.arch }}
+          wails3 task windows:create:nsis:installer:from-build ARCH=${{ matrix.arch }}
+      - name: Package Linux
+        if: matrix.target == 'linux'
+        run: wails3 task linux:package ARCH=${{ matrix.arch }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p out
+          find bin build/windows/nsis -maxdepth 2 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*installer.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -exec cp {} out/ \;
+          test -n "$(ls out)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          path: out/*
+          if-no-files-found: error

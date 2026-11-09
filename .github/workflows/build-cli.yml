@@ -1,0 +1,75 @@
+name: Build CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version string embedded in the binary (default derives from build/config.yml)
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: dtt ${{ matrix.goos }}/${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64, os: ubuntu-24.04 }
+          - { goos: linux,   goarch: arm64, os: ubuntu-24.04 }
+          - { goos: darwin,  goarch: amd64, os: ubuntu-24.04 }
+          - { goos: darwin,  goarch: arm64, os: ubuntu-24.04 }
+          - { goos: windows, goarch: amd64, os: ubuntu-24.04 }
+          - { goos: windows, goarch: arm64, os: ubuntu-24.04 }
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Resolve version
+        id: version
+        run: |
+          v="${{ inputs.version }}"
+          if [ -z "$v" ]; then
+            v=$(awk '/^  version:/ {gsub(/"/, "", $2); print $2}' build/config.yml)
+          fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: |
+          ext=""; [ "$GOOS" = windows ] && ext=".exe"
+          mkdir -p dist
+          go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.value }}" \
+            -o "dist/dtt${ext}" ./cmd/dtt
+      - name: Package
+        run: |
+          name="dtt_${{ steps.version.outputs.value }}_${GOOS}_${GOARCH}"
+          cd dist
+          if [ "$GOOS" = windows ]; then
+            zip "${name}.zip" dtt.exe
+          else
+            tar -czf "${name}.tar.gz" dtt
+          fi
+          rm -f dtt dtt.exe
+          sha256sum * > "${name}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dtt-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error

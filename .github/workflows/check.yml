@@ -1,9 +1,17 @@
-name: CI
+name: Check
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   core:
@@ -39,7 +47,28 @@ jobs:
           GOOS=windows go build -o "${RUNNER_TEMP}/dtt-windows.exe" ./cmd/dtt
           GOOS=darwin go build -o "${RUNNER_TEMP}/dtt-darwin" ./cmd/dtt
 
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm test
+
   app:
+    needs: [core, frontend]
     strategy:
       fail-fast: false
       matrix:
@@ -61,10 +90,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb
       - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
       - run: pnpm install --frozen-lockfile
-        working-directory: frontend
-      - run: pnpm test
-        working-directory: frontend
-      - run: pnpm format:check
         working-directory: frontend
       - run: wails3 task build
       - name: Smoke built app on Unix
