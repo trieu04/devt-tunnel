@@ -180,7 +180,7 @@ func snapshot(dir string) ([]snapshotFile, error) {
 				closeSnapshot(files)
 				return nil, fmt.Errorf("%w: expected a regular file: %s", ErrCorrupt, entry.name)
 			}
-			f, err := os.Open(path)
+			f, err := openShared(path)
 			if errors.Is(err, os.ErrNotExist) {
 				changed = true
 				break

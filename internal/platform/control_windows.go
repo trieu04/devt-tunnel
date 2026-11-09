@@ -59,3 +59,15 @@ func Detach(cmd *exec.Cmd) {
 }
 
 func CheckPeer(net.Conn) error { return nil }
+
+// IsSocketUnavailable reports Winsock failures for a control socket with no
+// daemon behind it. WSAENETDOWN is what connect returns when the socket's
+// directory does not exist yet.
+func IsSocketUnavailable(err error) bool {
+	for _, code := range []windows.Errno{windows.WSAECONNREFUSED, windows.WSAECONNRESET, windows.WSAECONNABORTED, windows.WSAENETDOWN} {
+		if errors.Is(err, code) {
+			return true
+		}
+	}
+	return false
+}

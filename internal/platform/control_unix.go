@@ -13,6 +13,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// IsSocketUnavailable has nothing to add on Unix, where the syscall.E* checks
+// in client.TransportError already match.
+func IsSocketUnavailable(error) bool { return false }
+
 func PreparePrivateDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err

@@ -145,5 +145,5 @@ func Ensure(ctx context.Context, opts EnsureOptions) (*Client, error) {
 
 // TransportError reports connection failures that can succeed on a fresh daemon connection.
 func TransportError(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed)
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || platform.IsSocketUnavailable(err)
 }
