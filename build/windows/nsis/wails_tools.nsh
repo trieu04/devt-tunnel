@@ -107,6 +107,7 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 
 !macro wails.files
     File "/oname=devt-tunnel-askpass.exe" "..\..\..\bin\devt-tunnel-askpass.exe"
+    File "/oname=dtt.exe" "..\..\..\bin\dtt.exe"
 
     !ifdef SUPPORTS_AMD64
         ${if} ${IsNativeAMD64}

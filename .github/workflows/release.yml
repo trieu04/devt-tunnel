@@ -77,6 +77,7 @@ jobs:
           security list-keychains -d user -s release.keychain
           security unlock-keychain -p build release.keychain
           codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "bin/devt-tunnel.app/Contents/MacOS/devt-tunnel-askpass"
+          codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "bin/devt-tunnel.app/Contents/MacOS/dtt"
           codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "bin/devt-tunnel.app"
           codesign --verify --strict "bin/devt-tunnel.app"
       - name: Create macOS archives

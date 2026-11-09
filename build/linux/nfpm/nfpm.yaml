@@ -21,6 +21,9 @@ contents:
     dst: "/usr/bin/devt-tunnel"
   - src: "./bin/devt-tunnel-askpass"
     dst: "/usr/bin/devt-tunnel-askpass"
+  # Headless CLI, available on PATH after installing the desktop package.
+  - src: "./bin/dtt"
+    dst: "/usr/bin/dtt"
   - src: "./build/appicon.png"
     dst: "/usr/share/icons/hicolor/128x128/apps/devt-tunnel.png"
   - src: "./build/linux/devt-tunnel.desktop"

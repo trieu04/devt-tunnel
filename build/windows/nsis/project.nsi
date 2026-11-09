@@ -80,6 +80,12 @@ OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the i
 !endif
 ShowInstDetails show # This will always show the installation details.
 
+!if "${REQUEST_EXECUTION_LEVEL}" == "admin"
+    !define PATH_SCOPE "Machine"
+!else
+    !define PATH_SCOPE "User"
+!endif
+
 Function .onInit
    !insertmacro wails.checkArchitecture
 FunctionEnd
@@ -99,11 +105,19 @@ Section
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
     
+    # Put the bundled `dtt` CLI on PATH (idempotent; broadcasts the change).
+    nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$t='${PATH_SCOPE}'; $$d='$INSTDIR'; $$p=[Environment]::GetEnvironmentVariable('Path',$$t); if(-not (($$p -split ';') -contains $$d)){[Environment]::SetEnvironmentVariable('Path',(($$p.TrimEnd(';'))+';'+$$d).TrimStart(';'),$$t)}"`
+    Pop $0
+
     !insertmacro wails.writeUninstaller
 SectionEnd
 
 Section "uninstall" 
     !insertmacro wails.setShellContext
+
+    # Remove the install dir from PATH before deleting it.
+    nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$t='${PATH_SCOPE}'; $$d='$INSTDIR'; $$p=[Environment]::GetEnvironmentVariable('Path',$$t); [Environment]::SetEnvironmentVariable('Path',((($$p -split ';') | Where-Object { $$_ -and $$_ -ne $$d }) -join ';'),$$t)"`
+    Pop $0
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 
