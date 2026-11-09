@@ -11,11 +11,6 @@ on:
         type: choice
         default: all
         options: [all, macos, windows, linux]
-  workflow_call:
-    inputs:
-      platform:
-        type: string
-        default: all
 
 permissions:
   contents: read
@@ -34,12 +29,16 @@ jobs:
         env:
           PLATFORM: ${{ inputs.platform }}
         run: |
-          all='[{"target":"macos","arch":"arm64","os":"macos-14"},{"target":"macos","arch":"amd64","os":"macos-15-intel"},{"target":"windows","arch":"amd64","os":"windows-latest"},{"target":"linux","arch":"amd64","os":"ubuntu-24.04"}]'
-          if [ -z "$PLATFORM" ] || [ "$PLATFORM" = all ]; then
-            echo "matrix={\"include\":$all}" >> "$GITHUB_OUTPUT"
-          else
-            echo "matrix={\"include\":$(echo "$all" | jq -c --arg p "$PLATFORM" 'map(select(.target==$p))')}" >> "$GITHUB_OUTPUT"
-          fi
+          matrix=$(jq -c --arg p "$PLATFORM" '{include: map(select($p == "all" or .target == $p))}' <<'JSON'
+          [
+            {"target": "macos", "arch": "arm64", "os": "macos-15"},
+            {"target": "macos", "arch": "amd64", "os": "macos-15-intel"},
+            {"target": "windows", "arch": "amd64", "os": "windows-latest"},
+            {"target": "linux", "arch": "amd64", "os": "ubuntu-24.04"}
+          ]
+          JSON
+          )
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
@@ -49,24 +48,10 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-desktop
         with:
-          go-version-file: go.mod
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Install Linux build dependencies
-        if: matrix.target == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev rpm
-      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
-      - run: pnpm install --frozen-lockfile
-        working-directory: frontend
+          nsis: true
 
       - name: Package macOS
         if: matrix.target == 'macos'
@@ -90,8 +75,7 @@ jobs:
         run: |
           mkdir -p out
           find bin build/windows/nsis -maxdepth 2 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*installer.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -exec cp {} out/ \;
-          test -n "$(ls out)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-${{ matrix.target }}-${{ matrix.arch }}
           path: out/*

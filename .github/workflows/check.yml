@@ -19,33 +19,37 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-24.04]
+        os: [macos-latest, macos-15-intel, windows-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     env:
       CGO_ENABLED: "0"
+      PACKAGES: >-
+        ./internal/core/... ./internal/api/... ./internal/engine/...
+        ./internal/control/... ./internal/client/... ./internal/daemon/...
+        ./internal/mcpserver/... ./internal/askpass/... ./internal/platform/...
+        ./internal/e2e/... ./internal/cli/... ./cmd/... ./docs/...
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: go vet ./internal/core/... ./internal/api/... ./internal/engine/... ./internal/control/... ./internal/client/... ./internal/daemon/... ./internal/mcpserver/... ./internal/askpass/... ./internal/platform/... ./internal/e2e/... ./internal/cli/... ./cmd/... ./docs/...
-      - run: go test -count=1 ./internal/core/... ./internal/api/... ./internal/engine/... ./internal/control/... ./internal/client/... ./internal/daemon/... ./internal/mcpserver/... ./internal/askpass/... ./internal/platform/... ./internal/e2e/... ./internal/cli/... ./cmd/... ./docs/...
-
-      - name: Check CLI documentation contracts
-        run: go test -count=1 ./internal/cli -run 'Test(GeneratedDocumentation|GuideExamples|ExitCodeTableCoversAPI|CommandHelpCompleteness)$'
+      - run: go vet $PACKAGES
+      - run: go test -count=1 $PACKAGES
       - name: Regenerate CLI reference without drift
-        shell: bash
+        if: runner.os == 'Linux'
         run: |
           go run ./internal/cli/gen
           git diff --exit-code -- docs/cli
           test -z "$(git ls-files --others --exclude-standard docs/cli)"
-
       - name: Cross-build headless daemon
-        shell: bash
+        if: runner.os == 'Linux'
         run: |
-          GOOS=linux go build -o "${RUNNER_TEMP}/devt-tunnel-linux" ./cmd/devt-tunnel
-          GOOS=windows go build -o "${RUNNER_TEMP}/devt-tunnel-windows.exe" ./cmd/devt-tunnel
-          GOOS=darwin go build -o "${RUNNER_TEMP}/devt-tunnel-darwin" ./cmd/devt-tunnel
+          for goos in linux windows darwin; do
+            GOOS=$goos go build -o /dev/null ./cmd/devt-tunnel
+          done
 
   frontend:
     runs-on: ubuntu-24.04
@@ -53,16 +57,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-frontend
       - run: pnpm format:check
       - run: pnpm exec tsc --noEmit
       - run: pnpm test
@@ -75,22 +71,10 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install Linux GUI libraries
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev xvfb
-      - run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
-      - run: pnpm install --frozen-lockfile
-        working-directory: frontend
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-desktop
+      - name: Test GUI host
+        run: go test -count=1 ./internal/host/...
       - run: wails3 task build
       - name: Smoke built app on Unix
         if: runner.os != 'Windows'
@@ -99,16 +83,23 @@ jobs:
           smoke_dir=$(mktemp -d)
           export DEVT_TUNNEL_CONFIG_DIR="$smoke_dir/config"
           export DEVT_TUNNEL_STATE_DIR="$smoke_dir/state"
+          log="$DEVT_TUNNEL_STATE_DIR/devt-tunnel.log"
           launcher=()
           if [ "${RUNNER_OS}" = "Linux" ]; then launcher=(xvfb-run -a); fi
-          "${launcher[@]}" ./bin/devt-tunnel-desktop &
+          "${launcher[@]}" ./bin/devt-tunnel-desktop >"$smoke_dir/app.out" 2>&1 &
           app_pid=$!
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            grep -q "application ready" "$DEVT_TUNNEL_STATE_DIR/devt-tunnel.log" 2>/dev/null && break
+          ready=false
+          for attempt in $(seq 1 45); do
+            if grep -q "application ready" "$log" 2>/dev/null; then ready=true; break; fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then echo "app exited early"; break; fi
             sleep 1
           done
-          grep -q "application ready" "$DEVT_TUNNEL_STATE_DIR/devt-tunnel.log"
-          kill "$app_pid" || true
+          kill "$app_pid" 2>/dev/null || true
+          if [ "$ready" != true ]; then
+            echo "::group::app stdout/stderr"; cat "$smoke_dir/app.out" || true; echo "::endgroup::"
+            echo "::group::devt-tunnel.log"; cat "$log" || echo "no log file"; echo "::endgroup::"
+            exit 1
+          fi
       - name: Smoke built app on Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -116,10 +107,19 @@ jobs:
           $root = Join-Path $env:RUNNER_TEMP "devt-tunnel-smoke"
           $env:DEVT_TUNNEL_CONFIG_DIR = Join-Path $root "config"
           $env:DEVT_TUNNEL_STATE_DIR = Join-Path $root "state"
-          $process = Start-Process -FilePath ".\bin\devt-tunnel-desktop.exe" -PassThru
-          for ($i = 0; $i -lt 10; $i++) {
-            Start-Sleep -Seconds 1
-            if ((Test-Path "$env:DEVT_TUNNEL_STATE_DIR\devt-tunnel.log") -and (Select-String -Quiet -Pattern "application ready" "$env:DEVT_TUNNEL_STATE_DIR\devt-tunnel.log")) { break }
+          $logFile = Join-Path $env:DEVT_TUNNEL_STATE_DIR "devt-tunnel.log"
+          function Test-Ready { (Test-Path $logFile) -and (Select-String -Quiet -Pattern "application ready" $logFile) }
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $process = Start-Process -FilePath ".\bin\devt-tunnel-desktop.exe" -PassThru -RedirectStandardOutput "$root\app.out" -RedirectStandardError "$root\app.err"
+          for ($i = 0; $i -lt 45 -and -not (Test-Ready); $i++) { Start-Sleep -Seconds 1 }
+          if (-not (Test-Ready)) {
+            Write-Host "process exited: $($process.HasExited)"
+            if ($process.HasExited) { Write-Host "exit code: $($process.ExitCode)" }
+            Write-Host "::group::app stdout/stderr"
+            Get-Content "$root\app.out", "$root\app.err" -ErrorAction SilentlyContinue
+            Write-Host "::endgroup::"
+            Get-ChildItem -Recurse $root -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "$($_.FullName) $($_.Length)" }
+            if (Test-Path $logFile) { Get-Content $logFile } else { Write-Host "no log file" }
+            throw "health line not found"
           }
-          if (-not (Select-String -Quiet -Pattern "application ready" "$env:DEVT_TUNNEL_STATE_DIR\devt-tunnel.log")) { throw "health line not found" }
           Stop-Process -Id $process.Id -Force

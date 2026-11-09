@@ -7,11 +7,6 @@ on:
         description: Version string embedded in the binary (default derives from build/config.yml)
         required: false
         type: string
-  workflow_call:
-    inputs:
-      version:
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -26,49 +21,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { goos: linux,   goarch: amd64, os: ubuntu-24.04 }
-          - { goos: linux,   goarch: arm64, os: ubuntu-24.04 }
-          - { goos: darwin,  goarch: amd64, os: ubuntu-24.04 }
-          - { goos: darwin,  goarch: arm64, os: ubuntu-24.04 }
-          - { goos: windows, goarch: amd64, os: ubuntu-24.04 }
-          - { goos: windows, goarch: arm64, os: ubuntu-24.04 }
-    runs-on: ${{ matrix.os }}
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    runs-on: ubuntu-24.04
     env:
       CGO_ENABLED: "0"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Resolve version
-        id: version
+      - name: Build and package
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          v="${{ inputs.version }}"
-          if [ -z "$v" ]; then
-            v=$(awk '/^  version:/ {gsub(/"/, "", $2); print $2}' build/config.yml)
-          fi
-          echo "value=$v" >> "$GITHUB_OUTPUT"
-      - name: Build
-        run: |
-          ext=""; [ "$GOOS" = windows ] && ext=".exe"
-          mkdir -p dist
-          go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.value }}" \
-            -o "dist/devt-tunnel${ext}" ./cmd/devt-tunnel
-      - name: Package
-        run: |
-          name="devt-tunnel_${{ steps.version.outputs.value }}_${GOOS}_${GOARCH}"
+          VERSION=${VERSION:-$(awk '/^  version:/ {gsub(/"/, "", $2); print $2}' build/config.yml)}
+          name="devt-tunnel_${VERSION}_${GOOS}_${GOARCH}"
+          bin=devt-tunnel; [ "$GOOS" = windows ] && bin=devt-tunnel.exe
+          mkdir dist
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "dist/${bin}" ./cmd/devt-tunnel
           cd dist
           if [ "$GOOS" = windows ]; then
-            zip "${name}.zip" devt-tunnel.exe
+            zip "${name}.zip" "$bin"
           else
-            tar -czf "${name}.tar.gz" devt-tunnel
+            tar -czf "${name}.tar.gz" "$bin"
           fi
-          rm -f devt-tunnel devt-tunnel.exe
+          rm "$bin"
           sha256sum * > "${name}.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: devt-tunnel-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
