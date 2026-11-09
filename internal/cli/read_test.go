@@ -25,7 +25,7 @@ type rpcFixture func(method string, params json.RawMessage) (any, *api.Error)
 
 func fakeDaemon(t *testing.T, fixture rpcFixture) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "dtt-cli-")
+	dir, err := os.MkdirTemp("", "devt-tunnel-cli-")
 	if err != nil {
 		t.Fatal(err)
 	}

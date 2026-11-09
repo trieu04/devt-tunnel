@@ -103,7 +103,7 @@ export function ImportCommand(line: string): $CancellablePromise<importer$0.Resu
 }
 
 /**
- * InstallCLI links the bundled dtt binary into a directory on the user's PATH
+ * InstallCLI links the bundled devt-tunnel binary into a directory on the user's PATH
  * and returns the link path. It never overwrites a file it did not create.
  */
 export function InstallCLI(): $CancellablePromise<$models.CLIStatus> {

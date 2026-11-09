@@ -21,7 +21,7 @@ func logsCommand(a *app) *cobra.Command {
 		Use:     "logs <t>",
 		Short:   "Read or follow retained tunnel output",
 		Long:    "Print retained tunnel output, like tail -n N or tail -f on a log file. Follow polls until Ctrl-C. With --json each batch is a versioned JSON object on its own line. The current daemon does not timestamp log lines, so --since is unavailable until it does.",
-		Example: "  dtt logs db -n 50\n  dtt logs db -f\n  dtt logs db --json",
+		Example: "  devt-tunnel logs db -n 50\n  devt-tunnel logs db -f\n  devt-tunnel logs db --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if count < 0 || since < 0 {

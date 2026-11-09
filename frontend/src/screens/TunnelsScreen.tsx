@@ -16,7 +16,7 @@ import {
   SettingsGlyph,
   StateBadge,
   StopGlyph,
-  TunnelGlyph,
+  AppLogo,
 } from "../parts";
 
 export function TunnelsScreen({
@@ -115,10 +115,7 @@ export function TunnelsScreen({
     <div className="tunnels-layout">
       <header className="topbar">
         <div className="brand">
-          <span className="logo">
-            <TunnelGlyph />
-          </span>
-          <span>devt-tunnel</span>
+          <AppLogo />
         </div>
         <div className="search">
           <SearchGlyph />

@@ -17,8 +17,8 @@ func doctorCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:     "doctor",
 		Short:   "Check tools, keychain and daemon health",
-		Long:    "Check daemon connectivity, tool paths and versions, OS keychain availability, config errors, SSH config warnings and whether dtt is on the shell PATH. Replaces command -v ssh, ssh -V, ngrok version and cloudflared --version. Missing tools are essential only when a saved tunnel needs them; SSH config and shell PATH issues are warnings.",
-		Example: "  dtt doctor\n  dtt doctor --json --no-daemon-start",
+		Long:    "Check daemon connectivity, tool paths and versions, OS keychain availability, config errors, SSH config warnings and whether devt-tunnel is on the shell PATH. Replaces command -v ssh, ssh -V, ngrok version and cloudflared --version. Missing tools are essential only when a saved tunnel needs them; SSH config and shell PATH issues are warnings.",
+		Example: "  devt-tunnel doctor\n  devt-tunnel doctor --json --no-daemon-start",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var status api.DaemonStatus
@@ -38,10 +38,10 @@ func doctorCommand(a *app) *cobra.Command {
 				return err
 			}
 			findings := doctorFindings(status, overview, tools, hosts)
-			if path, err := exec.LookPath("dtt"); err != nil {
-				findings = append(findings, checks.Finding{Severity: checks.Warning, Message: "dtt is not on the shell PATH", Field: "path"})
+			if path, err := exec.LookPath("devt-tunnel"); err != nil {
+				findings = append(findings, checks.Finding{Severity: checks.Warning, Message: "devt-tunnel is not on the shell PATH", Field: "path"})
 			} else {
-				findings = append(findings, checks.Finding{Severity: checks.OK, Message: "dtt found at " + path, Field: "path"})
+				findings = append(findings, checks.Finding{Severity: checks.OK, Message: "devt-tunnel found at " + path, Field: "path"})
 			}
 			var err error
 			if a.json {

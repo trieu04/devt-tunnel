@@ -155,7 +155,7 @@ kbd { padding: var(--space-1) var(--space-3); border: 1px solid var(--line-stron
 
 .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6) var(--space-8); flex: none; padding: var(--space-5) var(--space-9); border-bottom: 1px solid var(--line); background: var(--surface); }
 .brand { display: flex; align-items: center; gap: var(--space-5); font-size: var(--text-label); font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
-.logo { display: grid; width: 28px; height: 28px; place-items: center; background: var(--primary); color: var(--on-primary); }
+.app-logo { display: block; flex: 0 0 auto; width: var(--control); height: var(--control); }
 .search { display: flex; flex: 1 1 320px; max-width: 640px; height: var(--control); align-items: center; gap: var(--space-4); padding: 0 var(--space-3) 0 var(--space-6); border: 1px solid var(--line-strong); background: var(--ground); color: var(--muted); }
 .search input { flex: 1 1 auto; height: 36px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); }
 .topbar-spacer { flex: 1 1 0; }
@@ -556,7 +556,7 @@ dd { margin: 0; }
 }
 
 @media (max-width: 520px) {
-  .brand > span:last-child, .search kbd, .status-shortcuts { display: none; }
+  .search kbd, .status-shortcuts { display: none; }
   .sidebar { display: flex; flex-direction: row; gap: var(--space-4); overflow-x: auto; }
   .sidebar-group { min-width: 210px; }
   .sidebar-manage { min-width: max-content; flex-direction: column; padding: 0 0 0 var(--space-4); border-top: 0; border-left: 1px solid var(--line); }

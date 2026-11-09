@@ -4,10 +4,10 @@ Status: implemented with automated checks; real-client acceptance is on the [roa
 
 ## Overview
 
-`dtt mcp serve` is a thin adapter: MCP over stdio on one side, the daemon's local API on the other. It holds no tunnel state, makes no policy decisions, and starts the daemon if needed. Each agent client spawns its own copy.
+`devt-tunnel mcp serve` is a thin adapter: MCP over stdio on one side, the daemon's local API on the other. It holds no tunnel state, makes no policy decisions, and starts the daemon if needed. Each agent client spawns its own copy.
 
 ```text
-Agent client ── stdio ── dtt mcp serve ── local socket ── dtt daemon ── ssh · ngrok · cloudflared
+Agent client ── stdio ── devt-tunnel mcp serve ── local socket ── devt-tunnel daemon ── ssh · ngrok · cloudflared
 ```
 
 - **Protocol:** the official Go SDK, with its default protocol revisions. Those are negotiation capabilities, not real-client compatibility claims.

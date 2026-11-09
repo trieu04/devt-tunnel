@@ -23,15 +23,15 @@ func restartCommand(a *app) *cobra.Command { return startOrRestartCommand(a, tru
 
 func startOrRestartCommand(a *app, restart bool) *cobra.Command {
 	verb, operation := "start", "tunnel.start"
-	long := "Start saved tunnels, like ssh -N -L or ngrok http, and wait until they are ready. Starting an already active tunnel is a no-op. SSH questions are shown inline on a TTY; otherwise exit 4 and use dtt prompts. --timeout bounds the readiness wait; --no-wait returns after requesting the starts."
+	long := "Start saved tunnels, like ssh -N -L or ngrok http, and wait until they are ready. Starting an already active tunnel is a no-op. SSH questions are shown inline on a TTY; otherwise exit 4 and use devt-tunnel prompts. --timeout bounds the readiness wait; --no-wait returns after requesting the starts."
 	if restart {
 		verb, operation = "restart", "tunnel.restart"
-		long = "Stop saved tunnels, then start them again and wait until ready, like kill <pid> followed by ssh -N -L or ngrok http. SSH questions are shown inline on a TTY; otherwise exit 4 and use dtt prompts. --timeout bounds the readiness wait."
+		long = "Stop saved tunnels, then start them again and wait until ready, like kill <pid> followed by ssh -N -L or ngrok http. SSH questions are shown inline on a TTY; otherwise exit 4 and use devt-tunnel prompts. --timeout bounds the readiness wait."
 	}
 	var noWait bool
 	cmd := &cobra.Command{
 		Use: verb + " <t>...", Short: strings.ToUpper(verb[:1]) + verb[1:] + " tunnels and wait until ready",
-		Long: long, Example: "  dtt " + verb + " db\n  dtt " + verb + " db web --timeout 30s\n  dtt " + verb + " db --no-wait",
+		Long: long, Example: "  devt-tunnel " + verb + " db\n  devt-tunnel " + verb + " db web --timeout 30s\n  devt-tunnel " + verb + " db --no-wait",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, refs []string) error {
 			views, err := a.lifecycleTunnels(cmd.Context(), refs)
@@ -80,7 +80,7 @@ func stopCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "stop [t]...", Short: "Stop tunnels and their process trees",
 		Long:    "Stop saved tunnels and their entire process trees, replacing kill <pid>. Select tunnel references, --all, or --group G, but do not combine these selectors. Stopping an already stopped tunnel succeeds.",
-		Example: "  dtt stop db web\n  dtt stop --all\n  dtt stop --group backend",
+		Example: "  devt-tunnel stop db web\n  devt-tunnel stop --all\n  devt-tunnel stop --group backend",
 		RunE: func(cmd *cobra.Command, refs []string) error {
 			byGroup := cmd.Flags().Changed("group")
 			if byGroup && group == "" || all && byGroup || len(refs) != 0 && (all || byGroup) || len(refs) == 0 && !all && !byGroup {
@@ -136,8 +136,8 @@ func stopCommand(a *app) *cobra.Command {
 func waitCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "wait <t>", Short: "Wait for a tunnel to become ready",
-		Long:    "Wait for a tunnel that is starting or reconnecting to become running, instead of polling ps or a listening port with nc. Does not start a stopped tunnel. --timeout bounds the readiness wait. SSH questions use the same TTY behavior as dtt start.",
-		Example: "  dtt wait db\n  dtt wait db --timeout 30s --json",
+		Long:    "Wait for a tunnel that is starting or reconnecting to become running, instead of polling ps or a listening port with nc. Does not start a stopped tunnel. --timeout bounds the readiness wait. SSH questions use the same TTY behavior as devt-tunnel start.",
+		Example: "  devt-tunnel wait db\n  devt-tunnel wait db --timeout 30s --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, refs []string) error {
 			views, err := a.lifecycleTunnels(cmd.Context(), refs)
@@ -245,12 +245,12 @@ func lifecycleError(view api.TunnelView, err error) error {
 		switch rpc.Data.Kind {
 		case api.NeedsSecret:
 			if len(view.MissingSecrets) != 0 {
-				hint = "dtt secret set " + view.MissingSecrets[0]
+				hint = "devt-tunnel secret set " + view.MissingSecrets[0]
 			} else {
-				hint = "dtt show " + view.Tunnel.ID
+				hint = "devt-tunnel show " + view.Tunnel.ID
 			}
 		case api.NeedsUser:
-			hint = "dtt prompts"
+			hint = "devt-tunnel prompts"
 		}
 	}
 	if hint != "" {

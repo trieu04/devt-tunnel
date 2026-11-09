@@ -9,13 +9,13 @@ import (
 	"strings"
 )
 
-// CLIStatus describes whether the `dtt` binary bundled with the app is
+// CLIStatus describes whether the `devt-tunnel` binary bundled with the app is
 // reachable from a terminal. Linux packages and the Windows installer put it
 // on PATH themselves, so only macOS needs the in-app install.
 type CLIStatus struct {
 	// Supported is true when the app can link the bundled CLI itself.
 	Supported bool `json:"supported"`
-	// Bundled is the path of the dtt binary shipped next to the app executable.
+	// Bundled is the path of the devt-tunnel binary shipped next to the app executable.
 	Bundled string `json:"bundled"`
 	// Link is where the CLI is (or would be) linked.
 	Link string `json:"link"`
@@ -33,13 +33,13 @@ func bundledCLI() (string, error) {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	name := "dtt"
+	name := "devt-tunnel"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	path := filepath.Join(filepath.Dir(exe), name)
 	if info, err := os.Stat(path); err != nil || info.IsDir() {
-		return "", errors.New("bundled dtt not found next to the app")
+		return "", errors.New("bundled devt-tunnel not found next to the app")
 	}
 	return path, nil
 }
@@ -56,9 +56,9 @@ func dirOnPath(dir string) bool {
 // cliLinkCandidates lists link locations in order of preference: a system
 // directory that needs no prompt when writable, then a per-user one.
 func cliLinkCandidates() []string {
-	candidates := []string{"/usr/local/bin/dtt"}
+	candidates := []string{"/usr/local/bin/devt-tunnel"}
 	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".local", "bin", "dtt"))
+		candidates = append(candidates, filepath.Join(home, ".local", "bin", "devt-tunnel"))
 	}
 	return candidates
 }
@@ -93,7 +93,7 @@ func (s *Service) CLIStatus() CLIStatus {
 	return status
 }
 
-// InstallCLI links the bundled dtt binary into a directory on the user's PATH
+// InstallCLI links the bundled devt-tunnel binary into a directory on the user's PATH
 // and returns the link path. It never overwrites a file it did not create.
 func (s *Service) InstallCLI() (CLIStatus, error) {
 	status := s.CLIStatus()
@@ -110,8 +110,8 @@ func (s *Service) InstallCLI() (CLIStatus, error) {
 			continue
 		}
 		if _, err := os.Lstat(link); err == nil {
-			if target := linkTarget(link); target == "" || !strings.HasSuffix(target, "/dtt") {
-				failures = append(failures, link+" already exists and is not a link to dtt")
+			if target := linkTarget(link); target == "" || !strings.HasSuffix(target, "/devt-tunnel") {
+				failures = append(failures, link+" already exists and is not a link to devt-tunnel")
 				continue
 			}
 			if err := os.Remove(link); err != nil {
@@ -125,5 +125,5 @@ func (s *Service) InstallCLI() (CLIStatus, error) {
 		}
 		return s.CLIStatus(), nil
 	}
-	return status, fmt.Errorf("could not install dtt: %s", strings.Join(failures, "; "))
+	return status, fmt.Errorf("could not install devt-tunnel: %s", strings.Join(failures, "; "))
 }

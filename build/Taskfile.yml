@@ -1,12 +1,12 @@
 version: '3'
 
 tasks:
-  build:dtt:
+  build:cli:
     internal: true
     cmds:
-      - go build -trimpath -ldflags="-X main.version={{.VERSION}}" -o "{{.DTT_OUTPUT}}" ./cmd/dtt
+      - go build -trimpath -ldflags="-X main.version={{.VERSION}}" -o "{{.DTT_OUTPUT}}" ./cmd/devt-tunnel
     vars:
-      DEFAULT_DTT_OUTPUT: '{{.BIN_DIR}}/dtt{{if eq .TARGET_OS "windows"}}.exe{{end}}'
+      DEFAULT_DTT_OUTPUT: '{{.BIN_DIR}}/devt-tunnel{{if eq .TARGET_OS "windows"}}.exe{{end}}'
       DTT_OUTPUT: '{{.DTT_OUTPUT | default .DEFAULT_DTT_OUTPUT}}'
     env:
       CGO_ENABLED: '0'

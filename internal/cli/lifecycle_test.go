@@ -187,7 +187,7 @@ func TestLifecycleFailureExitCodes(t *testing.T) {
 		message, hint string
 		code          int
 	}{
-		{"missing-secret", api.NeedsSecret, "tunnel needs a secret", "dtt secret set db-key", 3},
+		{"missing-secret", api.NeedsSecret, "tunnel needs a secret", "devt-tunnel secret set db-key", 3},
 		{"keyring", api.KeyringUnavailable, "the OS keychain is unavailable", "", 3},
 		{"bind", api.PortInUse, "bind failed", "", 5},
 		{"typed-conflict", api.Conflict, "conflict", "", 5},
@@ -196,7 +196,7 @@ func TestLifecycleFailureExitCodes(t *testing.T) {
 		{"missing-binary", api.NotFound, "missing executable", "", 8},
 		{"untyped-bind-message", api.Internal, "127.0.0.1:15432 is already in use", "", 1},
 		{"untyped-missing-binary-message", api.Internal, "ngrok was not found on this machine", "", 1},
-		{"needs-user", api.NeedsUser, "SSH question pending", "dtt prompts", 4},
+		{"needs-user", api.NeedsUser, "SSH question pending", "devt-tunnel prompts", 4},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeDaemon(t, func(method string, _ json.RawMessage) (any, *api.Error) {
@@ -241,7 +241,7 @@ func TestLifecycleNoWaitMissingSecret(t *testing.T) {
 			return nil, api.NewError(api.Internal, "unexpected "+method)
 		}
 	})
-	if code, _, diagnostics := lifecycleRun(context.Background(), "start", "db-test", "--no-wait"); code != 3 || !strings.Contains(diagnostics, "dtt secret set db-key") {
+	if code, _, diagnostics := lifecycleRun(context.Background(), "start", "db-test", "--no-wait"); code != 3 || !strings.Contains(diagnostics, "devt-tunnel secret set db-key") {
 		t.Fatalf("code=%d stderr=%s", code, diagnostics)
 	}
 }
@@ -264,7 +264,7 @@ func TestLifecyclePendingPromptDoesNotHang(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			code, out, diagnostics := lifecycleRun(ctx, verb, "db-prod", "--no-input", "--json")
-			if code != 4 || ctx.Err() != nil || out != "" || !strings.Contains(diagnostics, `"hint":"dtt prompts"`) {
+			if code != 4 || ctx.Err() != nil || out != "" || !strings.Contains(diagnostics, `"hint":"devt-tunnel prompts"`) {
 				t.Fatalf("code=%d stdout=%s stderr=%s ctx=%v", code, out, diagnostics, ctx.Err())
 			}
 		})
@@ -297,7 +297,7 @@ func TestLifecycleIgnoresOtherTunnelPrompts(t *testing.T) {
 // waitReady call does not prevent prompt.list or notifications from being served.
 func lifecycleEventDaemon(t *testing.T, fixture func(context.Context, string, json.RawMessage) (any, *api.Error)) func(api.Event) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "dtt-cli-events-")
+	dir, err := os.MkdirTemp("", "devt-tunnel-cli-events-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestLifecyclePromptArrivesDuringWait(t *testing.T) {
 	done := make(chan string, 1)
 	go func() {
 		code, out, diagnostics := lifecycleRun(ctx, "start", "db-prod", "--json")
-		if code != 4 || out != "" || !strings.Contains(diagnostics, "dtt prompts") {
+		if code != 4 || out != "" || !strings.Contains(diagnostics, "devt-tunnel prompts") {
 			done <- fmt.Sprintf("code=%d stdout=%s stderr=%s", code, out, diagnostics)
 			return
 		}

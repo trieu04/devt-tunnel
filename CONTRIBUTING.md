@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.27.3 or newer, which is all `dtt` and the Go tests need
+- Go 1.27.3 or newer, which is all `devt-tunnel` and the Go tests need
 - Node 22 and pnpm
 - The Wails CLI: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0`
 - On Linux: GTK 4.14 or newer and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu 24.04)
@@ -37,7 +37,7 @@ pnpm --dir frontend test
 | Path | Purpose |
 | --- | --- |
 | `main.go` | App entry point |
-| `cmd/dtt`, `internal/daemon`, `internal/control`, `internal/client`, `internal/cli` | CLI, daemon, local JSON-RPC server and client |
+| `cmd/devt-tunnel`, `internal/daemon`, `internal/control`, `internal/client`, `internal/cli` | CLI, daemon, local JSON-RPC server and client |
 | `internal/mcpserver` | MCP adapter |
 | `internal/api`, `internal/engine` | Shared contracts and tunnel orchestration |
 | `internal/core` | Model, config, command builder, checks, supervisor; no GUI and no OS-specific code |

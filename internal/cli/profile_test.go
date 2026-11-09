@@ -24,7 +24,7 @@ import (
 func organizeDaemon(t *testing.T, cfg *model.Config, store secret.Store) string {
 	t.Helper()
 	root := t.TempDir()
-	run, err := os.MkdirTemp("", "dtt-organize-")
+	run, err := os.MkdirTemp("", "devt-tunnel-organize-")
 	if err != nil {
 		t.Fatal(err)
 	}

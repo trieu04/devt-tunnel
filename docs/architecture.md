@@ -4,7 +4,7 @@ Stack, per-OS details and validation are in [platform.md](platform.md).
 
 ## Control plane
 
-An on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" below means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md).
+An on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" below means the daemon. The GUI, the `devt-tunnel` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md).
 
 ## Process model
 

@@ -65,7 +65,7 @@ func NewError(kind ErrorKind, message string) *Error {
 	return &Error{Code: -32000, Message: message, Data: ErrorData{Kind: kind}}
 }
 func VersionError(found int) *Error {
-	return NewError(Incompatible, fmt.Sprintf("daemon API %d is incompatible with client API %d; run dtt daemon restart (stops all tunnels)", found, Version))
+	return NewError(Incompatible, fmt.Sprintf("daemon API %d is incompatible with client API %d; run devt-tunnel daemon restart (stops all tunnels)", found, Version))
 }
 
 type ClientInfo struct {

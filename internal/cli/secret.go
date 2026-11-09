@@ -21,7 +21,7 @@ func secretCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "secret", Short: "Manage named credentials without displaying values",
 		Long:    "Store and manage credentials in the daemon's OS keychain. Values are accepted only through a hidden terminal prompt or explicit --stdin, never through arguments, flags or environment variables. There is no reveal command; use the desktop app for authenticated reveal.",
-		Example: "  dtt secret ls\n  dtt secret set ngrok-personal --kind ngrok", Args: cobra.NoArgs,
+		Example: "  devt-tunnel secret ls\n  devt-tunnel secret set ngrok-personal --kind ngrok", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(secretListCommand(a), secretSetCommand(a), secretRenameCommand(a), secretRemoveCommand(a))
@@ -32,7 +32,7 @@ func secretListCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "ls", Short: "List credential metadata, never values",
 		Long:    "List credential names, kinds, tunnels using them, last use and presence state. No secret values are returned. An unavailable OS keychain exits with code 3.",
-		Example: "  dtt secret ls\n  dtt secret ls --json", Args: cobra.NoArgs,
+		Example: "  devt-tunnel secret ls\n  devt-tunnel secret ls --json", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			views := []api.SecretView{}
 			if err := a.call(cmd.Context(), "secret.list", api.Empty{}, &views); err != nil {
@@ -74,7 +74,7 @@ func secretSetCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "set <name>", Short: "Store a credential from a hidden prompt or stdin",
 		Long:    "Store a credential of the specified kind. Read a hidden value from the terminal, or use --stdin to read all input with one trailing newline removed. Without a TTY, --stdin is required. Empty values are rejected. Waiting tunnel starts retry after storage. Values are never accepted in flags or positional arguments.",
-		Example: "  dtt secret set ngrok-personal --kind ngrok\n  op read op://dev/ngrok/token | dtt secret set ngrok-personal --kind ngrok --stdin", Args: cobra.ExactArgs(1),
+		Example: "  devt-tunnel secret set ngrok-personal --kind ngrok\n  op read op://dev/ngrok/token | devt-tunnel secret set ngrok-personal --kind ngrok --stdin", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := secretValidateName(args[0]); err != nil {
 				return err
@@ -152,7 +152,7 @@ func secretRenameCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "rename <from> <to>", Short: "Rename a credential and update its users",
 		Long:    "Rename a credential in the OS keychain and update all saved tunnel references. Values are never displayed or returned.",
-		Example: "  dtt secret rename ngrok-personal ngrok-work\n  dtt secret rename old-token new-token --json", Args: cobra.ExactArgs(2),
+		Example: "  devt-tunnel secret rename ngrok-personal ngrok-work\n  devt-tunnel secret rename old-token new-token --json", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, name := range args {
 				if err := secretValidateName(name); err != nil {
@@ -179,7 +179,7 @@ func secretRemoveCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "rm <name>", Short: "Delete a credential from the OS keychain",
 		Long:    "Delete a credential, keeping tunnel references so affected tunnels report a missing token. Ask for confirmation on a terminal; --yes is required without a TTY or with --no-input.",
-		Example: "  dtt secret rm ngrok-personal\n  dtt secret rm ngrok-personal --yes --json", Args: cobra.ExactArgs(1),
+		Example: "  devt-tunnel secret rm ngrok-personal\n  devt-tunnel secret rm ngrok-personal --yes --json", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := secretValidateName(args[0]); err != nil {
 				return err

@@ -8,12 +8,12 @@ import (
 
 func TestLinkTargetResolvesRelativeLinks(t *testing.T) {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "dtt")
+	bin := filepath.Join(dir, "devt-tunnel")
 	if err := os.WriteFile(bin, nil, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(dir, "link")
-	if err := os.Symlink("dtt", link); err != nil {
+	if err := os.Symlink("devt-tunnel", link); err != nil {
 		t.Skip("symlinks unavailable")
 	}
 	if got := linkTarget(link); got != bin {

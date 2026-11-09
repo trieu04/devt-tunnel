@@ -22,8 +22,8 @@ func TestSSHThroughDaemonWithStoredPassphraseAndPrompt(t *testing.T) {
 	}
 	env := setup(t)
 	bin := t.TempDir()
-	dtt := filepath.Join(bin, "dtt")
-	for _, args := range [][]string{{"test", "-c", "-o", dtt, "../../cmd/dtt"}, {"build", "-o", filepath.Join(bin, "devt-tunnel-askpass"), "../../cmd/devt-tunnel-askpass"}} {
+	cliBin := filepath.Join(bin, "devt-tunnel")
+	for _, args := range [][]string{{"test", "-c", "-o", cliBin, "../../cmd/devt-tunnel"}, {"build", "-o", filepath.Join(bin, "devt-tunnel-askpass"), "../../cmd/devt-tunnel-askpass"}} {
 		if output, err := exec.Command("go", args...).CombinedOutput(); err != nil {
 			t.Fatalf("build fixture: %v %s", err, output)
 		}
@@ -49,7 +49,7 @@ func TestSSHThroughDaemonWithStoredPassphraseAndPrompt(t *testing.T) {
 	if err = config.Save(filepath.Join(root, "config", "tunnels.toml"), model.Config{Tunnels: []model.Tunnel{tun}}); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(dtt, "daemon", "run", "--idle-exit", "0")
+	cmd := exec.Command(cliBin, "daemon", "run", "--idle-exit", "0")
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

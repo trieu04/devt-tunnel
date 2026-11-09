@@ -14,7 +14,7 @@ func orphansCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "orphans", Short: "List tunnel processes left after a crash",
 		Long:    "List tunnel processes recovered from crash records. The daemon checks OS process identities to protect against PID reuse. Replaces searching ps output for abandoned tunnel processes.",
-		Example: "  dtt orphans\n  dtt orphans --json\n  dtt orphans stop 12345", Args: cobra.NoArgs,
+		Example: "  devt-tunnel orphans\n  devt-tunnel orphans --json\n  devt-tunnel orphans stop 12345", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			records := []supervisor.Record{}
 			if err := a.call(cmd.Context(), "orphan.list", api.Empty{}, &records); err != nil {
@@ -32,8 +32,8 @@ func orphansCommand(a *app) *cobra.Command {
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use: "stop <pid>", Short: "Stop a recovered orphan process",
-		Long:    "Stop a process listed by dtt orphans. The daemon verifies its recorded OS identity before stopping it, unlike an unconditional kill PID.",
-		Example: "  dtt orphans stop 12345\n  dtt orphans stop 12345 --json", Args: cobra.ExactArgs(1),
+		Long:    "Stop a process listed by devt-tunnel orphans. The daemon verifies its recorded OS identity before stopping it, unlike an unconditional kill PID.",
+		Example: "  devt-tunnel orphans stop 12345\n  devt-tunnel orphans stop 12345 --json", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pid, err := strconv.Atoi(args[0])
 			if err != nil || pid <= 0 {

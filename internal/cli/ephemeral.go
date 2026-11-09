@@ -22,7 +22,7 @@ func init() {
 	register(saveCommand)
 }
 
-const backgroundLeaseHelp = "Background tunnels use a detached, revocable person lease, not a pin. They survive CLI exit until dtt stop or lease revocation; --ttl adds an expiry (maximum 8h). Foreground leases default to 30m and Ctrl-C closes the lease."
+const backgroundLeaseHelp = "Background tunnels use a detached, revocable person lease, not a pin. They survive CLI exit until devt-tunnel stop or lease revocation; --ttl adds an expiry (maximum 8h). Foreground leases default to 30m and Ctrl-C closes the lease."
 
 type ephemeralOptions struct {
 	ttl, save, profile string
@@ -53,8 +53,8 @@ func runCommand(a *app) *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use: "run -- <cmd> [args...]", Short: "Supervise a traditional tunnel command in the foreground",
-		Long:    "Import ssh -N -L ..., ngrok http ... or cloudflared tunnel ... using the same importer as dtt import, then start an ephemeral tunnel and print its address when ready. SSH questions appear inline on a TTY. Inline credentials are rejected. --detach returns once ready. " + backgroundLeaseHelp,
-		Example: "  dtt run -- ssh -N -L 5433:127.0.0.1:5432 server1\n  dtt run --detach --ttl 15m -- ngrok http 3000\n  dtt run --dry-run -- cloudflared tunnel --url http://localhost:3000",
+		Long:    "Import ssh -N -L ..., ngrok http ... or cloudflared tunnel ... using the same importer as devt-tunnel import, then start an ephemeral tunnel and print its address when ready. SSH questions appear inline on a TTY. Inline credentials are rejected. --detach returns once ready. " + backgroundLeaseHelp,
+		Example: "  devt-tunnel run -- ssh -N -L 5433:127.0.0.1:5432 server1\n  devt-tunnel run --detach --ttl 15m -- ngrok http 3000\n  devt-tunnel run --dry-run -- cloudflared tunnel --url http://localhost:3000",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.ArgsLenAtDash() != 0 {
@@ -75,11 +75,11 @@ func runCommand(a *app) *cobra.Command {
 				return err
 			}
 			if len(imported.Secrets) > 0 {
-				return usageError("import contains inline credentials; use dtt secret set and an existing secret name instead")
+				return usageError("import contains inline credentials; use devt-tunnel secret set and an existing secret name instead")
 			}
 			t := imported.Tunnel
 			if t.Type != model.TypeSSH && t.Type != model.TypeNgrok && t.Type != model.TypeCloudflared {
-				return usageError("run supports ssh, ngrok and cloudflared; use dtt add command for other programs and explicit readiness")
+				return usageError("run supports ssh, ngrok and cloudflared; use devt-tunnel add command for other programs and explicit readiness")
 			}
 			var defaults model.Tunnel
 			if err := a.call(cmd.Context(), "tunnel.newDraft", api.NewDraftParams{Kind: t.Type}, &defaults); err != nil {
@@ -105,7 +105,7 @@ func forwardCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "forward <host> [map...]", Short: "Open a background ephemeral SSH forward",
 		Long:    "Replace ssh -f -N -L 127.0.0.1:5433:127.0.0.1:5432 server1 without using ssh -f. Maps accept port:port, port:host:port or bind:port:host:port; auto:5432 requests a free loopback port from the daemon. Non-loopback binds warn. Repeat --remote or --socks for remote forwards and SOCKS listeners. SSH config aliases (including user@host destinations) are handled by ssh, using a profile's SSH config with --profile. --save promotes after readiness without restarting. " + backgroundLeaseHelp,
-		Example: "  dtt forward server1 auto:5432 --json\n  dtt forward server1 5433:db:5432 --ttl 15m --save staging-db\n  dtt forward server1 --remote 8080:3000 --socks 1080 --foreground",
+		Example: "  devt-tunnel forward server1 auto:5432 --json\n  devt-tunnel forward server1 5433:db:5432 --ttl 15m --save staging-db\n  devt-tunnel forward server1 --remote 8080:3000 --socks 1080 --foreground",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.validate(cmd); err != nil {
@@ -159,7 +159,7 @@ func exposeCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "expose <port|url>", Short: "Expose a local service publicly through ngrok or cloudflared",
 		Long:    "Replace ngrok http 3000 or cloudflared tunnel --url http://localhost:3000. Always warns on stderr that the service will be public. --via is required: settings.toml currently has no default_expose setting. --secret is a keychain secret NAME, never a token. ngrok accepts --domain; cloudflared uses a quick tunnel unless --secret selects a token-based named tunnel, where --domain describes an already-configured public hostname (it does not create routing). --save promotes after readiness. " + backgroundLeaseHelp,
-		Example: "  dtt expose 3000 --via cloudflared\n  dtt expose http://localhost:3000 --via ngrok --secret ngrok-work --domain demo.example.com\n  dtt expose 3000 --via ngrok --dry-run",
+		Example: "  devt-tunnel expose 3000 --via cloudflared\n  devt-tunnel expose http://localhost:3000 --via ngrok --secret ngrok-work --domain demo.example.com\n  devt-tunnel expose 3000 --via ngrok --dry-run",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A safety warning, not an informational diagnostic: --quiet cannot hide it.
@@ -238,7 +238,7 @@ func (a *app) runEphemeral(ctx context.Context, t model.Tunnel, o ephemeralOptio
 	}
 	keep := false
 	defer func() {
-		// Leave unanswered SSH questions available via dtt prompts. All other
+		// Leave unanswered SSH questions available via devt-tunnel prompts. All other
 		// failures release ownership, including interruptions during readiness.
 		var rpc *api.Error
 		if keep || errors.As(err, &rpc) && rpc.Data.Kind == api.NeedsUser {
@@ -323,7 +323,7 @@ func saveCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "save <tmp-id> --name N", Short: "Promote an ephemeral tunnel to a saved definition",
 		Long:    "Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process or losing its leases. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile puts it in an existing profile after promotion; saving does not pin it or remove its lease expiry.",
-		Example: "  dtt save tmp-123 --name staging-db\n  dtt save tmp-123 --name staging-db --profile work --json",
+		Example: "  devt-tunnel save tmp-123 --name staging-db\n  devt-tunnel save tmp-123 --name staging-db --profile work --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(name) == "" {

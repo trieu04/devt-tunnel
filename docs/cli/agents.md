@@ -4,22 +4,22 @@ Use devt-tunnel's MCP tools instead of starting `ssh -L`, `ngrok` or `cloudflare
 
 ## Connect a client
 
-Install a stable `dtt` binary, then print the configuration:
+Install a stable `devt-tunnel` binary, then print the configuration:
 
 ```bash
-dtt mcp config
-dtt mcp tools
+devt-tunnel mcp config
+devt-tunnel mcp tools
 ```
 
 `mcp config` prints a Claude Code registration command and an `mcpServers` object, both with the absolute path of the running executable. Reinstalling or moving the binary may require registering its new path. Do not register a temporary `go run` or `go test` binary.
 
 ```bash
-claude mcp add devt-tunnel -- /absolute/path/dtt mcp serve
+claude mcp add devt-tunnel -- /absolute/path/devt-tunnel mcp serve
 ```
 
 With `--json`, `mcp config` prints only the paste-ready object and `mcp tools` prints the raw tool definitions, without the usual CLI envelope.
 
-Append `--name coding-agent` to the server's arguments to set the label shown in the app and audit log. `dtt mcp serve` waits for an MCP client on stdin and writes only JSON-RPC to stdout, so do not run it interactively.
+Append `--name coding-agent` to the server's arguments to set the label shown in the app and audit log. `devt-tunnel mcp serve` waits for an MCP client on stdin and writes only JSON-RPC to stdout, so do not run it interactively.
 
 ## Capabilities and boundaries
 
@@ -81,10 +81,10 @@ These are MCP **tool arguments**, not shell commands. Pass exactly one of `tunne
 Poll only while the person is responding. A person decides in the app or with these commands, which are **not an agent workaround**:
 
 ```bash
-dtt approvals
-dtt approvals approve ap_123 --scope once
-dtt approvals deny ap_123
-dtt prompts
+devt-tunnel approvals
+devt-tunnel approvals approve ap_123 --scope once
+devt-tunnel approvals deny ap_123
+devt-tunnel prompts
 ```
 
 Approval needs a TTY and a code that MCP tools never expose. A decision alone does not start the process; `tunnel_wait` continues it.

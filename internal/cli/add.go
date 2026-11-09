@@ -20,7 +20,7 @@ func addCommand(a *app) *cobra.Command {
 		Use:     "add",
 		Short:   "Define and save a supervised tunnel",
 		Long:    "Define an ssh, ngrok, cloudflared or command tunnel using the same defaults and evaluation as the app editor. --dry-run prints the exact command that would run and never saves or starts it. Secret flags accept existing keychain names only, never credential values.",
-		Example: "  dtt add ssh db --host server1 -L 15432:5432\n  dtt add cloudflared web --url http://localhost:3000 --dry-run",
+		Example: "  devt-tunnel add ssh db --host server1 -L 15432:5432\n  devt-tunnel add cloudflared web --url http://localhost:3000 --dry-run",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -36,8 +36,8 @@ func addSSHCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ssh <name> --host H -L M",
 		Short:   "Save an SSH tunnel with local, remote or SOCKS forwards",
-		Long:    "Save the equivalent of ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 server1. Use --host for an SSH config alias, or --hostname with --user, --port and --identity for a manual destination. Repeat -L, -R, -D, --flag and --option. Maps accept port:port, port:host:port or bind:port:host:port; non-loopback binds warn. Saved definitions require concrete listen ports; use dtt forward for auto allocation.",
-		Example: "  dtt add ssh db --host server1 -L 15432:5432\n  dtt add ssh proxy --hostname example.com --user dev --port 22 --identity ~/.ssh/id_ed25519 -D 1080\n  dtt add ssh web --host server1 -L 8080:app:80 --flag C --option ServerAliveInterval=15 --dry-run",
+		Long:    "Save the equivalent of ssh -N -L 127.0.0.1:15432:127.0.0.1:5432 server1. Use --host for an SSH config alias, or --hostname with --user, --port and --identity for a manual destination. Repeat -L, -R, -D, --flag and --option. Maps accept port:port, port:host:port or bind:port:host:port; non-loopback binds warn. Saved definitions require concrete listen ports; use devt-tunnel forward for auto allocation.",
+		Example: "  devt-tunnel add ssh db --host server1 -L 15432:5432\n  devt-tunnel add ssh proxy --hostname example.com --user dev --port 22 --identity ~/.ssh/id_ed25519 -D 1080\n  devt-tunnel add ssh web --host server1 -L 8080:app:80 --flag C --option ServerAliveInterval=15 --dry-run",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if (host == "") == (hostname == "") {
@@ -61,7 +61,7 @@ func addSSHCommand(a *app) *cobra.Command {
 						return err
 					}
 					if forward.ListenPort != "" {
-						return usageError("saved definitions require concrete ports; use dtt forward HOST auto:PORT --save NAME")
+						return usageError("saved definitions require concrete ports; use devt-tunnel forward HOST auto:PORT --save NAME")
 					}
 					forwards = append(forwards, forward)
 					if warning != "" {
@@ -136,7 +136,7 @@ func addNgrokCommand(a *app) *cobra.Command {
 		Use:     "ngrok <name> --proto http --addr A",
 		Short:   "Save a public ngrok tunnel",
 		Long:    "Save the equivalent of ngrok http http://127.0.0.1:3000, with log output configured for supervision. --secret is an existing keychain secret NAME, never an authtoken value. The tunnel will be public when started.",
-		Example: "  dtt add ngrok web --proto http --addr http://localhost:3000 --secret ngrok-work\n  dtt add ngrok tcp-db --proto tcp --addr localhost:5432 --dry-run",
+		Example: "  devt-tunnel add ngrok web --proto http --addr http://localhost:3000 --secret ngrok-work\n  devt-tunnel add ngrok tcp-db --proto tcp --addr localhost:5432 --dry-run",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if addr == "" {
@@ -170,7 +170,7 @@ func addCloudflaredCommand(a *app) *cobra.Command {
 		Use:     "cloudflared <name> --url U",
 		Short:   "Save a public quick or named Cloudflare Tunnel",
 		Long:    "Save the equivalent of cloudflared tunnel --url http://localhost:3000 or cloudflared tunnel run NAME. Use --url for a quick tunnel, or --tunnel-name with optional --hostname and --secret for a named tunnel. --secret is an existing keychain secret NAME, never a token value. The tunnel will be public when started.",
-		Example: "  dtt add cloudflared web --url http://localhost:3000\n  dtt add cloudflared work --tunnel-name work --hostname work.example.com --secret cloudflare-work --dry-run",
+		Example: "  devt-tunnel add cloudflared web --url http://localhost:3000\n  devt-tunnel add cloudflared work --tunnel-name work --hostname work.example.com --secret cloudflare-work --dry-run",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if (url == "") == (tunnelName == "") {
@@ -209,7 +209,7 @@ func addShellCommand(a *app) *cobra.Command {
 		Use:     "command <name> --line L",
 		Short:   "Save an arbitrary supervised shell command",
 		Long:    "Save a shell command as a tunnel, equivalent to running sh -c LINE (or the configured platform shell). Optionally set its working directory and readiness log regular expression. --secret-env maps ENV=NAME to an existing keychain reference; NAME is never a secret value and values never enter the preview command.",
-		Example: "  dtt add command proxy --line 'my-proxy --port 8080' --ready-log 'Listening'\n  dtt add command api --line './start-api' --dir ~/work/api --secret-env API_KEY=api-work --dry-run",
+		Example: "  devt-tunnel add command proxy --line 'my-proxy --port 8080' --ready-log 'Listening'\n  devt-tunnel add command api --line './start-api' --dir ~/work/api --secret-env API_KEY=api-work --dry-run",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(line) == "" {

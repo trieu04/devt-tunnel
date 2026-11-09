@@ -16,7 +16,7 @@ func hostsCommand(a *app) *cobra.Command {
 		Use:     "hosts",
 		Short:   "List SSH config aliases or resolve one",
 		Long:    "List literal SSH aliases and their source files. --profile selects a profile's SSH config. --resolve shows effective connection settings, equivalent to ssh -G ALIAS (and ssh -F CONFIG -G ALIAS for a profile-specific config).",
-		Example: "  dtt hosts\n  dtt hosts --profile work\n  dtt hosts --resolve server1 --json",
+		Example: "  devt-tunnel hosts\n  devt-tunnel hosts --profile work\n  devt-tunnel hosts --resolve server1 --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			params := api.SSHParams{Alias: alias, ProfileID: profile}

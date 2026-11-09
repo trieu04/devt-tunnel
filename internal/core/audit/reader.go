@@ -35,7 +35,7 @@ type Batch struct {
 	Lost   bool
 }
 
-// Reader opens short-lived snapshots, so a separate dtt audit process can follow
+// Reader opens short-lived snapshots, so a separate devt-tunnel audit process can follow
 // a running writer through rotations. Readers do not create files/directories
 // or hold open the active file between polls. Reader is safe for concurrent use.
 type Reader struct{ dir string }

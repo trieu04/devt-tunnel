@@ -122,7 +122,7 @@ function General({ overview }: { overview: Overview }) {
             <dd>
               {cli.installed ? (
                 <>
-                  <code>dtt</code> is linked at <code>{cli.link}</code>
+                  <code>devt-tunnel</code> is linked at <code>{cli.link}</code>
                   {!cli.onPath && <> (add its folder to your PATH)</>}
                 </>
               ) : (
@@ -133,7 +133,7 @@ function General({ overview }: { overview: Overview }) {
                       .catch((reason) => setError(String(reason)))
                   }
                 >
-                  Install dtt command
+                  Install devt-tunnel command
                 </button>
               )}
             </dd>

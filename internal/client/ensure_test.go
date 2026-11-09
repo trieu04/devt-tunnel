@@ -132,7 +132,7 @@ func TestEnsureNoStartAndCancellation(t *testing.T) {
 }
 
 func TestDaemonPathAdjacentThenPATH(t *testing.T) {
-	name := "dtt"
+	name := "devt-tunnel"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

@@ -25,7 +25,7 @@ func showCommand(a *app) *cobra.Command {
 		Use:     "show <t>",
 		Short:   "Inspect a tunnel definition and runtime state",
 		Long:    "Show a tunnel's definition, state, endpoints, exact preview command, missing secrets and editor findings. Replaces ps aux | grep ssh and lsof -i :PORT. Refer to a tunnel by ID, name or unique ID prefix.",
-		Example: "  dtt show db\n  dtt show 'Production DB' --json",
+		Example: "  devt-tunnel show db\n  devt-tunnel show 'Production DB' --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			view, err := a.resolveTunnel(cmd.Context(), args[0])
@@ -69,7 +69,7 @@ func addrCommand(a *app) *cobra.Command {
 		Use:     "addr <t>",
 		Short:   "Print a tunnel's address",
 		Long:    "Print the first endpoint without labels, suitable for shell substitution. --all prints every endpoint; --port prints just the first endpoint's port. Replaces extracting a forward's listen address from ssh -L or process arguments.",
-		Example: "  dtt addr db\n  psql \"host=127.0.0.1 port=$(dtt addr db --port) dbname=app\"\n  dtt addr db --all",
+		Example: "  devt-tunnel addr db\n  psql \"host=127.0.0.1 port=$(devt-tunnel addr db --port) dbname=app\"\n  devt-tunnel addr db --all",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if port && all {
@@ -149,7 +149,7 @@ func checkCommand(a *app) *cobra.Command {
 		Use:     "check <t>",
 		Short:   "Run editor checks for a saved tunnel",
 		Long:    "Run the same binary, secret, SSH option and port checks as the editor. Errors fail the command; --strict also fails on warnings. Replaces manually checking binaries with command -v and ports with lsof -i :PORT.",
-		Example: "  dtt check db\n  dtt check db --strict --json",
+		Example: "  devt-tunnel check db\n  devt-tunnel check db --strict --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			view, err := a.resolveTunnel(cmd.Context(), args[0])

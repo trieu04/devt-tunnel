@@ -24,7 +24,7 @@ func listCommand(a *app) *cobra.Command {
 		Use:     "ls",
 		Short:   "List tunnels and their endpoints",
 		Long:    "List saved and ephemeral tunnels, their states, endpoints and ownership. Replaces ps aux | grep ssh and lsof -i :PORT. JSON includes pinned, ephemeral and lease ownership fields.",
-		Example: "  dtt ls\n  dtt ls --running --type ssh\n  dtt ls --profile work --favorites --json",
+		Example: "  devt-tunnel ls\n  devt-tunnel ls --running --type ssh\n  devt-tunnel ls --profile work --favorites --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if filter.kind != "" && !slices.Contains([]string{"ssh", "ngrok", "cloudflared", "command"}, filter.kind) {

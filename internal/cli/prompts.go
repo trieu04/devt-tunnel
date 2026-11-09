@@ -18,8 +18,8 @@ func init() { register(promptsCommand) }
 func promptsCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "prompts", Short: "List SSH questions waiting for an answer",
-		Long:    "List pending SSH questions, such as the host-key and password questions normally displayed by ssh. Answers are never shown. Use dtt prompts answer to respond or cancel a question.",
-		Example: "  dtt prompts\n  dtt prompts --json\n  printf 'yes\\n' | dtt prompts answer PROMPT_ID --stdin",
+		Long:    "List pending SSH questions, such as the host-key and password questions normally displayed by ssh. Answers are never shown. Use devt-tunnel prompts answer to respond or cancel a question.",
+		Example: "  devt-tunnel prompts\n  devt-tunnel prompts --json\n  printf 'yes\\n' | devt-tunnel prompts answer PROMPT_ID --stdin",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			prompts, err := a.pendingPrompts(cmd.Context())
@@ -46,7 +46,7 @@ func answerPromptCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "answer <id>", Short: "Answer or cancel a pending SSH question",
 		Long:    "Answer an SSH question, like typing into ssh's password prompt. Read the answer from a hidden TTY prompt or --stdin, never from a flag or command argument. Without a TTY, --stdin is required (exit 4 otherwise). --cancel cancels without reading input. Ctrl-C while answering cancels the question.",
-		Example: "  dtt prompts answer PROMPT_ID\n  printf 'yes\\n' | dtt prompts answer PROMPT_ID --stdin\n  dtt prompts answer PROMPT_ID --cancel",
+		Example: "  devt-tunnel prompts answer PROMPT_ID\n  printf 'yes\\n' | devt-tunnel prompts answer PROMPT_ID --stdin\n  devt-tunnel prompts answer PROMPT_ID --cancel",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if stdin && cancel {
@@ -64,7 +64,7 @@ func answerPromptCommand(a *app) *cobra.Command {
 				}
 			}
 			if pending == nil {
-				return usageError("unknown pending prompt %q; run dtt prompts", args[0])
+				return usageError("unknown pending prompt %q; run devt-tunnel prompts", args[0])
 			}
 			if cancel {
 				err = a.call(cmd.Context(), "prompt.answer", api.AnswerPromptParams{ID: pending.ID, Cancelled: true}, nil)
@@ -139,8 +139,8 @@ func (a *app) handleTunnelPrompts(ctx context.Context, ids map[string]bool) erro
 
 func needsPromptInput(pending api.PendingPrompt) error {
 	return &tunnelError{
-		err:    api.NewError(api.NeedsUser, "SSH question needs an answer; run dtt prompts (or dtt prompts answer "+pending.ID+" --stdin)"),
-		tunnel: pending.Prompt.TunnelID, hint: "dtt prompts",
+		err:    api.NewError(api.NeedsUser, "SSH question needs an answer; run devt-tunnel prompts (or devt-tunnel prompts answer "+pending.ID+" --stdin)"),
+		tunnel: pending.Prompt.TunnelID, hint: "devt-tunnel prompts",
 	}
 }
 

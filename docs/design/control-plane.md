@@ -17,15 +17,15 @@ Non-goals: team management or accounts; isolating a hostile agent running as the
 ## Design
 
 ```text
- Desktop app             dtt (CLI)            Agent client
+ Desktop app             devt-tunnel (CLI)            Agent client
  React UI, tray,           │                    │ MCP over stdio
  shortcut, OS auth         │                    ▼
- internal/host             │                  dtt mcp serve
+ internal/host             │                  devt-tunnel mcp serve
        │                   │                    │
        └───────────────────┴──── JSON-RPC ──────┘
                            │     local socket, same user only
                            ▼
- ┌─ dtt daemon (no Wails, no GUI libraries) ─────────────────────────┐
+ ┌─ devt-tunnel daemon (no Wails, no GUI libraries) ─────────────────────────┐
  │  internal/control  API server, client identity, event stream     │
  │  internal/engine   registry · leases · policy · approvals · audit │
  │  internal/core     model · config · command · checks · supervisor │
@@ -45,12 +45,12 @@ The CLI and agents need one registry shared with the GUI. Hosting the API in the
 
 ### Daemon lifecycle
 
-- **Binary:** `dtt daemon run`, from one Go binary without Wails, built with `CGO_ENABLED=0`. Packages ship it next to the app and `devt-tunnel-askpass`.
+- **Binary:** `devt-tunnel daemon run`, from one Go binary without Wails, built with `CGO_ENABLED=0`. Packages ship it next to the app and `devt-tunnel-askpass`.
 - **Start:** any client starts it on demand, detached from the caller. `--no-daemon-start` turns this off.
 - **Single instance:** an advisory lock on `daemon.lock` decides ownership, since a stale socket file can survive a crash.
 - **Logs:** its own `daemon.log`.
 - **Idle exit:** after 5 minutes with no active tunnel, lease, pending prompt or connected client.
-- **Upgrade:** a matching API and build is reused. A different build with the same API stays while active and is replaced when idle. A different API is replaced only when idle; otherwise the error names `dtt daemon restart`, which stops all tunnels.
+- **Upgrade:** a matching API and build is reused. A different build with the same API stays while active and is replaced when idle. A different API is replaced only when idle; otherwise the error names `devt-tunnel daemon restart`, which stops all tunnels.
 - **Crash:** on Unix, `processes.json` and `FindOrphans` find surviving children. On Windows, `KILL_ON_JOB_CLOSE` ends them with the daemon, and leases are restored as stopped.
 
 ### Behavior across clients
@@ -67,7 +67,7 @@ The CLI and agents need one registry shared with the GUI. Hosting the API in the
 | Concept | Meaning | Stored in |
 |---|---|---|
 | Saved tunnel | Shareable definition | `tunnels.toml` |
-| Ephemeral tunnel | Created by `dtt run`, `forward`, `expose` or an agent. Id starts with `tmp-`. Removed when it stops. `dtt save` or `tunnel_save` promotes it in place, keeping the process | `runtime.json` |
+| Ephemeral tunnel | Created by `devt-tunnel run`, `forward`, `expose` or an agent. Id starts with `tmp-`. Removed when it stops. `devt-tunnel save` or `tunnel_save` promotes it in place, keeping the process | `runtime.json` |
 | Lease | A claim by one client on one tunnel until a set time | `runtime.json` |
 
 `runtime.json` is written atomically with mode `0600` before any spawn. Person-revoked leases stay as tombstones until their original expiry, so the next renew or close returns `lease_revoked`.
@@ -77,7 +77,7 @@ The CLI and agents need one registry shared with the GUI. Hosting the API in the
 1. **A person starting a tunnel pins it.** No lease expiry stops a pinned tunnel.
 2. **Opening adds a lease and starts the tunnel if needed.** Clients can share a running tunnel, each with its own lease.
 3. **Closing or expiring removes a lease.** The tunnel stops when no leases remain, it is not pinned, and a lease started it.
-4. **A person always wins.** `dtt stop` and the GUI stop the tunnel at once and revoke its leases. An agent can only release its own lease.
+4. **A person always wins.** `devt-tunnel stop` and the GUI stop the tunnel at once and revoke its leases. An agent can only release its own lease.
 5. **Disconnect:** when a lease holder's last connection drops, its leases end after the grace period. Reconnecting needs the same `client.session` token and client kind and name. A daemon restart starts this grace for valid leases.
 6. **Bulk starts** (GUI launch, `StartGroup`) skip every `tmp-` tunnel. Agents cannot request launch, profile or favorite metadata.
 7. **Crash safety:** after a daemon restart, expired leases and ephemerals are stopped and removed; the rest continue if the process survived. Surviving Unix children stay in the orphan list and are not respawned.
@@ -130,7 +130,7 @@ JSON-RPC 2.0, one message per line, over a Unix socket. `internal/api` holds the
 
 ## Prompts
 
-`SSH_ASKPASS_REQUIRE=force` sends every prompt through the broker, including host keys and OTP. The GUI shows a dialog, `dtt start` on a TTY asks inline for its own tunnel, and `dtt prompts` answers from any terminal. MCP can see a prompt's kind but **cannot answer**. A non-TTY CLI call or an agent gets `needs_user`, and the tunnel fails at the timeout if nobody answers.
+`SSH_ASKPASS_REQUIRE=force` sends every prompt through the broker, including host keys and OTP. The GUI shows a dialog, `devt-tunnel start` on a TTY asks inline for its own tunnel, and `devt-tunnel prompts` answers from any terminal. MCP can see a prompt's kind but **cannot answer**. A non-TTY CLI call or an agent gets `needs_user`, and the tunnel fails at the timeout if nobody answers.
 
 Stored passphrases are answered automatically only for the OpenSSH form `Enter passphrase for key '...':`. This is defense in depth: an SSH server can imitate that text.
 
@@ -188,7 +188,7 @@ New MCP-built definitions, including saves and promotions, must also satisfy:
 A request that needs approval returns `pending_approval` at once with `data.approvalId`; long-blocking calls are avoided because clients time them out.
 
 1. The engine records the actor, session, `purpose` (at most 1024 bytes), requested name, daemon-authored summary, exact argv and `Spec.Fingerprint()`. Agent-provided text is labelled untrusted wherever it is shown.
-2. A person decides in the GUI or with `dtt approvals`. Undecided requests are denied at the timeout. `approval.decide` needs a code of eight uppercase hex characters, which MCP callers never receive; they also do not get argv or the session token.
+2. A person decides in the GUI or with `devt-tunnel approvals`. Undecided requests are denied at the timeout. `approval.decide` needs a code of eight uppercase hex characters, which MCP callers never receive; they also do not get argv or the session token.
 3. The scopes are **once**, **session** and **always**. `policy.CanAlwaysAllow` offers "always" only for safe saved ids or safe loopback alias forwards, never for public exposure, unsafe saved execution, manual hosts, new secret references, or save and promote.
 4. The agent retries the original operation; approval never starts background execution. The daemon rebuilds the spec and matches fingerprint, actor, session and target. A changed spec needs a new request.
 
@@ -212,7 +212,7 @@ The terminal code only slows an agent with shell access; see below.
 | Malformed forwards or argument injection | Strict parsing and conservative public classification | Owner-written saved extensions still need deliberate approval |
 | Port squatting or queue flooding | Saved-port reservation, per-session caps, pruning, denial coalescing | Many distinct sessions can bypass per-session caps |
 
-**This is not a security boundary against an agent with a shell.** It runs as the same user, so it can call `dtt` as a "cli" client, edit `settings.toml`, or run `ssh -R` directly. The policy protects the MCP route, and gives shell-capable agents a tracked option that is easier than a stray `ssh`. Documentation must say this plainly.
+**This is not a security boundary against an agent with a shell.** It runs as the same user, so it can call `devt-tunnel` as a "cli" client, edit `settings.toml`, or run `ssh -R` directly. The policy protects the MCP route, and gives shell-capable agents a tracked option that is easier than a stray `ssh`. Documentation must say this plainly.
 
 ## Audit and log redaction
 
@@ -220,7 +220,7 @@ The terminal code only slows an agent with shell access; see below.
 
 - Lease, ephemeral, renewal, save and promotion admission is audited first, and an audit failure refuses the operation. These records are write-ahead, so a later storage failure can leave one without a matching change.
 - Audit errors never block lease release, expiry or a person's stop.
-- `audit.read` is person-only and used by `dtt audit`. The trail is an owner-readable record, not tamper-proof.
+- `audit.read` is person-only and used by `devt-tunnel audit`. The trail is an owner-readable record, not tamper-proof.
 
 For MCP `logs.*`, the daemon fetches only the secrets that tunnel references, and a keychain failure fails the read. Redaction catches byte-exact known values, including values split across records. Values shorter than four bytes, transformed values, and matches spanning an idle flush are not protected. Person clients keep raw logs. Status errors, which can contain process output, are replaced with a generic message for MCP.
 
@@ -228,7 +228,7 @@ For MCP `logs.*`, the daemon fetches only the secrets that tunnel references, an
 
 - Tunnel rows and detail: an agent badge with holder and time left, and an `ephemeral` tag with **Save**.
 - Approval dialog: actor, labelled agent-provided name and purpose, daemon summary, exact argv, code and countdown. A button click sends the code; only allowed scopes are offered.
-- Settings → **Agents**: policy and active leases with **Revoke**. On macOS, **Install command-line tool** links `dtt` onto `PATH`.
+- Settings → **Agents**: policy and active leases with **Revoke**. On macOS, **Install command-line tool** links `devt-tunnel` onto `PATH`.
 - A banner and retry when the daemon cannot be reached.
 
 ## Risks
@@ -236,7 +236,7 @@ For MCP `logs.*`, the daemon fetches only the secrets that tunnel references, an
 - **Keychain from a background process** is unverified on macOS, and Secret Service without a desktop needs acceptance. Affected tunnels report `keyring_unavailable`.
 - **SSH agent:** the daemon keeps its launch `SSH_AUTH_SOCK` and does not replace it. Restart it from the desired session if that path goes stale.
 - **macOS signing:** a second signed executable launched detached needs checking under hardened runtime and notarization.
-- **Tunnels with no window:** the daemon allows them for CLI use. `dtt ls`, `dtt daemon status` and the GUI show everything.
+- **Tunnels with no window:** the daemon allows them for CLI use. `devt-tunnel ls`, `devt-tunnel daemon status` and the GUI show everything.
 - **MCP changes quickly:** keep it in a thin adapter so SDK upgrades do not reach the engine.
 
 ## Decisions
@@ -249,4 +249,4 @@ Accepted by the project owner on 2026-11-04.
 | C2 | "Central" means per user, per machine | No remote transport yet; a headless server is a [later stage](../roadmap.md#later-headless-servers), and a team product would need its own design |
 | C3 | ⌘Q keeps stopping everything, including CLI and agent tunnels | The tray could later add "Close app, keep tunnels" |
 | C4 | Public exposure by an agent always needs a person | Unattended agents cannot publish local services |
-| C5 | The CLI is named `dtt` and uses `cobra` | `devt-tunnel` remains the app |
+| C5 | The CLI is named `devt-tunnel` and uses `cobra` | `devt-tunnel-desktop` is the app |

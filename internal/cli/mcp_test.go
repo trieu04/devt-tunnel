@@ -70,7 +70,7 @@ func TestMCPConfig(t *testing.T) {
 }
 
 func TestMCPConfigShellQuoting(t *testing.T) {
-	for _, path := range []string{"/Applications/Tunnel Tools/dtt", "/home/person's tools/dtt", `C:\Program Files\Tunnel Tools\dtt.exe`} {
+	for _, path := range []string{"/Applications/Tunnel Tools/devt-tunnel", "/home/person's tools/devt-tunnel", `C:\Program Files\Tunnel Tools\devt-tunnel.exe`} {
 		line := mcpAddCommand(path)
 		args, err := command.SplitArgs(line, platform.Dialect())
 		want := []string{"claude", "mcp", "add", "devt-tunnel", "--", path, "mcp", "serve"}
@@ -82,11 +82,11 @@ func TestMCPConfigShellQuoting(t *testing.T) {
 
 func TestMCPTemporaryExecutable(t *testing.T) {
 	for path, want := range map[string]bool{
-		"/tmp/go-build123/b001/exe/dtt":   true,
-		"/tmp/TestBuild/exe/cli.test":     true,
-		"/tmp/TestBuild/exe/cli.test.exe": true,
-		"/usr/local/bin/dtt":              false,
-		"/tmp/installed/dtt":              false,
+		"/tmp/go-build123/b001/exe/devt-tunnel": true,
+		"/tmp/TestBuild/exe/cli.test":           true,
+		"/tmp/TestBuild/exe/cli.test.exe":       true,
+		"/usr/local/bin/devt-tunnel":            false,
+		"/tmp/installed/devt-tunnel":            false,
 	} {
 		if got := mcpTemporaryExecutable(filepath.FromSlash(path)); got != want {
 			t.Errorf("%q: temporary=%t, want %t", path, got, want)

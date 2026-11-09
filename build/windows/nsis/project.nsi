@@ -19,7 +19,7 @@ Unicode true
 ####
 ## The following information is taken from the wails_tools.nsh file, but they can be overwritten here.
 ####
-## !define INFO_PROJECTNAME    "my-project" # Default "devt-tunnel"
+## !define INFO_PROJECTNAME    "my-project" # Default "devt-tunnel-desktop"
 ## !define INFO_COMPANYNAME    "My Company" # Default "My Company"
 ## !define INFO_PRODUCTNAME    "My Product Name" # Default "My Product"
 ## !define INFO_PRODUCTVERSION "1.0.0"     # Default "0.1.0"
@@ -105,7 +105,7 @@ Section
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
     
-    # Put the bundled `dtt` CLI on PATH (idempotent; broadcasts the change).
+    # Put the bundled `devt-tunnel` CLI on PATH (idempotent; broadcasts the change).
     nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "$$t='${PATH_SCOPE}'; $$d='$INSTDIR'; $$p=[Environment]::GetEnvironmentVariable('Path',$$t); if(-not (($$p -split ';') -contains $$d)){[Environment]::SetEnvironmentVariable('Path',(($$p.TrimEnd(';'))+';'+$$d).TrimStart(';'),$$t)}"`
     Pop $0
 

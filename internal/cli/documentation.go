@@ -29,8 +29,8 @@ func guideTopics() []string {
 func docsCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "docs [topic]", Short: "Read embedded offline guides",
-		Long:    "List available documentation topics, or print a guide as Markdown. Guides are embedded in the binary and never need the network or daemon. Use dtt help for command flags and dtt man to generate a complete manual.",
-		Example: "  dtt docs\n  dtt docs quickstart\n  dtt docs troubleshooting", Args: cobra.MaximumNArgs(1),
+		Long:    "List available documentation topics, or print a guide as Markdown. Guides are embedded in the binary and never need the network or daemon. Use devt-tunnel help for command flags and devt-tunnel man to generate a complete manual.",
+		Example: "  devt-tunnel docs\n  devt-tunnel docs quickstart\n  devt-tunnel docs troubleshooting", Args: cobra.MaximumNArgs(1),
 		ValidArgs: guideTopics(),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -61,7 +61,7 @@ func docsCommand(a *app) *cobra.Command {
 				_, err = a.io.Out.Write(guide)
 				return err
 			}
-			return usageError("unknown documentation topic %q; use dtt docs to list topics", args[0])
+			return usageError("unknown documentation topic %q; use devt-tunnel docs to list topics", args[0])
 		},
 	}
 }
@@ -70,8 +70,8 @@ func manCommand(a *app) *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use: "man", Short: "Write man pages for every command",
-		Long:    "Generate section 1 man pages in --dir (the current directory by default), creating the directory if necessary. Existing pages with the same names are overwritten. View the root page with man ./dtt.1, or install the pages into a man1 directory. No daemon or network is needed.",
-		Example: "  dtt man --dir ./man\n  man ./man/dtt.1", Args: cobra.NoArgs,
+		Long:    "Generate section 1 man pages in --dir (the current directory by default), creating the directory if necessary. Existing pages with the same names are overwritten. View the root page with man ./devt-tunnel.1, or install the pages into a man1 directory. No daemon or network is needed.",
+		Example: "  devt-tunnel man --dir ./man\n  man ./man/devt-tunnel.1", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := generateManPages(cmd.Root(), dir); err != nil {
 				return err
@@ -79,7 +79,7 @@ func manCommand(a *app) *cobra.Command {
 			if a.json {
 				return a.writeJSON(map[string]any{"directory": dir, "section": 1})
 			}
-			a.diagnostic("Man pages written to %s; view with man %s/dtt.1", dir, dir)
+			a.diagnostic("Man pages written to %s; view with man %s/devt-tunnel.1", dir, dir)
 			return nil
 		},
 	}
@@ -122,5 +122,5 @@ func generateManPages(root *cobra.Command, dir string) error {
 	// Cobra otherwise inserts the current month in .TH even without its history
 	// tag. Pin it to the interface contract date, independent of TZ and the clock.
 	date := time.Date(2026, time.November, 4, 0, 0, 0, 0, time.UTC)
-	return doc.GenManTree(root, &doc.GenManHeader{Title: "DTT", Section: "1", Source: "dtt", Manual: "dtt manual", Date: &date}, dir)
+	return doc.GenManTree(root, &doc.GenManHeader{Title: "DEVT-TUNNEL", Section: "1", Source: "devt-tunnel", Manual: "devt-tunnel manual", Date: &date}, dir)
 }

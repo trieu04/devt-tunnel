@@ -5,7 +5,7 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "devt-tunnel"
+    !define INFO_PROJECTNAME "devt-tunnel-desktop"
 !endif
 !ifndef INFO_COMPANYNAME
     !define INFO_COMPANYNAME "trieu04"
@@ -107,7 +107,7 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 
 !macro wails.files
     File "/oname=devt-tunnel-askpass.exe" "..\..\..\bin\devt-tunnel-askpass.exe"
-    File "/oname=dtt.exe" "..\..\..\bin\dtt.exe"
+    File "/oname=devt-tunnel.exe" "..\..\..\bin\devt-tunnel.exe"
 
     !ifdef SUPPORTS_AMD64
         ${if} ${IsNativeAMD64}

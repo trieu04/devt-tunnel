@@ -21,7 +21,7 @@ func TestCompletionScripts(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
 		t.Run(shell, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer
-			if code := Run(context.Background(), []string{"completion", shell}, IO{Out: &out, Err: &diagnostics}, Options{}); code != 0 || out.Len() < 100 || !strings.Contains(out.String(), "dtt") || diagnostics.Len() != 0 {
+			if code := Run(context.Background(), []string{"completion", shell}, IO{Out: &out, Err: &diagnostics}, Options{}); code != 0 || out.Len() < 100 || !strings.Contains(out.String(), "devt-tunnel") || diagnostics.Len() != 0 {
 				t.Fatalf("code=%d bytes=%d stderr=%s", code, out.Len(), &diagnostics)
 			}
 		})

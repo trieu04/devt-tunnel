@@ -32,7 +32,7 @@ func defineDaemon(t *testing.T, prepare ...func(*engine.Options)) *engine.Engine
 		t.Skip("POSIX shell fixture")
 	}
 	root := t.TempDir()
-	runDir, err := os.MkdirTemp("", "dtt-define-")
+	runDir, err := os.MkdirTemp("", "devt-tunnel-define-")
 	if err != nil {
 		t.Fatal(err)
 	}

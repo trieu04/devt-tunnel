@@ -27,9 +27,9 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 	env := setup(t)
 	run(t, "ssh-keygen", "-q", "-p", "-P", passphrase, "-N", "", "-f", env.key)
 	bin := t.TempDir()
-	dtt := filepath.Join(bin, "dtt")
+	cliBin := filepath.Join(bin, "devt-tunnel")
 	for _, build := range []struct{ output, pkg string }{
-		{dtt, "../../cmd/dtt"},
+		{cliBin, "../../cmd/devt-tunnel"},
 		{filepath.Join(bin, "devt-tunnel-askpass"), "../../cmd/devt-tunnel-askpass"},
 	} {
 		if output, err := exec.Command("go", "build", "-o", build.output, build.pkg).CombinedOutput(); err != nil {
@@ -63,7 +63,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 	if err := config.Save(filepath.Join(root, "config", "tunnels.toml"), model.Config{Tunnels: []model.Tunnel{tun}}); err != nil {
 		t.Fatal(err)
 	}
-	daemon := exec.Command(dtt, "daemon", "run", "--idle-exit", "0")
+	daemon := exec.Command(cliBin, "daemon", "run", "--idle-exit", "0")
 	var daemonOutput bytes.Buffer
 	daemon.Stdout, daemon.Stderr = &daemonOutput, &daemonOutput
 	if err := daemon.Start(); err != nil {
@@ -101,7 +101,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 	})
 	invoke := func(input string, args ...string) (int, string, string) {
 		t.Helper()
-		command := exec.CommandContext(ctx, dtt, append([]string{"--no-daemon-start", "--timeout", "15s"}, args...)...)
+		command := exec.CommandContext(ctx, cliBin, append([]string{"--no-daemon-start", "--timeout", "15s"}, args...)...)
 		command.Stdin = strings.NewReader(input)
 		var out, diagnostics bytes.Buffer
 		command.Stdout, command.Stderr = &out, &diagnostics
@@ -135,7 +135,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		}
 	}
 	t.Run("answer-from-second-process", func(t *testing.T) {
-		if code, out, diagnostics := invoke("", "start", "t", "--json"); code != 4 || out != "" || !strings.Contains(diagnostics, "dtt prompts") {
+		if code, out, diagnostics := invoke("", "start", "t", "--json"); code != 4 || out != "" || !strings.Contains(diagnostics, "devt-tunnel prompts") {
 			t.Fatalf("non-TTY start: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 		}
 		code, out, diagnostics := invoke("", "prompts", "--json")
@@ -168,7 +168,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		if err := os.Remove(knownHosts); err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
-		output, err := cliPTYStart(t, ctx, dtt, "continue connecting", "yes\n")
+		output, err := cliPTYStart(t, ctx, cliBin, "continue connecting", "yes\n")
 		if err != nil || !strings.Contains(output, address) {
 			t.Fatalf("TTY start: %v\n%s", err, output)
 		}
@@ -211,14 +211,14 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 	})
 	t.Run("hidden-passphrase-on-tty", func(t *testing.T) {
 		run(t, "ssh-keygen", "-q", "-p", "-P", "", "-N", passphrase, "-f", env.key)
-		output, err := cliPTYStart(t, ctx, dtt, "passphrase for", passphrase+"\n")
+		output, err := cliPTYStart(t, ctx, cliBin, "passphrase for", passphrase+"\n")
 		if err != nil || !strings.Contains(output, address) || strings.Contains(output, passphrase) {
 			t.Fatalf("hidden TTY start: %v\n%s", err, output)
 		}
 		verifyAndStop(t)
 	})
 	t.Run("ctrl-c-cancels-hidden-question", func(t *testing.T) {
-		output, _ := cliPTYStart(t, ctx, dtt, "passphrase for", "\x03")
+		output, _ := cliPTYStart(t, ctx, cliBin, "passphrase for", "\x03")
 		if !strings.Contains(output, "context canceled") || strings.Contains(output, address) {
 			t.Fatalf("interrupted TTY start: %s", output)
 		}
@@ -232,7 +232,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 	})
 }
 
-func cliPTYStart(t *testing.T, ctx context.Context, dtt, question, answer string) (string, error) {
+func cliPTYStart(t *testing.T, ctx context.Context, cliBin, question, answer string) (string, error) {
 	t.Helper()
 	script, err := exec.LookPath("script")
 	if err != nil {
@@ -243,9 +243,9 @@ func cliPTYStart(t *testing.T, ctx context.Context, dtt, question, answer string
 	}
 	var args []string
 	if runtime.GOOS == "darwin" {
-		args = []string{"-q", "/dev/null", dtt, "--no-daemon-start", "start", "t", "--timeout", "15s"}
+		args = []string{"-q", "/dev/null", cliBin, "--no-daemon-start", "start", "t", "--timeout", "15s"}
 	} else {
-		quoted := "'" + strings.ReplaceAll(dtt, "'", "'\\''") + "'"
+		quoted := "'" + strings.ReplaceAll(cliBin, "'", "'\\''") + "'"
 		args = []string{"-q", "-e", "-c", quoted + " --no-daemon-start start t --timeout 15s", "/dev/null"}
 	}
 	command := exec.CommandContext(ctx, script, args...)

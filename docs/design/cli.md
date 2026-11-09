@@ -1,8 +1,8 @@
-# `dtt` command line
+# `devt-tunnel` command line
 
 Status: implemented. Open acceptance is in the [roadmap](../roadmap.md). Architecture and rationale are in [control-plane.md](control-plane.md).
 
-`dtt` complements the desktop app: people and agents use it to create managed tunnels in place of plain commands. This file is the contract for behavior a command listing cannot express. Commands and flags are in the [generated reference](../cli/reference/dtt.md); usage is in the [guides](../cli/quickstart.md).
+`devt-tunnel` complements the desktop app: people and agents use it to create managed tunnels in place of plain commands. This file is the contract for behavior a command listing cannot express. Commands and flags are in the [generated reference](../cli/reference/devt-tunnel.md); usage is in the [guides](../cli/quickstart.md).
 
 ## Concepts
 
@@ -21,9 +21,9 @@ Port maps use the form `listen:target`:
 | `0.0.0.0:5433:db:5432` | Listen on all interfaces. Prints a warning |
 | `auto:5432` | Pick a free local port, and print it |
 
-`dtt expose` requires `--via`: `internal/core/settings` does not yet implement `default_expose`. The two services differ in cost and in who can reach the URL. It always prints a stderr line saying the service will be public, including with `--quiet` or `--dry-run`. `--secret` names an existing keychain secret. For cloudflared, `--secret` selects a token-based named tunnel; `--domain` then describes an already-routed hostname and does not configure routing. Quick Cloudflare tunnels cannot choose a domain.
+`devt-tunnel expose` requires `--via`: `internal/core/settings` does not yet implement `default_expose`. The two services differ in cost and in who can reach the URL. It always prints a stderr line saying the service will be public, including with `--quiet` or `--dry-run`. `--secret` names an existing keychain secret. For cloudflared, `--secret` selects a token-based named tunnel; `--domain` then describes an already-routed hostname and does not configure routing. Quick Cloudflare tunnels cannot choose a domain.
 
-`--detach` and background forms return once the tunnel is ready, or exit with an error. They retain a detached person lease, not a pin, so CLI exit does not apply connection grace. Without `--ttl`, detached leases have no expiry: stop with `dtt stop` or `dtt leases revoke`. An explicit `--ttl` is positive and at most 8h, and stops the tunnel after that time. Foreground leases default to 30m; Ctrl-C closes the lease and stops the tunnel. Promoting with `--save` or `dtt save` preserves the process and lease, including its expiry.
+`--detach` and background forms return once the tunnel is ready, or exit with an error. They retain a detached person lease, not a pin, so CLI exit does not apply connection grace. Without `--ttl`, detached leases have no expiry: stop with `devt-tunnel stop` or `devt-tunnel leases revoke`. An explicit `--ttl` is positive and at most 8h, and stops the tunnel after that time. Foreground leases default to 30m; Ctrl-C closes the lease and stops the tunnel. Promoting with `--save` or `devt-tunnel save` preserves the process and lease, including its expiry.
 
 `--dry-run` uses `tunnel.evaluateDraft` to print the exact command and findings without starting. Auto ports are allocated only by `tunnel.runEphemeral`, so a dry run with `auto` exits 2 with a concrete-port hint rather than inventing an address.
 
@@ -33,7 +33,7 @@ Values are read from a hidden prompt or from stdin, never from a flag, so they s
 
 ## Approvals
 
-`dtt approvals approve` needs a TTY and the code shown in the request.
+`devt-tunnel approvals approve` needs a TTY and the code shown in the request.
 
 ## Global behavior
 
@@ -45,7 +45,7 @@ Values are read from a hidden prompt or from stdin, never from a flag, so they s
 
 - Results go to stdout and diagnostics to stderr. Tables are for people and may change.
 - `--json` is the stable interface. Result objects carry `apiVersion` (`api.Version`). New fields may appear, and removing or renaming a field raises the version.
-- Deliberate exceptions: `dtt mcp config --json` and `dtt mcp tools --json` have no envelope, and `dtt mcp serve` writes only JSON-RPC to stdout.
+- Deliberate exceptions: `devt-tunnel mcp config --json` and `devt-tunnel mcp tools --json` have no envelope, and `devt-tunnel mcp serve` writes only JSON-RPC to stdout.
 - Colors, spinners and tables appear only on a TTY.
 - `ls --json` and `show --json` include `owner` with `pinned`, `ephemeral` and `leases`; active claims also include a holder and expiry.
 - `logs --json -f` emits one object per batch. Log lines have sequence numbers but no timestamps, so a positive `--since` exits 2.
@@ -53,7 +53,7 @@ Values are read from a hidden prompt or from stdin, never from a flag, so they s
 With `--json`, errors are written to stderr as a single object:
 
 ```json
-{ "apiVersion": 2, "error": { "code": "needs_secret", "message": "secret \"ngrok-personal\" is missing", "tunnel": "web", "hint": "dtt secret set ngrok-personal" } }
+{ "apiVersion": 2, "error": { "code": "needs_secret", "message": "secret \"ngrok-personal\" is missing", "tunnel": "web", "hint": "devt-tunnel secret set ngrok-personal" } }
 ```
 
 ### Exit codes
@@ -63,7 +63,7 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`), a policy refusal (`policy_denied`) or disabled agent access (`agent_disabled`). See the message and `dtt logs db` |
+| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`), a policy refusal (`policy_denied`) or disabled agent access (`agent_disabled`). See the message and `devt-tunnel logs db` |
 | 2 | `usage` | Bad arguments or an invalid tunnel specification (`invalid_spec`), or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`). Includes `pending_approval`; poll the approval and retry after a person decides. |
@@ -76,7 +76,7 @@ Keep this table in step with `internal/api` error codes, which MCP also uses.
 
 ### Prompts
 
-On a TTY, `dtt start`, `run` and `forward` show SSH questions for their own tunnel inline, as `ssh` would, and `rm` asks before deleting. Without a TTY, or with `--no-input`, nothing waits for input: the command exits with code 4 and the prompt stays available through `dtt prompts` and the app until the broker times out.
+On a TTY, `devt-tunnel start`, `run` and `forward` show SSH questions for their own tunnel inline, as `ssh` would, and `rm` asks before deleting. Without a TTY, or with `--no-input`, nothing waits for input: the command exits with code 4 and the prompt stays available through `devt-tunnel prompts` and the app until the broker times out.
 
 ### Configuration
 
@@ -91,11 +91,11 @@ There are no environment variables for secret values.
 
 ## How the documentation is built
 
-`--help`, the [command reference](../cli/reference/dtt.md), man pages and completions are generated from the `cobra` definitions in `internal/cli` with `go run ./internal/cli/gen`. Guides in `docs/cli/*.md` are hand-written and embedded for `dtt docs`; `agents.md` is also an MCP resource.
+`--help`, the [command reference](../cli/reference/devt-tunnel.md), man pages and completions are generated from the `cobra` definitions in `internal/cli` with `go run ./internal/cli/gen`. Guides in `docs/cli/*.md` are hand-written and embedded for `devt-tunnel docs`; `agents.md` is also an MCP resource.
 
 CI enforces:
 
 - **Drift:** the regenerated reference must match what is committed.
-- **Examples:** shell blocks and inline `dtt ...` examples in the guides are parsed against the command tree.
+- **Examples:** shell blocks and inline `devt-tunnel ...` examples in the guides are parsed against the command tree.
 - **Exit codes:** the tables here and in the troubleshooting guide must match `ExitCodes`, which must cover every `internal/api` error kind.
 - **Completeness:** every command needs `Long` text and an `Example`.

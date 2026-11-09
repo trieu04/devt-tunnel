@@ -41,27 +41,27 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	dir, err := os.MkdirTemp("", "dtt-binary")
+	dir, err := os.MkdirTemp("", "devt-tunnel-binary")
 	if err != nil {
 		panic(err)
 	}
-	fixture = filepath.Join(dir, "dtt")
+	fixture = filepath.Join(dir, "devt-tunnel")
 	if runtime.GOOS == "windows" {
 		fixture += ".exe"
 	}
-	cmd := exec.Command("go", "test", "-c", "-o", fixture, "../../cmd/dtt")
+	cmd := exec.Command("go", "test", "-c", "-o", fixture, "../../cmd/devt-tunnel")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "build dtt fixture: %v\n%s", err, out)
+		fmt.Fprintf(os.Stderr, "build devt-tunnel fixture: %v\n%s", err, out)
 		os.RemoveAll(dir)
 		os.Exit(1)
 	}
-	oldFixture = filepath.Join(dir, "dtt-old")
+	oldFixture = filepath.Join(dir, "devt-tunnel-old")
 	if runtime.GOOS == "windows" {
 		oldFixture += ".exe"
 	}
-	cmd = exec.Command("go", "test", "-c", "-ldflags=-X github.com/trieu04/devt-tunnel/cmd/dtt.version=older", "-o", oldFixture, "../../cmd/dtt")
+	cmd = exec.Command("go", "test", "-c", "-ldflags=-X github.com/trieu04/devt-tunnel/cmd/devt-tunnel.version=older", "-o", oldFixture, "../../cmd/devt-tunnel")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "build old dtt fixture: %v\n%s", err, out)
+		fmt.Fprintf(os.Stderr, "build old devt-tunnel fixture: %v\n%s", err, out)
 		os.RemoveAll(dir)
 		os.Exit(1)
 	}

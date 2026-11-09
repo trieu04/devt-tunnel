@@ -35,7 +35,7 @@ func controlSocket(goos, state, temp string, getenv func(string) string) (string
 		return path, nil
 	}
 	hash := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", os.Getuid(), path)))
-	name := fmt.Sprintf("dtt-%x", hash[:6])
+	name := fmt.Sprintf("devt-tunnel-%x", hash[:6])
 	path = filepath.Join(temp, name, "ctl.sock")
 	if len(path) > 100 && goos != "windows" {
 		path = filepath.Join("/tmp", name, "ctl.sock")

@@ -3,18 +3,19 @@ import { createPortal } from "react-dom";
 import type { Forward } from "../bindings/github.com/trieu04/devt-tunnel/internal/core/model";
 import { STATE_LABELS } from "./lib/filter";
 
-export function TunnelGlyph({ size = 16 }: { size?: number }) {
+export function AppLogo({ size = 28 }: { size?: number }) {
   return (
-    <svg
-      aria-hidden="true"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M2 12h5M17 12h5M7 7h10v10H7z" />
+    <svg className="app-logo" role="img" aria-label="devt-tunnel" width={size} height={size} viewBox="100 100 824 824">
+      <rect x="100" y="100" width="824" height="824" fill="#141416" />
+      <g fill="#f7f7f4">
+        <rect x="336" y="336" width="352" height="56" />
+        <rect x="336" y="632" width="352" height="56" />
+        <rect x="336" y="392" width="56" height="240" />
+        <rect x="632" y="392" width="56" height="240" />
+        <rect x="224" y="484" width="112" height="56" />
+        <rect x="688" y="484" width="112" height="56" />
+      </g>
+      <rect x="448" y="392" width="56" height="240" fill="#3d6bff" />
     </svg>
   );
 }

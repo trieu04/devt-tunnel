@@ -11,7 +11,7 @@ A check is done only when it has run where it claims to: say which of unit test,
 | **Agents** | A real MCP client with no shell opens, uses and closes a tunnel, and a public tunnel waits for a person |
 | **Windows** | Windows column of the [validation matrix](platform.md#validation) is filled in |
 | **Linux** | Linux columns are filled in; Wayland failures have working fallbacks |
-| **v1.0** | Signed installers published by the release workflow; a clean machine installs and runs one tunnel from the app and from `dtt` |
+| **v1.0** | Signed installers published by the release workflow; a clean machine installs and runs one tunnel from the app and from `devt-tunnel` |
 
 Order is macOS, Windows, Linux.
 
@@ -73,9 +73,9 @@ Fill the [validation matrix](platform.md#validation) on real desktops, fix what 
 
 ## Distribution
 
-Unsigned builds, the release workflow, deb/rpm contents, the update notice and bundled `dtt` exist. Remaining:
+Unsigned builds, the release workflow, deb/rpm contents, the update notice and bundled `devt-tunnel` exist. Remaining:
 
-- **Windows:** sign `dtt.exe` in `build/windows/Taskfile.yml` and `release.yml` (only the app, helper and installer are signed). Confirm the installer bootstraps WebView2 on a clean Windows 10, and stops a running daemon before uninstalling. Confirm the `RMDir /r "$AppData\..."` in `project.nsi` cannot reach `tunnels.toml`. Exclude MSIX, and delete its template if unused.
+- **Windows:** sign `devt-tunnel.exe` in `build/windows/Taskfile.yml` and `release.yml` (only the app, helper and installer are signed). Confirm the installer bootstraps WebView2 on a clean Windows 10, and stops a running daemon before uninstalling. Confirm the `RMDir /r "$AppData\..."` in `project.nsi` cannot reach `tunnels.toml`. Exclude MSIX, and delete its template if unused.
 - **macOS:** test notarization on a clean Mac with a real browser download; recheck Keychain prompts across an unsigned-to-signed upgrade. Publish a Homebrew cask from a personal tap first.
 - **Linux:** confirm rpm dependency overrides on Fedora; install and remove scripts must not fail with no desktop database.
 - **Upgrades:** test replacing binaries with an active tunnel on each OS.
@@ -84,10 +84,10 @@ Unsigned builds, the release workflow, deb/rpm contents, the update notice and b
 
 ## Later: headless servers
 
-Not part of the milestones above. Run `dtt` on a headless server and manage it through its daemon socket, similar to `docker context`. The API has no remote transport today, so this needs its own design for reaching the socket and for authorization.
+Not part of the milestones above. Run `devt-tunnel` on a headless server and manage it through its daemon socket, similar to `docker context`. The API has no remote transport today, so this needs its own design for reaching the socket and for authorization.
 
 Groundwork when this starts:
 
-- **Exit test:** on Linux with no GTK or display, one `dtt` binary adds and starts an SSH forward, answers a host-key prompt on the TTY, connects, reads logs and stops. Without Secret Service, secret-free tunnels work and tunnels with secrets report `keyring_unavailable`.
-- **Standalone archives:** `build-cli.yml` packs only `dtt`, but the daemon also needs `devt-tunnel-askpass` for SSH prompts.
-- **Login start:** `dtt daemon install [--start-marked]` and `uninstall`, using launchd and a systemd user unit; Windows later.
+- **Exit test:** on Linux with no GTK or display, one `devt-tunnel` binary adds and starts an SSH forward, answers a host-key prompt on the TTY, connects, reads logs and stops. Without Secret Service, secret-free tunnels work and tunnels with secrets report `keyring_unavailable`.
+- **Standalone archives:** `build-cli.yml` packs only `devt-tunnel`, but the daemon also needs `devt-tunnel-askpass` for SSH prompts.
+- **Login start:** `devt-tunnel daemon install [--start-marked]` and `uninstall`, using launchd and a systemd user unit; Windows later.

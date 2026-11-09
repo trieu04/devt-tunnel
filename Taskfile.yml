@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  APP_NAME: "devt-tunnel"
+  APP_NAME: "devt-tunnel-desktop"
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "pnpm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'

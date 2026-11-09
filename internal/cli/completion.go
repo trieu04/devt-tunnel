@@ -17,7 +17,7 @@ func completionCommand(_ *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "completion bash|zsh|fish|powershell", Short: "Generate a shell completion script",
 		Long:      "Write a completion script to stdout. Source it in your shell or install it in the shell's completion directory. Tunnel and profile suggestions query only an already-running daemon, silently giving up after 250ms; completion never starts a daemon.",
-		Example:   "  source <(dtt completion bash)\n  dtt completion zsh > \"${fpath[1]}/_dtt\"\n  dtt completion fish > ~/.config/fish/completions/dtt.fish\n  dtt completion powershell | Out-String | Invoke-Expression",
+		Example:   "  source <(devt-tunnel completion bash)\n  devt-tunnel completion zsh > \"${fpath[1]}/_devt-tunnel\"\n  devt-tunnel completion fish > ~/.config/fish/completions/devt-tunnel.fish\n  devt-tunnel completion powershell | Out-String | Invoke-Expression",
 		ValidArgs: []string{"bash", "zsh", "fish", "powershell"}, Args: cobra.ExactValidArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch args[0] {
@@ -39,15 +39,15 @@ func attachCompletions(root *cobra.Command, a *app) {
 	var walk func(*cobra.Command)
 	walk = func(cmd *cobra.Command) {
 		switch cmd.CommandPath() {
-		case "dtt show", "dtt addr", "dtt logs", "dtt check", "dtt wait", "dtt edit", "dtt dup", "dtt set":
+		case "devt-tunnel show", "devt-tunnel addr", "devt-tunnel logs", "devt-tunnel check", "devt-tunnel wait", "devt-tunnel edit", "devt-tunnel dup", "devt-tunnel set":
 			cmd.ValidArgsFunction = a.referenceCompletion("tunnel", false)
-		case "dtt start", "dtt stop", "dtt restart", "dtt rm":
+		case "devt-tunnel start", "devt-tunnel stop", "devt-tunnel restart", "devt-tunnel rm":
 			cmd.ValidArgsFunction = a.referenceCompletion("tunnel", true)
-		case "dtt profile show", "dtt profile rm":
+		case "devt-tunnel profile show", "devt-tunnel profile rm":
 			cmd.ValidArgsFunction = a.referenceCompletion("profile", false)
-		case "dtt group show", "dtt group start", "dtt group stop", "dtt group rm":
+		case "devt-tunnel group show", "devt-tunnel group start", "devt-tunnel group stop", "devt-tunnel group rm":
 			cmd.ValidArgsFunction = a.referenceCompletion("group", false)
-		case "dtt group assign", "dtt group unassign":
+		case "devt-tunnel group assign", "devt-tunnel group unassign":
 			cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
 				if len(args) == 0 {
 					return a.completeReferences(cmd, "group", prefix)
@@ -57,14 +57,14 @@ func attachCompletions(root *cobra.Command, a *app) {
 		}
 		if cmd.Flags().Lookup("group") != nil {
 			kind := "group"
-			if cmd.CommandPath() == "dtt ls" {
+			if cmd.CommandPath() == "devt-tunnel ls" {
 				kind = "group-id" // this read flag accepts IDs only, like ls --profile
 			}
 			_ = cmd.RegisterFlagCompletionFunc("group", a.referenceCompletion(kind, true))
 		}
 		if cmd.Flags().Lookup("profile") != nil {
 			kind := "profile"
-			if cmd.CommandPath() == "dtt ls" || cmd.CommandPath() == "dtt hosts" {
+			if cmd.CommandPath() == "devt-tunnel ls" || cmd.CommandPath() == "devt-tunnel hosts" {
 				// These read flags accept IDs, unlike profile commands and the
 				// define/lifecycle flags which also resolve names and prefixes.
 				kind = "profile-id"

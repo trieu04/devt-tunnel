@@ -73,9 +73,9 @@ jobs:
         shell: bash
         run: |
           wails3 task darwin:package ARCH=${{ matrix.arch }}
-          ditto -c -k --keepParent bin/devt-tunnel.app "bin/devt-tunnel-${{ matrix.arch }}-unsigned.app.zip"
+          ditto -c -k --keepParent bin/devt-tunnel-desktop.app "bin/devt-tunnel-desktop-${{ matrix.arch }}-unsigned.app.zip"
           wails3 task darwin:create:dmg
-          mv bin/devt-tunnel.dmg "bin/devt-tunnel-${{ matrix.arch }}-unsigned.dmg"
+          mv bin/devt-tunnel-desktop.dmg "bin/devt-tunnel-desktop-${{ matrix.arch }}-unsigned.dmg"
       - name: Package Windows
         if: matrix.target == 'windows'
         run: |

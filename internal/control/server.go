@@ -294,7 +294,7 @@ func (c *connection) execute(req api.Request) {
 		return
 	}
 	if !c.compatible && req.Method != api.DaemonStatusMethod && req.Method != api.DaemonShutdown {
-		c.respond(req.ID, nil, api.NewError(api.Incompatible, fmt.Sprintf("client API %d is incompatible with daemon API %d; run dtt daemon restart (stops all tunnels)", c.apiVersion, api.Version)))
+		c.respond(req.ID, nil, api.NewError(api.Incompatible, fmt.Sprintf("client API %d is incompatible with daemon API %d; run devt-tunnel daemon restart (stops all tunnels)", c.apiVersion, api.Version)))
 		return
 	}
 	if req.Method == api.DaemonHello {

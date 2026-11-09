@@ -26,7 +26,7 @@ tasks:
           EXTRA_TAGS: '{{.EXTRA_TAGS}}'
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
-      - task: common:build:dtt
+      - task: common:build:cli
         vars:
           TARGET_OS: windows
           TARGET_ARCH: '{{.ARCH | default ARCH}}'

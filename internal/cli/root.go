@@ -1,4 +1,4 @@
-// Package cli implements the headless dtt command line.
+// Package cli implements the headless devt-tunnel command line.
 package cli
 
 import (
@@ -97,10 +97,10 @@ func newApp(streams IO, options Options) *app {
 
 func newRoot(a *app) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "dtt",
+		Use:           "devt-tunnel",
 		Short:         "Supervise and inspect development tunnels",
 		Long:          "Manage development tunnels through the per-user daemon. Use traditional ssh, ngrok and cloudflared commands under one supervisor.",
-		Example:       "  dtt ls\n  dtt show db\n  dtt daemon status",
+		Example:       "  devt-tunnel ls\n  devt-tunnel show db\n  devt-tunnel daemon status",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
@@ -131,8 +131,8 @@ func newRoot(a *app) *cobra.Command {
 	root.SetHelpCommand(&cobra.Command{
 		Use:     "help [command...]",
 		Short:   "Show help for a command",
-		Long:    "Show the usage, flags and examples for any dtt command.",
-		Example: "  dtt help ls\n  dtt help daemon run",
+		Long:    "Show the usage, flags and examples for any devt-tunnel command.",
+		Example: "  devt-tunnel help ls\n  devt-tunnel help daemon run",
 		RunE: func(_ *cobra.Command, args []string) error {
 			cmd, rest, err := root.Find(args)
 			if err != nil {
@@ -149,7 +149,7 @@ func newRoot(a *app) *cobra.Command {
 }
 
 func (a *app) info() api.ClientInfo {
-	return api.ClientInfo{Kind: "cli", Name: "dtt", Version: a.options.Version}
+	return api.ClientInfo{Kind: "cli", Name: "devt-tunnel", Version: a.options.Version}
 }
 
 func (a *app) client(ctx context.Context) (*client.Client, error) {

@@ -17,7 +17,7 @@ func versionCommand(a *app) *cobra.Command {
 		Use:     "version",
 		Short:   "Show CLI and reachable daemon versions",
 		Long:    "Show the CLI version and API version, plus the daemon version if reachable. This command never starts a daemon.",
-		Example: "  dtt version\n  dtt version --json",
+		Example: "  devt-tunnel version\n  devt-tunnel version --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var daemon *api.HelloResult
@@ -37,7 +37,7 @@ func versionCommand(a *app) *cobra.Command {
 				}
 				return a.writeJSON(fields)
 			}
-			if _, err := fmt.Fprintf(a.io.Out, "dtt %s (API %d)\n", a.options.Version, api.Version); err != nil {
+			if _, err := fmt.Fprintf(a.io.Out, "devt-tunnel %s (API %d)\n", a.options.Version, api.Version); err != nil {
 				return err
 			}
 			if daemon != nil {

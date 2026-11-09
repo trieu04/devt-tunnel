@@ -26,7 +26,7 @@ func leasesCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "leases", Short: "List clients holding tunnels and their expiries",
 		Long:    "Inspect the claims keeping tunnels running, rather than guessing from process IDs. Shows lease ID, tunnel, holder, effective expiry, whether it started the tunnel and whether it is detached. Detached person leases survive CLI exit; an expiry of never means explicit stop or revoke is required.",
-		Example: "  dtt leases\n  dtt leases --json\n  dtt leases revoke ls_123",
+		Example: "  devt-tunnel leases\n  devt-tunnel leases --json\n  devt-tunnel leases revoke ls_123",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			leases := []api.Lease{}
@@ -60,7 +60,7 @@ func leasesCommand(a *app) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use: "revoke <id>", Short: "Revoke a lease and stop its unowned tunnel",
 		Long:    "Revoke a client's claim immediately. If no other lease or person pin keeps the tunnel running, its process tree is stopped. Replaces killing an agent's tunnel process directly; the agent receives lease_revoked on its next operation.",
-		Example: "  dtt leases revoke ls_123\n  dtt leases revoke ls_123 --json",
+		Example: "  devt-tunnel leases revoke ls_123\n  devt-tunnel leases revoke ls_123 --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.call(cmd.Context(), "lease.revoke", api.IDParams{ID: args[0]}, nil); err != nil {
@@ -79,7 +79,7 @@ func approvalsCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "approvals", Short: "List pending agent requests for a person",
 		Long:    "Show pending fingerprint-bound agent requests with their summary, exact argv, actor, purpose, allowed scopes, expiry and confirmation code. Codes are intentionally visible to person clients, never to agents. Approval does not run anything: the requesting agent must retry. Use approvals approve/deny, or their top-level approve/deny aliases.",
-		Example: "  dtt approvals\n  dtt approvals --json\n  dtt approvals approve ap_123 --scope once",
+		Example: "  devt-tunnel approvals\n  devt-tunnel approvals --json\n  devt-tunnel approvals approve ap_123 --scope once",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var all []api.Approval
@@ -127,12 +127,12 @@ func decideApprovalCommand(a *app, approve bool) *cobra.Command {
 	var scope string
 	cmd := &cobra.Command{
 		Use: verb + " <id>", Short: strings.ToUpper(verb[:1]) + verb[1:] + " a pending agent request",
-		Long:    "Deny an agent request without granting permission. No terminal or confirmation code input is needed to deny. The request is fingerprint-bound, and deciding it never starts a tunnel. This command is also available as dtt deny.",
-		Example: "  dtt approvals deny ap_123\n  dtt deny ap_123 --json",
+		Long:    "Deny an agent request without granting permission. No terminal or confirmation code input is needed to deny. The request is fingerprint-bound, and deciding it never starts a tunnel. This command is also available as devt-tunnel deny.",
+		Example: "  devt-tunnel approvals deny ap_123\n  devt-tunnel deny ap_123 --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if approve && !a.canPrompt() {
-				return api.NewError(api.NeedsUser, "approval requires a TTY and the code shown by dtt approvals; --no-input cannot approve")
+				return api.NewError(api.NeedsUser, "approval requires a TTY and the code shown by devt-tunnel approvals; --no-input cannot approve")
 			}
 			if approve && scope != "once" && scope != "session" && scope != "always" {
 				return usageError("--scope must be once, session or always")
@@ -155,7 +155,7 @@ func decideApprovalCommand(a *app, approve bool) *cobra.Command {
 				if err := writeApproval(a.io.Err, request, false); err != nil {
 					return err
 				}
-				if _, err := fmt.Fprintf(a.io.Err, "Selected scope: %s\nEnter the code shown by dtt approvals: ", scope); err != nil {
+				if _, err := fmt.Fprintf(a.io.Err, "Selected scope: %s\nEnter the code shown by devt-tunnel approvals: ", scope); err != nil {
 					return err
 				}
 				var err error
@@ -180,8 +180,8 @@ func decideApprovalCommand(a *app, approve bool) *cobra.Command {
 		},
 	}
 	if approve {
-		cmd.Long = "Approve a pending fingerprint-bound agent request. Requires a TTY, even with --json, and asks you to type the code displayed in dtt approvals. Codes are read from the terminal, never flags or piped stdin; --no-input exits 4. --scope must be one of the request's allowed scopes. The agent must retry after approval; no command is run by this decision. Also available as dtt approve."
-		cmd.Example = "  dtt approvals approve ap_123\n  dtt approve ap_123 --scope session"
+		cmd.Long = "Approve a pending fingerprint-bound agent request. Requires a TTY, even with --json, and asks you to type the code displayed in devt-tunnel approvals. Codes are read from the terminal, never flags or piped stdin; --no-input exits 4. --scope must be one of the request's allowed scopes. The agent must retry after approval; no command is run by this decision. Also available as devt-tunnel approve."
+		cmd.Example = "  devt-tunnel approvals approve ap_123\n  devt-tunnel approve ap_123 --scope session"
 		cmd.Flags().StringVar(&scope, "scope", "once", "Permission scope: once, session or always (must be allowed by the request)")
 	} else {
 		scope = "once"
@@ -195,7 +195,7 @@ func auditCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "audit", Short: "Read or follow the daemon's audit history",
 		Long:    "Read retained change history, like tail on an audit log, filtered by exact actor name, exact tunnel ID (including deleted IDs) and an inclusive --since duration ago or RFC3339 timestamp. Filters combine with AND. -f polls audit.read with its persistent cursor until Ctrl-C; --json emits one versioned object per batch in follow mode. Warns if retention overtakes the cursor.",
-		Example: "  dtt audit --actor claude-code --since 1h\n  dtt audit --tunnel staging-db --json\n  dtt audit -f --json",
+		Example: "  devt-tunnel audit --actor claude-code --since 1h\n  devt-tunnel audit --tunnel staging-db --json\n  devt-tunnel audit -f --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			params := api.AuditReadParams{Actor: actor, Tunnel: tunnel, Limit: 200}

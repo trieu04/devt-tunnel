@@ -114,7 +114,7 @@ type Broker struct {
 // NewBroker starts listening. helperPath is the devt-tunnel-askpass binary.
 func NewBroker(helperPath string, secrets secret.Store, ask Asker) (*Broker, error) {
 	// A short temp path, because Unix socket paths are limited to about 100 bytes.
-	dir, err := os.MkdirTemp("", "dtt")
+	dir, err := os.MkdirTemp("", "devt-tunnel")
 	if err != nil {
 		return nil, err
 	}

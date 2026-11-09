@@ -241,7 +241,7 @@ func (s *Engine) snapshotOpenRequestLocked(actor api.Actor, session string, r *o
 		if prompt.view.Prompt.TunnelID == r.result.TunnelID {
 			r.result.Status = "needs_user"
 			r.result.PromptKind = string(prompt.view.Prompt.Kind)
-			r.result.Message = "SSH is waiting for a person to answer a prompt in devt-tunnel or dtt prompts. Agents cannot answer it."
+			r.result.Message = "SSH is waiting for a person to answer a prompt in devt-tunnel or devt-tunnel prompts. Agents cannot answer it."
 			break
 		}
 	}

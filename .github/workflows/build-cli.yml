@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    name: dtt ${{ matrix.goos }}/${{ matrix.goarch }}
+    name: devt-tunnel ${{ matrix.goos }}/${{ matrix.goarch }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,20 +56,20 @@ jobs:
           ext=""; [ "$GOOS" = windows ] && ext=".exe"
           mkdir -p dist
           go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.value }}" \
-            -o "dist/dtt${ext}" ./cmd/dtt
+            -o "dist/devt-tunnel${ext}" ./cmd/devt-tunnel
       - name: Package
         run: |
-          name="dtt_${{ steps.version.outputs.value }}_${GOOS}_${GOARCH}"
+          name="devt-tunnel_${{ steps.version.outputs.value }}_${GOOS}_${GOARCH}"
           cd dist
           if [ "$GOOS" = windows ]; then
-            zip "${name}.zip" dtt.exe
+            zip "${name}.zip" devt-tunnel.exe
           else
-            tar -czf "${name}.tar.gz" dtt
+            tar -czf "${name}.tar.gz" devt-tunnel
           fi
-          rm -f dtt dtt.exe
+          rm -f devt-tunnel devt-tunnel.exe
           sha256sum * > "${name}.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: dtt-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: devt-tunnel-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error

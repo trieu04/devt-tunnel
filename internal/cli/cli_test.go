@@ -227,7 +227,7 @@ func TestJSONErrorsAndNonTTY(t *testing.T) {
 	var out, diagnostics bytes.Buffer
 	a := newApp(IO{In: strings.NewReader(""), Out: &out, Err: &diagnostics}, Options{})
 	a.json = true
-	a.writeError(&tunnelError{err: api.NewError(api.NeedsSecret, "secret missing"), tunnel: "web", hint: "dtt secret set token"})
+	a.writeError(&tunnelError{err: api.NewError(api.NeedsSecret, "secret missing"), tunnel: "web", hint: "devt-tunnel secret set token"})
 	var got struct {
 		Version int `json:"apiVersion"`
 		Error   struct{ Code, Message, Tunnel, Hint string }

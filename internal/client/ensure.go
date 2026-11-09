@@ -31,7 +31,7 @@ func DaemonPath() (string, error) {
 }
 
 func daemonPath(exe string) (string, error) {
-	name := "dtt"
+	name := "devt-tunnel"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

@@ -17,7 +17,7 @@ func groupCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "group", Short: "Operate on sets of tunnels together",
 		Long:    "Manage named sets of tunnels and start or stop them as one task. A tunnel can be in many groups, independently of its profile. Group references accept an exact ID, exact name or unique ID prefix.",
-		Example: "  dtt group add Backend\n  dtt group assign backend db api\n  dtt group start backend", Args: cobra.NoArgs,
+		Example: "  devt-tunnel group add Backend\n  devt-tunnel group assign backend db api\n  devt-tunnel group start backend", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(groupListCommand(a), groupShowCommand(a), groupAddCommand(a), groupMembershipCommand(a, "assign"), groupMembershipCommand(a, "unassign"), groupRemoveCommand(a))
@@ -29,7 +29,7 @@ func groupCommand(a *app) *cobra.Command {
 		cmd.AddCommand(&cobra.Command{
 			Use: action + " <g>", Short: label + " all members of a group",
 			Long:    label + " every tunnel belonging to a group.",
-			Example: "  dtt group " + action + " backend\n  dtt group " + action + " backend --json", Args: cobra.ExactArgs(1),
+			Example: "  devt-tunnel group " + action + " backend\n  devt-tunnel group " + action + " backend --json", Args: cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				g, err := a.resolveGroup(cmd.Context(), args[0])
 				if err != nil {
@@ -91,7 +91,7 @@ func groupListCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "ls", Short: "List groups and their members",
 		Long:    "List groups with their member IDs. Deleting a group never deletes its tunnels.",
-		Example: "  dtt group ls\n  dtt group ls --json", Args: cobra.NoArgs,
+		Example: "  devt-tunnel group ls\n  devt-tunnel group ls --json", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			overview, err := a.overview(cmd.Context())
 			if err != nil {
@@ -116,7 +116,7 @@ func groupShowCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "show <g>", Short: "Inspect a group and its members",
 		Long:    "Show a group's description and members.",
-		Example: "  dtt group show backend\n  dtt group show Backend --json", Args: cobra.ExactArgs(1),
+		Example: "  devt-tunnel group show backend\n  devt-tunnel group show Backend --json", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			overview, err := a.overview(cmd.Context())
 			if err != nil {
@@ -146,8 +146,8 @@ func groupAddCommand(a *app) *cobra.Command {
 	var g model.Group
 	cmd := &cobra.Command{
 		Use: "add <name>", Short: "Create a group",
-		Long:    "Create an empty group. Assign tunnels with dtt group assign or dtt add --group.",
-		Example: "  dtt group add Backend\n  dtt group add Staging --description 'Everything for staging'", Args: cobra.ExactArgs(1),
+		Long:    "Create an empty group. Assign tunnels with devt-tunnel group assign or devt-tunnel add --group.",
+		Example: "  devt-tunnel group add Backend\n  devt-tunnel group add Staging --description 'Everything for staging'", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g.Name = strings.TrimSpace(args[0])
 			if g.Name == "" {
@@ -177,7 +177,7 @@ func groupMembershipCommand(a *app, verb string) *cobra.Command {
 	return &cobra.Command{
 		Use: verb + " <g> <t>...", Short: short,
 		Long:    short + ". Tunnels keep their other groups and their profile, and running tunnels are left running.",
-		Example: "  dtt group " + verb + " backend db api", Args: cobra.MinimumNArgs(2),
+		Example: "  devt-tunnel group " + verb + " backend db api", Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			overview, err := a.overview(cmd.Context())
 			if err != nil {
@@ -210,7 +210,7 @@ func groupRemoveCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "rm <g>", Short: "Delete a group, keeping its tunnels",
 		Long:    "Delete a group and remove its membership from tunnels. Tunnel definitions and running processes are kept.",
-		Example: "  dtt group rm backend\n  dtt group rm backend --json", Args: cobra.ExactArgs(1),
+		Example: "  devt-tunnel group rm backend\n  devt-tunnel group rm backend --json", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g, err := a.resolveGroup(cmd.Context(), args[0])
 			if err != nil {

@@ -144,14 +144,14 @@ func TestGuideExamples(t *testing.T) {
 					continue
 				}
 				// Table cells contain executable replacements/fixes. Inline prose
-				// such as "use `dtt secret set --stdin`" is a command mention,
+				// such as "use `devt-tunnel secret set --stdin`" is a command mention,
 				// not a complete invocation, and is not treated as an example.
 				if strings.Contains(line, "<!-- phase19 -->") {
 					t.Error("obsolete phase19 row marker")
 				}
 				if strings.HasPrefix(line, "|") {
 					for _, match := range inlineCode.FindAllStringSubmatch(line, -1) {
-						if strings.HasPrefix(match[1], "dtt ") {
+						if strings.HasPrefix(match[1], "devt-tunnel ") {
 							checked += checkShellExamples(t, match[1])
 						}
 					}
@@ -173,7 +173,7 @@ func checkShellExamples(t *testing.T, source string) int {
 	checked := 0
 	syntax.Walk(program, func(node syntax.Node) bool {
 		call, ok := node.(*syntax.CallExpr)
-		if !ok || len(call.Args) == 0 || exampleWord(call.Args[0].Parts) != "dtt" {
+		if !ok || len(call.Args) == 0 || exampleWord(call.Args[0].Parts) != "devt-tunnel" {
 			return true
 		}
 		args := make([]string, 0, len(call.Args)-1)
@@ -182,7 +182,7 @@ func checkShellExamples(t *testing.T, source string) int {
 		}
 
 		if err := parseExample(args); err != nil {
-			t.Errorf("dtt %s: %v", strings.Join(args, " "), err)
+			t.Errorf("devt-tunnel %s: %v", strings.Join(args, " "), err)
 		}
 		checked++
 		return true
@@ -202,7 +202,7 @@ func exampleWord(parts []syntax.WordPart) string {
 			word.WriteString(exampleWord(part.Parts))
 		default:
 			// Never expand parameters, substitutions or globs. A placeholder
-			// preserves their argument slot; Walk separately checks nested dtt.
+			// preserves their argument slot; Walk separately checks nested devt-tunnel.
 			word.WriteString("example")
 		}
 	}
@@ -233,15 +233,15 @@ func TestGuideParserRejectsDriftWithoutExecuting(t *testing.T) {
 		}
 	}
 	for _, source := range []string{
-		`dtt start db && psql -p "$(dtt addr db --port)"`,
-		`op read op://dev/token | dtt secret set token --kind env --stdin`,
-		`dtt show 'Production DB' --json > output.json`,
+		`devt-tunnel start db && psql -p "$(devt-tunnel addr db --port)"`,
+		`op read op://dev/token | devt-tunnel secret set token --kind env --stdin`,
+		`devt-tunnel show 'Production DB' --json > output.json`,
 	} {
 		if checked := checkShellExamples(t, source); checked == 0 {
 			t.Errorf("missed example %q", source)
 		}
 	}
-	if checked := checkShellExamples(t, "dtt forward staging auto:5432\ndtt addr db --port"); checked != 2 {
+	if checked := checkShellExamples(t, "devt-tunnel forward staging auto:5432\ndevt-tunnel addr db --port"); checked != 2 {
 		t.Fatalf("one-off examples were not all checked: checked %d", checked)
 	}
 }
@@ -271,7 +271,7 @@ func TestOfflineDocumentationCommands(t *testing.T) {
 	if code := Run(context.Background(), []string{"man", "--dir", dir}, IO{Out: &out, Err: &diagnostics}, Options{}); code != 0 {
 		t.Fatalf("man: code=%d stdout=%s stderr=%s", code, &out, &diagnostics)
 	}
-	for _, name := range []string{"dtt.1", "dtt-docs.1", "dtt-man.1", "dtt-completion.1", "dtt-group-assign.1"} {
+	for _, name := range []string{"devt-tunnel.1", "devt-tunnel-docs.1", "devt-tunnel-man.1", "devt-tunnel-completion.1", "devt-tunnel-group-assign.1"} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil || len(data) == 0 || bytes.Contains(data, []byte("Auto generated")) {
 			t.Errorf("%s: err=%v content=%s", name, err, data)

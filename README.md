@@ -19,7 +19,7 @@
 devt-tunnel is a desktop app to define, find and run tunnels. It drives the binaries already installed on the machine and reuses `~/.ssh/config`.
 
 - The **desktop app** is the main product.
-- The **`dtt` command line** complements it: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
+- The **`devt-tunnel` command line** complements it: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
 - **MCP** is a secondary channel for agents to create tunnels, with approval in the app according to policy.
 
 > [!IMPORTANT]
@@ -28,7 +28,7 @@ devt-tunnel is a desktop app to define, find and run tunnels. It drives the bina
 > | Area | State |
 > | --- | --- |
 > | Desktop app, daemon and tunnel engine | Native macOS acceptance passed |
-> | `dtt` CLI, leases, policy and approvals | Implemented; native macOS approval passed |
+> | `devt-tunnel` CLI, leases, policy and approvals | Implemented; native macOS approval passed |
 > | MCP server | Implemented with automated checks; real-client check pending |
 > | Windows and Linux | Compile in CI; not yet run on a real desktop |
 > | Installers | Unsigned builds automated; signing needs owner infrastructure |
@@ -46,7 +46,7 @@ devt-tunnel is a desktop app to define, find and run tunnels. It drives the bina
 - **Vault**: API keys, tunnel tokens and passphrases stay in the OS keychain and are referenced by name. Revealing one requires OS authentication.
 - **SSH prompts handled**: Passphrase, host-key and OTP prompts come to you through the app or the terminal.
 - **Tray**: Running tunnels and favorites in the menu bar or notification area, where the desktop has one.
-- **`dtt` CLI**: Shares one registry with the app through a per-user daemon, with `--json` output and stable exit codes for scripts.
+- **`devt-tunnel` CLI**: Shares one registry with the app through a per-user daemon, with `--json` output and stable exit codes for scripts.
 - **Agent access under policy**: Leases, allow-lists, approvals and an audit trail for tunnels opened by agents.
 
 ## Installation
@@ -63,7 +63,7 @@ Release artifacts are created as a draft from `v*` tags. Until signed artifacts 
 | Windows 10/11 | NSIS installer | Windows 10 may install the WebView2 runtime during setup |
 | Ubuntu 24.04+, Debian 13+, Fedora | `.deb` or `.rpm` | GNOME may need a StatusNotifierItem extension for a tray icon |
 
-The desktop packages also bundle `dtt`. On macOS, use **Install command-line tool** in Settings to put it on `PATH`.
+The desktop packages also bundle `devt-tunnel`. On macOS, use **Install command-line tool** in Settings to put it on `PATH`.
 
 ### Build from Source
 
@@ -72,7 +72,7 @@ The desktop packages also bundle `dtt`. On macOS, use **Install command-line too
 ```bash
 git clone https://github.com/trieu04/devt-tunnel.git
 cd devt-tunnel
-CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt
+CGO_ENABLED=0 go build -o bin/devt-tunnel ./cmd/devt-tunnel
 ```
 
 **Desktop app** also needs Node 22, pnpm, the Wails CLI and, on Linux, GTK and WebKitGTK. See [CONTRIBUTING.md](CONTRIBUTING.md#prerequisites).
@@ -98,9 +98,9 @@ If a required secret is missing, the tunnel shows `Needs token`; add it in the V
 ### First Tunnel from a Terminal
 
 ```bash
-dtt add ssh db --host server1 -L 5433:127.0.0.1:5432
-dtt start db
-dtt stop db
+devt-tunnel add ssh db --host server1 -L 5433:127.0.0.1:5432
+devt-tunnel start db
+devt-tunnel stop db
 ```
 
 Tunnels created this way also appear in the app. See the [quick start](docs/cli/quickstart.md).
@@ -112,39 +112,39 @@ Screens and [shortcuts](docs/product.md#shortcuts) are described in the product 
 ```mermaid
 flowchart LR
   GUI["Desktop app"] --> S["Local socket<br/>JSON-RPC"]
-  CLI["dtt CLI"] --> S
-  Agent["MCP client"] -->|stdio| MCP["dtt mcp serve"] --> S
+  CLI["devt-tunnel CLI"] --> S
+  Agent["MCP client"] -->|stdio| MCP["devt-tunnel mcp serve"] --> S
   S --> D["Per-user daemon<br/>registry, supervisor,<br/>policy, audit"]
   D --> P["ssh, cloudflared,<br/>ngrok, commands"]
   D -.->|"approval and<br/>SSH prompts"| GUI
 ```
 
-- **One daemon**: A per-user daemon starts on demand and owns the registry, supervisor and prompts. The app, `dtt` and MCP are clients of the same local API, so they always show the same state.
+- **One daemon**: A per-user daemon starts on demand and owns the registry, supervisor and prompts. The app, `devt-tunnel` and MCP are clients of the same local API, so they always show the same state.
 - **Process supervision**: Tunnels run as process groups (Job Objects on Windows), so a stop leaves nothing behind. Orphans are detected after a crash.
-- **Ownership**: Saved tunnels are shareable definitions. Ephemeral tunnels from `dtt` or an agent are not written to `tunnels.toml`, are removed when they stop, and can be saved.
+- **Ownership**: Saved tunnels are shareable definitions. Ephemeral tunnels from `devt-tunnel` or an agent are not written to `tunnels.toml`, are removed when they stop, and can be saved.
 - **Leases**: A client's claim on a tunnel until a set time. A person's stop always wins.
 
 Details are in [architecture.md](docs/architecture.md) and the [control plane design](docs/design/control-plane.md).
 
 ## Command-line Tool
 
-Use `dtt` in place of the commands you already know:
+Use `devt-tunnel` in place of the commands you already know:
 
 ```bash
-dtt run -- ssh -N -L 5433:127.0.0.1:5432 server1   # Run a familiar command under supervision
-dtt forward server1 5433:5432                      # Short form, stays in the background
-dtt expose 3000 --via cloudflared --ttl 15m        # Expose a local service publicly
-dtt ls                                             # All tunnels and their owners
+devt-tunnel run -- ssh -N -L 5433:127.0.0.1:5432 server1   # Run a familiar command under supervision
+devt-tunnel forward server1 5433:5432                      # Short form, stays in the background
+devt-tunnel expose 3000 --via cloudflared --ttl 15m        # Expose a local service publicly
+devt-tunnel ls                                             # All tunnels and their owners
 ```
 
-`dtt docs` shows the guides offline. See [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting](docs/cli/troubleshooting.md) and the [command reference](docs/cli/reference/dtt.md).
+`devt-tunnel docs` shows the guides offline. See [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting](docs/cli/troubleshooting.md) and the [command reference](docs/cli/reference/devt-tunnel.md).
 
 ## Agents and MCP
 
 Print the configuration for your MCP client and register it:
 
 ```bash
-dtt mcp config
+devt-tunnel mcp config
 ```
 
 The agent asks for a tunnel and the daemon decides whether it is allowed, needs a person, or is denied. Public tunnels always need a person unless policy denies them outright. Remote SSH forwarding and destinations that are not allow-listed may also need approval. Policy is edited in **Settings → Agents**, where active leases can also be revoked.
@@ -206,14 +206,14 @@ Copy `tunnels.toml` after reviewing its hostnames, paths and custom commands. It
 <details>
   <summary><strong>Can I manage tunnels on a headless server?</strong></summary>
 
-Not yet. Running `dtt` on a server and managing it through its daemon socket, similar to `docker context`, is a [later stage](docs/roadmap.md#later-headless-servers).
+Not yet. Running `devt-tunnel` on a server and managing it through its daemon socket, similar to `docker context`, is a [later stage](docs/roadmap.md#later-headless-servers).
 </details>
 
 ## Documentation
 
 | Document | Covers |
 | --- | --- |
-| [CLI guides](docs/cli/quickstart.md) and [command reference](docs/cli/reference/dtt.md) | Using `dtt` |
+| [CLI guides](docs/cli/quickstart.md) and [command reference](docs/cli/reference/devt-tunnel.md) | Using `devt-tunnel` |
 | [Agent guide](docs/cli/agents.md) | MCP tools, policy and approvals |
 | [Product](docs/product.md) | Concepts, flows, screens, shortcuts |
 | [Architecture](docs/architecture.md) | Process model, SSH, secrets, storage, decisions |

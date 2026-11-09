@@ -19,13 +19,13 @@ func configCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "config", Short: "Locate, reload or edit tunnel configuration",
 		Long:    "Work with the daemon's tunnels.toml. Reload validates disk changes before replacing the last good tunnel definitions.",
-		Example: "  dtt config path\n  dtt config edit\n  dtt config reload", Args: cobra.NoArgs,
+		Example: "  devt-tunnel config path\n  devt-tunnel config edit\n  devt-tunnel config reload", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use: "path", Short: "Print the tunnel configuration path",
 		Long:    "Ensure tunnels.toml exists, then print its path without labels for shell substitution. Replaces finding the configuration file by hand.",
-		Example: "  dtt config path\n  cat \"$(dtt config path)\"\n  dtt config path --json", Args: cobra.NoArgs,
+		Example: "  devt-tunnel config path\n  cat \"$(devt-tunnel config path)\"\n  devt-tunnel config path --json", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var path string
 			if err := a.call(cmd.Context(), "config.path", api.Empty{}, &path); err != nil {
@@ -41,13 +41,13 @@ func configCommand(a *app) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use: "reload", Short: "Reload and validate tunnel configuration",
 		Long:    "Reload tunnels.toml from disk and report config errors. Invalid configuration leaves the daemon's last good definitions intact and exits with code 1; concurrent config conflicts exit with code 5.",
-		Example: "  dtt config reload\n  dtt config reload --json", Args: cobra.NoArgs,
+		Example: "  devt-tunnel config reload\n  devt-tunnel config reload --json", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return a.configReload(cmd.Context(), "reloaded") },
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use: "edit", Short: "Edit tunnel configuration and reload it",
 		Long:    "Open tunnels.toml in $VISUAL, falling back to $EDITOR or vi on a terminal. Editor arguments and quoted paths are supported without shell expansion. After the editor exits successfully, reload and report validation errors without replacing the last good definitions. --no-input disables editor invocation.",
-		Example: "  dtt config edit\n  EDITOR='code --wait' dtt config edit", Args: cobra.NoArgs,
+		Example: "  devt-tunnel config edit\n  EDITOR='code --wait' devt-tunnel config edit", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if a.noInput {
 				return api.NewError(api.NeedsUser, "config edit needs an editor; --no-input is enabled")

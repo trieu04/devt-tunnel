@@ -21,7 +21,7 @@ func TestUntrustedDaemonReceivesNoHello(t *testing.T) {
 			if shared && runtime.GOOS == "windows" {
 				t.Skip("Unix directory permissions")
 			}
-			dir, err := os.MkdirTemp("", "dtt-peer")
+			dir, err := os.MkdirTemp("", "devt-tunnel-peer")
 			if err != nil {
 				t.Fatal(err)
 			}

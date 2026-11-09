@@ -20,7 +20,7 @@ func daemonCommand(a *app) *cobra.Command {
 		Use:     "daemon",
 		Short:   "Control the per-user daemon",
 		Long:    "Run or manage the per-user tunnel daemon. Stopping or restarting it stops all tunnels.",
-		Example: "  dtt daemon status\n  dtt daemon restart --timeout 20s",
+		Example: "  devt-tunnel daemon status\n  devt-tunnel daemon restart --timeout 20s",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -29,7 +29,7 @@ func daemonCommand(a *app) *cobra.Command {
 		Use:     "run",
 		Short:   "Run the daemon in the foreground",
 		Long:    "Run the daemon in the foreground for service units and debugging. It exits after five idle minutes by default; --idle-exit 0 disables this.",
-		Example: "  dtt daemon run\n  dtt daemon run --idle-exit 0",
+		Example: "  devt-tunnel daemon run\n  devt-tunnel daemon run --idle-exit 0",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if idle < 0 {
@@ -59,7 +59,7 @@ func daemonCommand(a *app) *cobra.Command {
 			Use:     name,
 			Short:   short,
 			Long:    long,
-			Example: "  dtt daemon " + name + "\n  dtt daemon " + name + " --json --timeout 20s",
+			Example: "  devt-tunnel daemon " + name + "\n  devt-tunnel daemon " + name + " --json --timeout 20s",
 			Args:    cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				return a.manageDaemon(cmd.Context(), name)

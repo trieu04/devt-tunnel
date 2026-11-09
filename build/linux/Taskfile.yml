@@ -28,7 +28,7 @@ tasks:
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
           CGO_ENABLED: '{{.CGO_ENABLED}}'
-      - task: common:build:dtt
+      - task: common:build:cli
         vars:
           TARGET_OS: linux
           TARGET_ARCH: '{{.ARCH | default ARCH}}'

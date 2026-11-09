@@ -10,7 +10,7 @@
 
 The desktop app is the main product. Two other ways in feed the same registry:
 
-- **`dtt`** complements the app: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
+- **`devt-tunnel`** complements the app: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
 - **MCP** is a secondary channel for agents to create tunnels. Policy decides what needs a person, who accepts it in the app.
 
 Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions. Managing tunnels on other machines is a [later stage](roadmap.md#later-headless-servers).
@@ -24,7 +24,7 @@ Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions. Managi
 | Profile | Named configuration shared by its tunnels, such as the SSH config file (e.g. Work, Home, Client ABC). A tunnel uses at most one profile. |
 | Group | Named set of tunnels started and stopped together (e.g. Backend stack). A tunnel can be in many groups, whatever its profile. |
 | Secret | API key, tunnel token, SSH key passphrase or env value, kept in the OS keychain and referenced by name. |
-| Ephemeral tunnel | A temporary tunnel from `dtt` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
+| Ephemeral tunnel | A temporary tunnel from `devt-tunnel` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
 | Lease | A client's claim to use a tunnel until a set time. A person's stop always wins. |
 
 ## Tunnel types

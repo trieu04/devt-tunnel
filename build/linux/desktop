@@ -3,11 +3,11 @@ Version=1.0
 Name=devt-tunnel
 Comment=Run SSH, cloudflared, ngrok and custom-command tunnels from one place
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/devt-tunnel %u
+Exec=/usr/local/bin/devt-tunnel-desktop %u
 Terminal=false
 Type=Application
-Icon=devt-tunnel
+Icon=devt-tunnel-desktop
 Categories=Utility;
-StartupWMClass=devt-tunnel
+StartupWMClass=devt-tunnel-desktop
 
  

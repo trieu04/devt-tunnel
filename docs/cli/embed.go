@@ -1,4 +1,4 @@
-// Package clidocs contains the offline dtt guides shared by the CLI and website.
+// Package clidocs contains the offline devt-tunnel guides shared by the CLI and website.
 package clidocs
 
 import "embed"

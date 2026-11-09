@@ -22,7 +22,7 @@ func editCommand(a *app) *cobra.Command {
 		Use:     "edit <t>",
 		Short:   "Edit a tunnel as a TOML fragment",
 		Long:    "Write one tunnel to a private temporary TOML file, open $VISUAL or $EDITOR (falling back to vi, or notepad on Windows), validate through the daemon and save. The ID must not change. Invalid TOML or definitions can be reopened on a TTY. Redirected input requires an explicitly configured VISUAL or EDITOR. Replaces hand-editing a tunnel block in tunnels.toml.",
-		Example: "  dtt edit db\n  EDITOR='code --wait' dtt edit db\n  EDITOR=./update-tunnel dtt edit db --no-input --json",
+		Example: "  devt-tunnel edit db\n  EDITOR='code --wait' devt-tunnel edit db\n  EDITOR=./update-tunnel devt-tunnel edit db --no-input --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			editor, explicit := defineEditor()
@@ -42,7 +42,7 @@ func editCommand(a *app) *cobra.Command {
 			if err := toml.NewEncoder(&fragment).Encode(view.Tunnel); err != nil {
 				return err
 			}
-			file, err := os.CreateTemp("", "dtt-edit-*.toml")
+			file, err := os.CreateTemp("", "devt-tunnel-edit-*.toml")
 			if err != nil {
 				return err
 			}

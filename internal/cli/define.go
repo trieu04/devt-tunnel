@@ -166,8 +166,8 @@ func importCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "import [--name N] -- <cmd> [args...]",
 		Short:   "Save a traditional command as a tunnel",
-		Long:    "Import a traditional ssh -N -L ..., ngrok http ..., cloudflared tunnel ... or shell command, then evaluate and save it. Arguments after -- retain their quoting; a single argument can contain an entire pasted command. Importer warnings are shown. Inline credentials are rejected: store them with dtt secret set and use add --secret NAME instead.",
-		Example: "  dtt import --name db -- ssh -N -L 15432:127.0.0.1:5432 server1\n  dtt import --dry-run -- 'ngrok http 3000'",
+		Long:    "Import a traditional ssh -N -L ..., ngrok http ..., cloudflared tunnel ... or shell command, then evaluate and save it. Arguments after -- retain their quoting; a single argument can contain an entire pasted command. Importer warnings are shown. Inline credentials are rejected: store them with devt-tunnel secret set and use add --secret NAME instead.",
+		Example: "  devt-tunnel import --name db -- ssh -N -L 15432:127.0.0.1:5432 server1\n  devt-tunnel import --dry-run -- 'ngrok http 3000'",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			line := args[0]
@@ -179,7 +179,7 @@ func importCommand(a *app) *cobra.Command {
 				return err
 			}
 			if len(imported.Secrets) > 0 {
-				return usageError("import contains inline credentials; store them with dtt secret set, then use add --secret NAME (a keychain reference, never a value)")
+				return usageError("import contains inline credentials; store them with devt-tunnel secret set, then use add --secret NAME (a keychain reference, never a value)")
 			}
 			var defaults model.Tunnel
 			if err := a.call(cmd.Context(), "tunnel.newDraft", api.NewDraftParams{Kind: imported.Tunnel.Type}, &defaults); err != nil {
@@ -215,7 +215,7 @@ func setCommand(a *app) *cobra.Command {
 		Use:     "set <t> key=value...",
 		Short:   "Change tunnel fields without an editor",
 		Long:    "Change explicit tunnel fields and evaluate before saving. Supported keys are favorite, name, reconnect and start_on_launch. Renaming never changes the tunnel ID. Use edit for backend-specific settings; replaces hand-editing tunnels.toml for simple changes.",
-		Example: "  dtt set db favorite=true reconnect=false\n  dtt set db 'name=Production database' start_on_launch=true",
+		Example: "  devt-tunnel set db favorite=true reconnect=false\n  devt-tunnel set db 'name=Production database' start_on_launch=true",
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Parse before connecting so unknown keys always produce a usage error.
@@ -272,7 +272,7 @@ func dupCommand(a *app) *cobra.Command {
 		Use:     "dup <t> --name N",
 		Short:   "Save a copy of a tunnel",
 		Long:    "Copy a tunnel through the daemon editor's duplicate draft operation, evaluate it and save it with a new stable ID. The original and its profile memberships are preserved. Replaces copying a tunnel block in tunnels.toml.",
-		Example: "  dtt dup db --name db-staging",
+		Example: "  devt-tunnel dup db --name db-staging",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(name) == "" {
@@ -302,7 +302,7 @@ func rmCommand(a *app) *cobra.Command {
 		Use:     "rm <t>...",
 		Short:   "Delete saved tunnel definitions",
 		Long:    "Delete saved tunnel definitions and their profile references. Ask y/N on a TTY; --yes is required with redirected input or --no-input. Resolve every reference before deleting anything. Replaces removing tunnel blocks from tunnels.toml.",
-		Example: "  dtt rm db\n  dtt rm db staging --yes --json",
+		Example: "  devt-tunnel rm db\n  devt-tunnel rm db staging --yes --json",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes && !a.canPrompt() {

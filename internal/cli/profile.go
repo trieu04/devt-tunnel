@@ -16,8 +16,8 @@ func init() { register(profileCommand) }
 func profileCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "profile", Short: "Manage configuration shared by tunnels",
-		Long:    "Manage named configurations, such as the SSH config file, used by the tunnels that belong to them. A tunnel belongs to at most one profile. To start or stop tunnels together, use dtt group. Profile references accept an exact ID, exact name or unique ID prefix.",
-		Example: "  dtt profile ls\n  dtt profile add Work --ssh-config ~/.ssh/work", Args: cobra.NoArgs,
+		Long:    "Manage named configurations, such as the SSH config file, used by the tunnels that belong to them. A tunnel belongs to at most one profile. To start or stop tunnels together, use devt-tunnel group. Profile references accept an exact ID, exact name or unique ID prefix.",
+		Example: "  devt-tunnel profile ls\n  devt-tunnel profile add Work --ssh-config ~/.ssh/work", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(profileListCommand(a), profileShowCommand(a), profileAddCommand(a), profileRemoveCommand(a))
@@ -96,7 +96,7 @@ func profileListCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "ls", Short: "List profiles and their members",
 		Long:    "List profiles with their SSH config and member IDs. Deleting a profile never deletes its tunnels.",
-		Example: "  dtt profile ls\n  dtt profile ls --json", Args: cobra.NoArgs,
+		Example: "  devt-tunnel profile ls\n  devt-tunnel profile ls --json", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			overview, err := a.overview(cmd.Context())
 			if err != nil {
@@ -125,7 +125,7 @@ func profileShowCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "show <p>", Short: "Inspect a profile and its members",
 		Long:    "Show a profile's description, SSH config and members.",
-		Example: "  dtt profile show work\n  dtt profile show 'Work projects' --json", Args: cobra.ExactArgs(1),
+		Example: "  devt-tunnel profile show work\n  devt-tunnel profile show 'Work projects' --json", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			overview, err := a.overview(cmd.Context())
 			if err != nil {
@@ -155,8 +155,8 @@ func profileAddCommand(a *app) *cobra.Command {
 	var p model.Profile
 	cmd := &cobra.Command{
 		Use: "add <name>", Short: "Create a profile",
-		Long:    "Create an empty profile with an optional SSH config. Put tunnels in it with dtt add --profile or dtt save --profile.",
-		Example: "  dtt profile add Work --ssh-config ~/.ssh/work", Args: cobra.ExactArgs(1),
+		Long:    "Create an empty profile with an optional SSH config. Put tunnels in it with devt-tunnel add --profile or devt-tunnel save --profile.",
+		Example: "  devt-tunnel profile add Work --ssh-config ~/.ssh/work", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p.Name = strings.TrimSpace(args[0])
 			if p.Name == "" {
@@ -183,7 +183,7 @@ func profileRemoveCommand(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use: "rm <p>", Short: "Delete a profile, keeping its tunnels",
 		Long:    "Delete a profile. Its tunnels are kept, left running, and go back to the default SSH config.",
-		Example: "  dtt profile rm work\n  dtt profile rm work --json", Args: cobra.ExactArgs(1),
+		Example: "  devt-tunnel profile rm work\n  devt-tunnel profile rm work --json", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := a.resolveProfile(cmd.Context(), args[0])
 			if err != nil {

@@ -17,7 +17,7 @@ Wails fits because most of devt-tunnel is supervising processes and integrating 
 
 ## Rules
 
-- **`internal/core`, `internal/api`, `internal/engine` and `cmd/dtt` must not depend on Wails.** The headless dependency test checks this; CI builds them with `CGO_ENABLED=0` and no GTK. Only `internal/host` and `main.go` import Wails.
+- **`internal/core`, `internal/api`, `internal/engine` and `cmd/devt-tunnel` must not depend on Wails.** The headless dependency test checks this; CI builds them with `CGO_ENABLED=0` and no GTK. Only `internal/host` and `main.go` import Wails.
 - **Business logic does not go in React.** The UI renders state and sends intents. Argv and checks come from the core, which keeps the preview-equals-execution guarantee in [architecture.md](architecture.md).
 
 ## Platform differences

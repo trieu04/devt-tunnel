@@ -208,7 +208,7 @@ func identifier(value string, required bool) bool {
 	return true
 }
 
-// Filter implements dtt audit's --actor (exact actor name), --tunnel (exact id)
+// Filter implements devt-tunnel audit's --actor (exact actor name), --tunnel (exact id)
 // and --since (inclusive time lower bound). A CLI converts its duration/date
 // argument to Since. Empty/zero fields match all events; fields combine by AND.
 type Filter struct {

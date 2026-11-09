@@ -3,7 +3,7 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "devt-tunnel"
+name: "devt-tunnel-desktop"
 arch: ${GOARCH}
 platform: "linux"
 version: ${VERSION}
@@ -17,17 +17,17 @@ license: "Apache-2.0"
 release: "1"
 
 contents:
-  - src: "./bin/devt-tunnel"
-    dst: "/usr/bin/devt-tunnel"
+  - src: "./bin/devt-tunnel-desktop"
+    dst: "/usr/bin/devt-tunnel-desktop"
   - src: "./bin/devt-tunnel-askpass"
     dst: "/usr/bin/devt-tunnel-askpass"
   # Headless CLI, available on PATH after installing the desktop package.
-  - src: "./bin/dtt"
-    dst: "/usr/bin/dtt"
+  - src: "./bin/devt-tunnel"
+    dst: "/usr/bin/devt-tunnel"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/devt-tunnel.png"
-  - src: "./build/linux/devt-tunnel.desktop"
-    dst: "/usr/share/applications/devt-tunnel.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/devt-tunnel-desktop.png"
+  - src: "./build/linux/devt-tunnel-desktop.desktop"
+    dst: "/usr/share/applications/devt-tunnel-desktop.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:
