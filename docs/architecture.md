@@ -1,10 +1,10 @@
 # Architecture
 
-Describes intended behavior. Stack, per-OS details and code layout are in [platform.md](platform.md); the README lists what is implemented so far.
+Stack, per-OS details and validation are in [platform.md](platform.md).
 
 ## Control plane
 
-Phase 15 adds typed readiness errors, shared endpoint lists and loopback port checks; native-window port-warning acceptance is pending. Phase 14 extracted the shared `internal/api` types and GUI-independent `internal/engine`; phase 16 added the headless daemon/API and lifecycle CLI; phase 17 moved the GUI host to that API with native-window acceptance pending. An on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" below means the daemon. The GUI, the `dtt` CLI and the planned MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md), [design/cli.md](design/cli.md) and [design/mcp.md](design/mcp.md).
+An on-demand per-user daemon owns the registry, supervisor and prompts, and "the app" below means the daemon. The GUI, the `dtt` CLI and the MCP server are clients of one local API. See [design/control-plane.md](design/control-plane.md).
 
 ## Process model
 
@@ -31,7 +31,7 @@ Phase 15 adds typed readiness errors, shared endpoint lists and loopback port ch
 
 ## Storage
 
-- Definitions: `tunnels.toml` (tunnels, profiles, groups) in `~/.config/devt-tunnel/` on macOS, `$XDG_CONFIG_HOME/devt-tunnel/` on Linux and `%APPDATA%\devt-tunnel\` on Windows. Kept free of runtime state so it stays diffable and shareable.
+- Definitions: `tunnels.toml` (tunnels, profiles, groups), at the [per-OS path](platform.md#paths). Kept free of runtime state so it stays diffable and shareable.
 - Runtime state lives in `state.json` under the OS state directory; crash process records remain in `processes.json`. Per-machine tool paths, shortcut and shell live in `settings.toml` beside the definitions. Config writes detect outside changes, keep `tunnels.toml.bak`, validate before replacement and write atomically; hand-written comments are not preserved.
 
 ```toml
@@ -95,11 +95,8 @@ SSH remains responsible for detecting dead connections; new SSH drafts set `Serv
 - **Profiles configure, groups act:** a tunnel has at most one profile, so its SSH config never depends on app state. Starting and stopping sets of tunnels belongs to groups, which are many-to-many and have no effect on how a tunnel is built.
 - **No quick-phrase aliases:** quick launch search over name, host and port covers the use case with less to maintain.
 - **Wails v3 with a Go core:** first-party tray and global shortcuts, and the core stays free of GUI dependencies. See [platform.md](platform.md).
-- **On-demand daemon, GUI as a client:** the CLI and agents need tunnels with no desktop and one shared registry, so this replaces "one process, no daemon" (2026-11-04). ⌘Q still stops all tunnels. See [design/control-plane.md](design/control-plane.md#why-a-daemon).
-- **Askpass forwards prompts:** `SSH_ASKPASS_REQUIRE=force` routes every prompt to the helper, so it must not answer them all with a stored passphrase.
-- **No sandboxed distribution:** Mac App Store, Flatpak and strict Snap conflict with spawning host binaries.
+- **On-demand daemon, GUI as a client:** the CLI and agents need one registry shared with the GUI, so this replaces "one process, no daemon" (2026-11-04). ⌘Q still stops all tunnels. See [design/control-plane.md](design/control-plane.md#why-a-daemon).
 - **No v1 import/export format:** copying `tunnels.toml` is the sharing mechanism.
-
-## Open questions
-
-- Windows and Linux native behavior still requires the real-desktop validation matrix in [platform.md](platform.md).
+- **Saved tunnel ids are generated once from the name and never change:** profiles, state and process records refer to them.
+- **The Vault shows a fixed mask:** showing the last characters would mean reading every value from the keychain or storing part of a secret on disk.
+- **Left out:** "Open in terminal" and scheme-prefixed addresses such as `postgres://`; each needs per-OS work or a guess about the service.

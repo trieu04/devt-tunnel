@@ -1,135 +1,238 @@
-# devt-tunnel
+<div align="center">
+  <img src="build/appicon.png" alt="devt-tunnel logo" width="96" />
+  <h1>devt-tunnel</h1>
+  <a href="docs/platform.md"><img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" /></a>
+  <a href="docs/platform.md"><img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square" /></a>
+  <a href="docs/platform.md"><img alt="Linux" src="https://img.shields.io/badge/-Linux-purple?style=flat-square&logo=linux&logoColor=white" /></a>
+  <div>
+    <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/trieu04/devt-tunnel?style=flat-square" /></a>
+    <a href="https://github.com/trieu04/devt-tunnel/actions/workflows/check.yml"><img alt="Check" src="https://img.shields.io/github/actions/workflow/status/trieu04/devt-tunnel/check.yml?branch=main&style=flat-square&label=check" /></a>
+  </div>
+</div>
 
-Desktop app to define, find and run SSH, cloudflared, ngrok and custom-command tunnels from one place. It drives the binaries already installed on the machine and reuses `~/.ssh/config`.
+## Project Overview
 
-Targets macOS, Windows and Linux. Built with Wails v3, Go and React.
+> **Connect your tunnels in one click.**
+>
+> SSH, cloudflared, ngrok and custom commands, all in one place and without memorizing flags.
 
-## Status
+devt-tunnel is a desktop app to define, find and run tunnels. It drives the binaries already installed on the machine and reuses `~/.ssh/config`.
 
-Early code base. It has run on macOS only; Windows and Linux compile but have not been run.
+- The **desktop app** is the main product.
+- The **`dtt` command line** complements it: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
+- **MCP** is a secondary channel for agents to create tunnels, with approval in the app according to policy.
 
-| Area | State |
-|---|---|
-| Tunnel model, safe persistence, command builder and paste import | Implemented and unit tested |
-| Supervisor: readiness, reconnect, wake recovery, stop and crash recovery | Implemented; native macOS sleep/wake acceptance passed |
-| SSH prompts through the askpass helper | Done |
-| Secrets and Vault metadata | Implemented; native macOS authentication and reveal passed after correcting the device-owner policy |
-| Main window, editor, quick launch, profiles, Vault and Settings | Implemented; phase 17 native macOS acceptance passed, while Windows and Linux remain pending |
-| SSH host scan/`ssh -G`, tool discovery and per-tool paths | Implemented |
-| Installers and release workflow | Unsigned builds automated; signing, notarization and clean-machine checks need owner infrastructure |
-| Shared API types and GUI-independent engine (phase 14) | Extracted and unit tested; the daemon now owns the engine; native-window regression check pending |
-| Typed readiness errors, endpoint lists and live port checks (phase 15) | Implemented and unit tested; editor/native-window warning acceptance pending |
-| Daemon, local API and `dtt daemon` lifecycle (phase 16) | Implemented with contract/process tests and real SSH forwarding; detached Keychain access and native cross-platform acceptance remain unverified |
-| GUI as daemon client (phase 17) | Implemented with typed forwarding, event/reconnect tests and dependency guards; all native macOS checks passed |
-| `dtt` CLI (phases 18–19) | Saved and ephemeral tunnels, leases, approvals, audit and generated/offline documentation implemented and tested; native/Linux no-GTK exit acceptance pending |
-| Ownership, leases and policy (phase 19) | Daemon policy and approvals, CLI, agent badges, ephemeral Save and Settings → Agents implemented and tested; native macOS approval acceptance passed |
-| MCP server and agent guide (phase 20) | Implemented with automated checks; real-client check pending |
+> [!IMPORTANT]
+> **Early code base, no public release yet.** Features are implemented and tested automatically, but only macOS has been checked by a person in the native app.
+>
+> | Area | State |
+> | --- | --- |
+> | Desktop app, daemon and tunnel engine | Native macOS acceptance passed |
+> | `dtt` CLI, leases, policy and approvals | Implemented; native macOS approval passed |
+> | MCP server | Implemented with automated checks; real-client check pending |
+> | Windows and Linux | Compile in CI; not yet run on a real desktop |
+> | Installers | Unsigned builds automated; signing needs owner infrastructure |
+>
+> Open work is in the [roadmap](docs/roadmap.md).
 
-Windows and Linux have compile/CI coverage but have not completed the real-desktop matrix in [docs/platform.md](docs/platform.md). Do not interpret cross-compilation as tray, shortcut, prompt or WebView acceptance.
+## Features
 
-## Install
+- **Four tunnel types**: SSH (`-L`, `-R`, `-D` forwards), Cloudflared (named or quick), ngrok, and any custom command.
+- **Global quick launch**: A shortcut from anywhere (⌥Space on macOS, Ctrl+Alt+Space on Windows and Linux) to search by name, host or port and start or stop with Enter.
+- **Create without memorizing flags**: Start from an `~/.ssh/config` host, a pasted `ssh`, `ngrok` or `cloudflared` command, or manual input.
+- **What you see is what runs**: The editor shows the exact generated command and checks it before saving: resolved binary, host alias, port conflicts, unsafe flags and missing secrets.
+- **Supervised processes**: Readiness detection, live logs, automatic reconnect with backoff, recovery after sleep and wake, and a stop that takes the whole process tree with it.
+- **Profiles and groups**: Share an SSH config file across tunnels with a profile, and start or stop a whole stack with a group.
+- **Vault**: API keys, tunnel tokens and passphrases stay in the OS keychain and are referenced by name. Revealing one requires OS authentication.
+- **SSH prompts handled**: Passphrase, host-key and OTP prompts come to you through the app or the terminal.
+- **Tray**: Running tunnels and favorites in the menu bar or notification area, where the desktop has one.
+- **`dtt` CLI**: Shares one registry with the app through a per-user daemon, with `--json` output and stable exit codes for scripts.
+- **Agent access under policy**: Leases, allow-lists, approvals and an audit trail for tunnels opened by agents.
 
-Release artifacts are created as a draft from `v*` tags. Until signed artifacts are published, build locally with the development instructions below; files named `-unsigned` are tester-only.
+## Installation
 
-- macOS: install the `.dmg` once the first signed and notarized release is published; Homebrew cask publication follows it.
-- Windows 10/11: run the NSIS installer once signed releases exist. Windows 10 may install the WebView2 runtime during setup.
-- Ubuntu 24.04+/Debian 13+: install the `.deb`; Fedora users install the `.rpm`. GNOME may need a StatusNotifierItem extension for a tray icon.
+The app uses the binaries on your system and does not bundle `ssh`, `ngrok` or `cloudflared`.
 
-The app uses system binaries and does not bundle `ssh`, `ngrok` or `cloudflared`.
+### Packages
 
-## `dtt`: headless install and usage
+Release artifacts are created as a draft from `v*` tags. Until signed artifacts are published, [build from source](#build-from-source). Files named `-unsigned` are for testers only.
 
-The CLI needs only Go 1.27.3 or newer to build, not Node, GTK or a display. From this checkout:
+| Platform | Package | Notes |
+| --- | --- | --- |
+| macOS | `.dmg` | Once signed releases exist |
+| Windows 10/11 | NSIS installer | Windows 10 may install the WebView2 runtime during setup |
+| Ubuntu 24.04+, Debian 13+, Fedora | `.deb` or `.rpm` | GNOME may need a StatusNotifierItem extension for a tray icon |
+
+The desktop packages also bundle `dtt`. On macOS, use **Install command-line tool** in Settings to put it on `PATH`.
+
+### Build from Source
+
+**CLI only** needs just Go 1.27.3 or newer, with no Node, GTK, WebView or display:
 
 ```bash
+git clone https://github.com/trieu04/devt-tunnel.git
+cd devt-tunnel
 CGO_ENABLED=0 go build -o bin/dtt ./cmd/dtt
-mkdir -p "$HOME/.local/bin"
-install -m 755 bin/dtt "$HOME/.local/bin/dtt"
 ```
 
-Add `$HOME/.local/bin` to `PATH`. On Windows, use `go build -o bin/dtt.exe ./cmd/dtt` and put the binary in a directory on `PATH`. Signed CLI packages and installer integration are planned for phase 21.
-
-```bash
-dtt add ssh db --host server1 -L 5433:127.0.0.1:5432
-dtt start db
-dtt ls
-dtt show db --json
-dtt addr db --port
-dtt logs db -n 20
-dtt stop db
-dtt completion zsh > _dtt
-dtt docs
-```
-
-`--host` reuses `~/.ssh/config`. The daemon starts on demand and shares saved tunnels with the GUI. `--json` provides versioned script output; `--no-input` prevents prompts. `dtt version` never starts a daemon, and `--no-daemon-start` limits other commands to an existing daemon. Shell completion never starts one either. `dtt daemon run|status|stop|restart` controls the daemon; `run --idle-exit 0` disables its default five-minute idle exit. `stop` and `restart` stop all daemon-owned tunnels; quitting the GUI does the same.
-
-Read the [quick start](docs/cli/quickstart.md), [traditional-command replacements](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [agent guide](docs/cli/agents.md), [troubleshooting and exit codes](docs/cli/troubleshooting.md), or the [generated command reference](docs/cli/reference/dtt.md). The five guides are also available offline through `dtt docs <topic>`. `dtt man --dir ./man` writes a full section 1 manual. `go run ./internal/cli/gen` refreshes the committed reference and generates package-time man pages under ignored `bin/man/`.
-
-One-off `run`, `forward`, `expose` and `save` commands, leases, approvals and audit are available. Background tunnels use detached person leases: CLI exit does not stop them, and no expiry applies unless `--ttl` is set. Use `dtt stop` or `dtt leases revoke` to close them. `expose` requires `--via` and always warns that the service will be public. `dtt mcp config` prints client setup using this executable's absolute path; `dtt mcp serve` exposes policy-controlled tools over stdio. `mcp config --json` is paste-ready client configuration and `mcp tools --json` is the raw tool-definition array, deliberately without the usual CLI envelope. See the [agent guide](docs/cli/agents.md) for approvals, lease cleanup and the pending real-client compatibility checks. Daemon login installation is not implemented yet. Native/Linux no-GTK CLI exit acceptance has not yet been run.
-
-## First tunnel
-
-Open **New tunnel**, choose **SSH**, select a host from the scanned SSH config, add a local forward such as `127.0.0.1:5433 → 127.0.0.1:5432`, review the generated command and checks, then choose **Save & start**. The same editor accepts a pasted `ssh`, `ngrok` or `cloudflared` command.
-
-## Security and data
-
-- `tunnels.toml` contains definitions and secret names, not secret values, and can be shared after reviewing hostnames, paths and custom commands.
-- Secret values stay in macOS Keychain, Windows Credential Manager or Linux Secret Service. There is no plaintext fallback.
-- Runtime metadata is in the OS state directory; per-machine paths and shortcuts are in `settings.toml` beside the definitions.
-- Tunnel output stays in memory. The rotating application log excludes secret values.
-- The optional release update check is the app's only network request of its own; tunnel processes make their normal connections.
-
-## Development
-
-Requires Go 1.27 or newer, Node 22, pnpm and the Wails CLI. On Linux, also GTK 4.14 or newer and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev` on Ubuntu 24.04).
-
-```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
-```
-
-```bash
-wails3 dev
-```
+**Desktop app** also needs Node 22, pnpm, the Wails CLI and, on Linux, GTK and WebKitGTK. See [CONTRIBUTING.md](CONTRIBUTING.md#prerequisites).
 
 ```bash
 wails3 task build
 ```
 
 ```bash
-go test ./internal/... ./cmd/...
+wails3 task package
 ```
+
+## Usage
+
+### First Tunnel in the App
+
+1. Click **New tunnel** and choose **SSH**. The editor also accepts a pasted `ssh`, `ngrok` or `cloudflared` command (⌘⇧V).
+2. Pick a host from your SSH config and add a local forward.
+3. Review the generated command and checks, then click **Save & start**.
+
+If a required secret is missing, the tunnel shows `Needs token`; add it in the Vault and the start retries.
+
+### First Tunnel from a Terminal
 
 ```bash
-pnpm --dir frontend test
+dtt add ssh db --host server1 -L 5433:127.0.0.1:5432
+dtt start db
+dtt stop db
 ```
 
-`go test` needs no frontend build. `internal/e2e` starts a private `sshd` and is skipped where that is not possible. Building the root package needs `frontend/dist`, which `wails3 task build` produces.
+Tunnels created this way also appear in the app. See the [quick start](docs/cli/quickstart.md).
 
-The headless CLI has its own [install and usage instructions](#dtt-headless-install-and-usage), [interface contract](docs/design/cli.md) and [daemon API](docs/design/control-plane.md#local-api). Its documentation package needs no frontend build either.
+Screens and [shortcuts](docs/product.md#shortcuts) are described in the product guide. On Windows and Linux, ⌘ maps to Ctrl.
 
-## Layout
+## How it Works
 
-| Path | Purpose |
-|---|---|
-| `main.go` | Entry point |
-| `cmd/dtt`, `internal/daemon`, `internal/control`, `internal/client` | Headless daemon, local JSON-RPC server and client |
-| `internal/api`, `internal/engine` | Shared contracts and tunnel orchestration |
-| `internal/core` | Model, config, command builder, checks, supervisor; no GUI and no OS-specific code |
-| `internal/askpass`, `cmd/devt-tunnel-askpass` | Forward ssh prompts to the app |
-| `internal/platform` | Processes, environment, paths, keychain, per OS |
-| `internal/host` | Wails services, windows, tray, shortcut; the only package using Wails besides `main.go` |
-| `frontend` | React UI; `frontend/bindings` is generated |
-| `build` | Wails build tasks and per-OS assets |
+```mermaid
+flowchart LR
+  GUI["Desktop app"] --> S["Local socket<br/>JSON-RPC"]
+  CLI["dtt CLI"] --> S
+  Agent["MCP client"] -->|stdio| MCP["dtt mcp serve"] --> S
+  S --> D["Per-user daemon<br/>registry, supervisor,<br/>policy, audit"]
+  D --> P["ssh, cloudflared,<br/>ngrok, commands"]
+  D -.->|"approval and<br/>SSH prompts"| GUI
+```
 
-## Docs
+- **One daemon**: A per-user daemon starts on demand and owns the registry, supervisor and prompts. The app, `dtt` and MCP are clients of the same local API, so they always show the same state.
+- **Process supervision**: Tunnels run as process groups (Job Objects on Windows), so a stop leaves nothing behind. Orphans are detected after a crash.
+- **Ownership**: Saved tunnels are shareable definitions. Ephemeral tunnels from `dtt` or an agent are not written to `tunnels.toml`, are removed when they stop, and can be saved.
+- **Leases**: A client's claim on a tunnel until a set time. A person's stop always wins.
 
-- [docs/product.md](docs/product.md): concepts, tunnel types, flows, screens, shortcuts.
-- [docs/architecture.md](docs/architecture.md): process model, SSH integration, secrets, storage, data model, decisions, open questions.
-- [docs/platform.md](docs/platform.md): cross-platform stack, code layout, per-OS differences, distribution, validation checks.
-- [CLI quick start](docs/cli/quickstart.md), [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [agent guide](docs/cli/agents.md), [troubleshooting](docs/cli/troubleshooting.md) and [command reference](docs/cli/reference/dtt.md): also available with `dtt docs` / `dtt help`.
-- [docs/design/control-plane.md](docs/design/control-plane.md): central tunnel management, with [CLI](docs/design/cli.md) and [MCP](docs/design/mcp.md) contracts. Daemon/API, GUI migration and phases 18–20 CLI/MCP commands are implemented with automated checks; the MCP real-client check remains pending.
-- [docs/plans/README.md](docs/plans/README.md): implementation plans.
+Details are in [architecture.md](docs/architecture.md) and the [control plane design](docs/design/control-plane.md).
+
+## Command-line Tool
+
+Use `dtt` in place of the commands you already know:
+
+```bash
+dtt run -- ssh -N -L 5433:127.0.0.1:5432 server1   # Run a familiar command under supervision
+dtt forward server1 5433:5432                      # Short form, stays in the background
+dtt expose 3000 --via cloudflared --ttl 15m        # Expose a local service publicly
+dtt ls                                             # All tunnels and their owners
+```
+
+`dtt docs` shows the guides offline. See [replacing traditional commands](docs/cli/replacing.md), [scripts](docs/cli/scripts.md), [troubleshooting](docs/cli/troubleshooting.md) and the [command reference](docs/cli/reference/dtt.md).
+
+## Agents and MCP
+
+Print the configuration for your MCP client and register it:
+
+```bash
+dtt mcp config
+```
+
+The agent asks for a tunnel and the daemon decides whether it is allowed, needs a person, or is denied. Public tunnels always need a person unless policy denies them outright. Remote SSH forwarding and destinations that are not allow-listed may also need approval. Policy is edited in **Settings → Agents**, where active leases can also be revoked.
+
+See the [agent guide](docs/cli/agents.md).
+
+## Privacy & Security
+
+**What's stored on disk** — `tunnels.toml` contains definitions and secret names, not secret values, and can be shared after reviewing hostnames, paths and custom commands. Per-machine paths and shortcuts are in `settings.toml` beside it, and runtime metadata is in the OS state directory.
+
+**Where secrets live** — In macOS Keychain, Windows Credential Manager or Linux Secret Service. There is no plaintext fallback. Values are accepted only from a hidden prompt or stdin, never from flags.
+
+**What gets logged** — Tunnel output stays in memory. The rotating application log excludes secret values.
+
+**What reaches the network** — The optional release update check is the app's only network request of its own. Tunnel processes make their normal connections.
+
+**What agents cannot do** — Change policy, answer SSH prompts, approve their own requests, read or write secret values, or run arbitrary commands through MCP. Approval needs a person, in the app or in a terminal with the confirmation code. Requests and decisions are recorded in the audit log.
+
+The API is local only: there is no network listener.
+
+## FAQ
+
+<details>
+  <summary><strong>Why not just use <code>ssh -L</code> or <code>autossh</code>?</strong></summary>
+
+For a single forward you use once, plain `ssh` is fine. devt-tunnel adds reconnects, status, logs, port-conflict checks and a clean stop, and puts every tunnel and its owner in one list.
+</details>
+
+<details>
+  <summary><strong>Does it replace <code>ssh</code>, <code>scp</code> or <code>rsync</code>?</strong></summary>
+
+No. It handles tunnels only. Keep using `ssh` directly for interactive sessions, `scp` and `rsync`.
+</details>
+
+<details>
+  <summary><strong>Do I need to install ssh, ngrok or cloudflared separately?</strong></summary>
+
+Yes, the ones you use. The app finds them on your system, and you can set a per-tool path in Settings.
+</details>
+
+<details>
+  <summary><strong>Do tunnels keep running when I close the window?</strong></summary>
+
+With a tray, closing the window only hides it and tunnels keep running. Without a tray host, closing the window quits the app. ⌘Q stops all tunnels and quits. If the app crashes, the daemon and tunnels keep running and a relaunch reconnects.
+</details>
+
+<details>
+  <summary><strong>Can an agent open a public tunnel without me?</strong></summary>
+
+No. A public tunnel waits for a person, or is refused if policy denies it. Agent access can be turned off completely in Settings.
+</details>
+
+<details>
+  <summary><strong>How do I share tunnels with my team?</strong></summary>
+
+Copy `tunnels.toml` after reviewing its hostnames, paths and custom commands. It holds secret names only, so each person adds their own values.
+</details>
+
+<details>
+  <summary><strong>Can I manage tunnels on a headless server?</strong></summary>
+
+Not yet. Running `dtt` on a server and managing it through its daemon socket, similar to `docker context`, is a [later stage](docs/roadmap.md#later-headless-servers).
+</details>
+
+## Documentation
+
+| Document | Covers |
+| --- | --- |
+| [CLI guides](docs/cli/quickstart.md) and [command reference](docs/cli/reference/dtt.md) | Using `dtt` |
+| [Agent guide](docs/cli/agents.md) | MCP tools, policy and approvals |
+| [Product](docs/product.md) | Concepts, flows, screens, shortcuts |
+| [Architecture](docs/architecture.md) | Process model, SSH, secrets, storage, decisions |
+| [Platform](docs/platform.md) | Stack, per-OS differences, validation matrix |
+| [Control plane](docs/design/control-plane.md), [CLI](docs/design/cli.md), [MCP](docs/design/mcp.md) | Daemon API, policy and interface contracts |
+| [Roadmap](docs/roadmap.md), [release checklist](docs/release.md) | Open work and shipping |
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, tests, generated files and project layout.
 
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE). Bundled fonts keep their own licenses (SIL OFL) in `frontend/public`.
+
+## Acknowledgments
+
+- [Wails](https://wails.io) - Desktop application framework
+- [React](https://react.dev) - User interface
+- [Cobra](https://github.com/spf13/cobra) - Command-line framework
+- [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) - Model Context Protocol server
+- [go-keyring](https://github.com/zalando/go-keyring) - OS keychain access

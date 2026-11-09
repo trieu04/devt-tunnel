@@ -1,12 +1,19 @@
 # Product
 
+**Connect your tunnels in one click.**
+
 ## Goals
 
-- Find and start or stop any tunnel in a few keystrokes, from the main window, the tray or a global quick launch.
+- Start or stop any tunnel in one click or a few keystrokes, from the main window, the tray or a global quick launch.
 - Create and edit tunnels without memorizing flags, starting from an `~/.ssh/config` host, a pasted command or manual input.
-- Planned: manage every tunnel on the machine from one place, through the app, the `dtt` command line, or agents using MCP. See [design/control-plane.md](design/control-plane.md).
+- See and manage every tunnel on the machine in one place, including those created outside the app. See [design/control-plane.md](design/control-plane.md).
 
-Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions, managing tunnels on other machines.
+The desktop app is the main product. Two other ways in feed the same registry:
+
+- **`dtt`** complements the app: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
+- **MCP** is a secondary channel for agents to create tunnels. Policy decides what needs a person, who accepts it in the app.
+
+Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions. Managing tunnels on other machines is a [later stage](roadmap.md#later-headless-servers).
 
 ## Concepts
 
@@ -17,8 +24,8 @@ Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions, managi
 | Profile | Named configuration shared by its tunnels, such as the SSH config file (e.g. Work, Home, Client ABC). A tunnel uses at most one profile. |
 | Group | Named set of tunnels started and stopped together (e.g. Backend stack). A tunnel can be in many groups, whatever its profile. |
 | Secret | API key, tunnel token, SSH key passphrase or env value, kept in the OS keychain and referenced by name. |
-| Ephemeral tunnel (planned) | A temporary tunnel from `dtt` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
-| Lease (planned) | A client's claim to use a tunnel until a set time. A person's stop always wins. |
+| Ephemeral tunnel | A temporary tunnel from `dtt` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
+| Lease | A client's claim to use a tunnel until a set time. A person's stop always wins. |
 
 ## Tunnel types
 
@@ -53,11 +60,7 @@ Editor checks: resolved binary; host alias in the scanned SSH config; local list
 - **Groups:** group list with running counts; per group: name, description, Start all, Stop all, member tunnels, delete (tunnels are kept).
 - **Vault:** secrets with kind, masked value, users, last use; reveal requires OS authentication.
 
-## Profiles and groups
-
-- A profile is configuration. A tunnel uses at most one, and always gets that profile's SSH config file; a tunnel with no profile uses the default one.
-- A group is a task. Tunnel ↔ group is many-to-many, and starting or stopping a group acts on all its members, reporting every failure together.
-- Selecting a group on the main window only filters the list. Starting or stopping it is a separate action.
+A tunnel with no profile uses the default SSH config. Starting or stopping a group reports every failure together; selecting a group on the main window only filters the list.
 
 ## Shortcuts
 

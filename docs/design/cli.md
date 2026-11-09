@@ -1,17 +1,8 @@
 # `dtt` command line
 
-Status: **accepted 2026-11-04; phases 18–19 CLI commands implemented; native/Linux headless exit test not yet run.** Saved and ephemeral tunnel commands, leases, approvals, audit, shell completion, embedded guides and deterministic generated reference/man pages are available. Phase 20 MCP commands are implemented with automated checks; real-client check pending. Daemon login installation remains future work. `daemon run` supports `--idle-exit` (default 5m, 0 disables). Architecture and rationale are in [control-plane.md](control-plane.md).
+Status: implemented. Open acceptance is in the [roadmap](../roadmap.md). Architecture and rationale are in [control-plane.md](control-plane.md).
 
-This file is the interface contract. User-facing guides and the generated reference are in [docs/cli](../cli/quickstart.md); see [Documentation plan](#documentation-plan) for generation and CI enforcement.
-
-## User guides
-
-- [Quick start](../cli/quickstart.md): install, saved tunnels, one-off commands, completion and offline help.
-- [Replacing traditional commands](../cli/replacing.md).
-- [Scripts](../cli/scripts.md).
-- [Troubleshooting and exit codes](../cli/troubleshooting.md).
-- [Agent guide and client compatibility status](../cli/agents.md).
-- [Generated command reference](../cli/reference/dtt.md).
+`dtt` complements the desktop app: people and agents use it to create managed tunnels in place of plain commands. This file is the contract for behavior a command listing cannot express. Commands and flags are in the [generated reference](../cli/reference/dtt.md); usage is in the [guides](../cli/quickstart.md).
 
 ## Concepts
 
@@ -19,31 +10,7 @@ This file is the interface contract. User-facing guides and the generated refere
 - **Daemon:** a small background process that owns all tunnels. Any command starts it when needed. It exits when idle. The desktop app uses the same daemon, so both show the same tunnels.
 - **Referring to a tunnel:** by exact id, exact name or a unique id prefix. An ambiguous reference exits with code 2 and lists the matches.
 
-## Commands
-
-### Find and inspect
-
-| Command | Purpose | Main flags |
-|---|---|---|
-| `dtt ls` | List tunnels | `--running` `--type T` `--profile P` `--group G` `--favorites` |
-| `dtt show <t>` | Definition, state, endpoints, command, leases, findings | |
-| `dtt addr <t>` | Print only the address | `--port` `--all` |
-| `dtt logs <t>` | Retained output | `-f` `-n N` `--since D` |
-| `dtt wait <t>` | Block until running | `--timeout D` |
-| `dtt check <t>` | Run the editor checks | `--strict` makes warnings fail |
-| `dtt hosts` | SSH aliases from config | `--resolve <alias>` `--profile P` |
-| `dtt doctor` | Binaries, keychain, daemon, SSH config, shell PATH | |
-
-### Run
-
-| Command | Purpose | Main flags |
-|---|---|---|
-| `dtt start <t>...` | Start saved tunnels and wait until ready | `--no-wait` `--timeout D` |
-| `dtt stop <t>...` | Stop now, revoking any leases | `--all` `--group G` |
-| `dtt restart <t>...` | Stop, then start | |
-| `dtt run -- <cmd>` | Supervise a traditional command, in the foreground | `--detach` `--ttl D` `--name N` `--dry-run` |
-| `dtt forward <host> [map...]` | Ephemeral SSH tunnel, in the background | `--remote M` `--socks P` `--ttl D` `--foreground` `--save NAME` `--dry-run` |
-| `dtt expose <port\|url>` | Ephemeral public tunnel | `--via ngrok\|cloudflared` `--domain D` `--secret S` `--ttl D` `--foreground` `--save NAME` `--dry-run` |
+## One-off tunnels
 
 Port maps use the form `listen:target`:
 
@@ -60,86 +27,13 @@ Port maps use the form `listen:target`:
 
 `--dry-run` uses `tunnel.evaluateDraft` to print the exact command and findings without starting. Auto ports are allocated only by `tunnel.runEphemeral`, so a dry run with `auto` exits 2 with a concrete-port hint rather than inventing an address.
 
-### Define
+## Secrets
 
-| Command | Purpose |
-|---|---|
-| `dtt add ssh <name> --host H -L M [-R M] [-D P] [--flag F] [--option K=V]` | Save an SSH tunnel |
-| `dtt add ssh <name> --hostname H --user U --port N --identity PATH ...` | Save without a config alias |
-| `dtt add ngrok <name> --proto http --addr A [--domain D] [--secret S]` | Save an ngrok tunnel |
-| `dtt add cloudflared <name> --url U` / `--tunnel-name N --hostname H --secret S` | Save a quick or named tunnel |
-| `dtt add command <name> --line L [--dir D] [--ready-log RE] [--secret-env K=S]` | Save any command |
-| `dtt import [--name N] -- <cmd>` | Save from a traditional command, showing warnings |
-| `dtt save <tmp-id> --name N [--profile P]` | Turn an ephemeral tunnel into a saved one |
-| `dtt edit <t>` | Open a TOML fragment in `$EDITOR`, then validate it |
-| `dtt set <t> key=value...` | Change fields without an editor, e.g. `favorite=true reconnect=false` |
-| `dtt dup <t> --name N` | Copy a tunnel |
-| `dtt rm <t>` | Delete, asking first on a TTY. `--yes` is required otherwise |
+Values are read from a hidden prompt or from stdin, never from a flag, so they stay out of shell history and `ps`. There is no `reveal`: it requires OS authentication, which the desktop app provides.
 
-All of `add` take `--profile P`, `--group G` (repeatable), `--favorite`, `--start-on-launch`, `--no-reconnect`, `--start` and `--dry-run`. `--dry-run` prints the exact command and the check results without saving.
+## Approvals
 
-### Profiles
-
-| Command | Purpose |
-|---|---|
-| `dtt profile ls` / `show <p>` | List and inspect |
-| `dtt profile add <name> [--ssh-config F] [--description D]` | Create |
-| `dtt profile rm <p>` | Delete. Tunnels are kept |
-
-### Groups
-
-| Command | Purpose |
-|---|---|
-| `dtt group ls` / `show <g>` | List and inspect |
-| `dtt group add <name> [--description D]` | Create |
-| `dtt group assign <g> <t>...` / `unassign <g> <t>...` | Change members |
-| `dtt group start <g>` / `stop <g>` | Start or stop members |
-| `dtt group rm <g>` | Delete. Tunnels are kept |
-
-### Secrets
-
-Values are read from a hidden prompt or from stdin, never from a flag, so they stay out of shell history and `ps`.
-
-```bash
-dtt secret set ngrok-personal --kind ngrok
-```
-
-```bash
-op read op://dev/ngrok/token | dtt secret set ngrok-personal --kind ngrok --stdin
-```
-
-| Command | Purpose |
-|---|---|
-| `dtt secret ls` | Names, kinds, users and last use. No values |
-| `dtt secret set <name> --kind ssh_passphrase\|ngrok\|cloudflared\|env` | Store a value. Starts that were waiting on it retry |
-| `dtt secret rename <from> <to>` | Rename, and update the tunnels using it |
-| `dtt secret rm <name>` | Delete. Tunnels using it show `needs_token` |
-
-There is no `reveal`. It requires OS authentication, which the desktop app provides.
-
-### Oversight
-
-| Command | Purpose |
-|---|---|
-| `dtt prompts` / `dtt prompts answer <id>` | SSH questions waiting for a person |
-| `dtt approvals` / `dtt approvals approve <id>` / `dtt approvals deny <id>` | Pending agent requests: summary, argv, actor, purpose, scopes, expiry and code. `approve` needs a TTY and the code shown in the request. Top-level `dtt approve` / `dtt deny` are aliases |
-| `dtt leases` / `dtt leases revoke <id>` | Lease ID, tunnel, holder, effective expiry, started-it and detached state |
-| `dtt audit` | History of changes. `--actor A` `--tunnel T` `--since D` `-f` |
-| `dtt orphans` / `dtt orphans stop <pid>` | Processes left by a crash |
-
-### Setup
-
-| Command | Purpose |
-|---|---|
-| `dtt daemon status\|stop\|restart` | Control the daemon. `stop` also stops tunnels and says so first |
-| `dtt daemon install [--start-marked]` / `uninstall` | Run at login. Optional |
-| `dtt daemon run` | Run in the foreground. For service units and debugging |
-| `dtt config path\|reload\|edit` | Work with `tunnels.toml` |
-| `dtt tools` / `dtt tools set <tool> <path>` | Binaries used, with per-machine paths |
-| `dtt mcp serve` / `config` / `tools` | MCP server, see [mcp.md](mcp.md) |
-| `dtt completion bash\|zsh\|fish\|powershell` | Shell completion, including tunnel IDs/names, profile names and group names; never starts a daemon |
-| `dtt docs [topic]` / `dtt man [--dir DIR]` | Embedded offline guides / section 1 pages (default directory: current) |
-| `dtt version` | CLI and daemon versions |
+`dtt approvals approve` needs a TTY and the code shown in the request.
 
 ## Global behavior
 
@@ -150,37 +44,16 @@ There is no `reveal`. It requires OS authentication, which the desktop app provi
 ### Output
 
 - Results go to stdout and diagnostics to stderr. Tables are for people and may change.
-- `--json` is the stable interface. Ordinary CLI result objects have `"apiVersion": 1`. New fields may appear, and removing or renaming a field raises the version.
-- Deliberate MCP exceptions: `dtt mcp config --json` prints only `{"mcpServers":{"devt-tunnel":{"command":"/absolute/dtt","args":["mcp","serve"]}}}`, a paste-ready client configuration with the symlink-resolved executable path and no `apiVersion`. `dtt mcp tools --json` prints the raw MCP tool-definition array without a CLI envelope. `dtt mcp serve` writes only MCP JSON-RPC to stdout, regardless of `--json`. CLI errors still use the normal stderr format.
+- `--json` is the stable interface. Result objects carry `apiVersion` (`api.Version`). New fields may appear, and removing or renaming a field raises the version.
+- Deliberate exceptions: `dtt mcp config --json` and `dtt mcp tools --json` have no envelope, and `dtt mcp serve` writes only JSON-RPC to stdout.
 - Colors, spinners and tables appear only on a TTY.
-
-```bash
-dtt ls --running --json
-```
-
-```json
-{
-  "apiVersion": 1,
-  "tunnels": [
-    {
-      "id": "db",
-      "name": "Production DB",
-      "type": "ssh",
-      "state": "running",
-      "pid": 4242,
-      "endpoints": [{ "kind": "local", "listen": "127.0.0.1:15432", "target": "127.0.0.1:5432", "public": false }],
-      "owner": { "pinned": true, "ephemeral": false, "leases": 0 }
-    }
-  ]
-}
-```
-
-`ls --json` and `show --json` include `owner` with `pinned`, `ephemeral` and `leases`; active claims also include a holder and expiry. `logs --json -f` emits one versioned object per batch (newline-delimited JSON). Log lines currently have sequence numbers but no timestamps; a positive `--since` is rejected with exit 2 rather than silently ignoring the filter.
+- `ls --json` and `show --json` include `owner` with `pinned`, `ephemeral` and `leases`; active claims also include a holder and expiry.
+- `logs --json -f` emits one object per batch. Log lines have sequence numbers but no timestamps, so a positive `--since` exits 2.
 
 With `--json`, errors are written to stderr as a single object:
 
 ```json
-{ "apiVersion": 1, "error": { "code": "needs_secret", "message": "secret \"ngrok-personal\" is missing", "tunnel": "web", "hint": "dtt secret set ngrok-personal" } }
+{ "apiVersion": 2, "error": { "code": "needs_secret", "message": "secret \"ngrok-personal\" is missing", "tunnel": "web", "hint": "dtt secret set ngrok-personal" } }
 ```
 
 ### Exit codes
@@ -216,28 +89,13 @@ On a TTY, `dtt start`, `run` and `forward` show SSH questions for their own tunn
 
 There are no environment variables for secret values.
 
-## Scripts and troubleshooting
+## How the documentation is built
 
-The user-facing [scripts](../cli/scripts.md) and [troubleshooting](../cli/troubleshooting.md) guides live in `docs/cli/` and are embedded for offline use with `dtt docs`.
+`--help`, the [command reference](../cli/reference/dtt.md), man pages and completions are generated from the `cobra` definitions in `internal/cli` with `go run ./internal/cli/gen`. Guides in `docs/cli/*.md` are hand-written and embedded for `dtt docs`; `agents.md` is also an MCP resource.
 
-## Documentation plan
+CI enforces:
 
-Documentation comes from the command definitions where possible, so that it cannot drift.
-
-| Output | Source | Where |
-|---|---|---|
-| `dtt <cmd> --help`: synopsis, flags, 1 to 3 examples, the traditional equivalent, exit codes | `cobra` command definitions in `internal/cli` | Terminal |
-| Command reference | Generated by `cobra/doc` with `go run ./internal/cli/gen` | `docs/cli/reference/*.md`, committed |
-| Man pages | Generated by `cobra/doc` with `go run ./internal/cli/gen` | Ignored `bin/man/*.1` for packaging (not committed), and `dtt man --dir DIR` |
-| Shell completion, with dynamic tunnel ids | `cobra` | Packages, and `dtt completion` |
-| Guides: quick start, replacing commands, scripts, troubleshooting | Hand-written in `docs/cli/` | `docs/cli/*.md`, embedded with `go:embed` for `dtt docs` |
-| Agent guide | Hand-written | `docs/cli/agents.md`, also served as an MCP resource |
-
-Enforcement in CI:
-
-- **Drift:** regenerate the reference, and fail if `git diff` is not empty.
-- **Examples work:** a test parses shell blocks and inline `dtt ...` examples in `docs/cli/*.md` against the command tree without executing them. All one-off examples are validated too, including the `auto:5432` script and its JSON ID lookup. A renamed flag fails the build.
-- **Exit codes:** a test confirms the tables above and in the embedded troubleshooting guide match `ExitCodes`, which must cover every `internal/api` error kind.
-- **Completeness:** a test fails when a command has no `Long` text or `Example`.
-
-The README links the install/usage guide. Reference Markdown is committed; man pages are generated at package time. Automatic date/history tags are disabled and the man header date is fixed to 2026-11-04, so output is deterministic. All guide examples use implemented commands.
+- **Drift:** the regenerated reference must match what is committed.
+- **Examples:** shell blocks and inline `dtt ...` examples in the guides are parsed against the command tree.
+- **Exit codes:** the tables here and in the troubleshooting guide must match `ExitCodes`, which must cover every `internal/api` error kind.
+- **Completeness:** every command needs `Long` text and an `Example`.
