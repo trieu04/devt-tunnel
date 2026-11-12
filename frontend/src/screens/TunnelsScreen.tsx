@@ -2,6 +2,7 @@ import type { Lease } from "../../bindings/github.com/trieu04/devt-tunnel/intern
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Overview, Service, TunnelView, onLogsAppended, openURL } from "../api";
 import { AgentBadge, EphemeralTag } from "../AgentBadge";
+import { AnsiText } from "../AnsiText";
 import { SaveTunnelDialog } from "../SaveTunnelDialog";
 import { applyLogUpdate } from "../lib/logs";
 import { commandSummary, fitCount } from "../lib/summary";
@@ -817,7 +818,7 @@ function Detail({
             </div>
           </div>
         </div>
-        <pre className="log mono">{logText || "No output yet."}</pre>
+        <pre className="log mono">{logText ? <AnsiText>{logText}</AnsiText> : "No output yet."}</pre>
       </section>
       <div className="detail-actions">
         <button onClick={() => onNavigate("editor", `duplicate:${view.tunnel.id}`)}>Duplicate</button>
