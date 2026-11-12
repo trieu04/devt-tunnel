@@ -689,6 +689,12 @@ function Detail({
         <div>
           <span className="eyebrow">{view.tunnel.type}</span>
           <h2>{view.tunnel.name}</h2>
+          <div className="detail-head-actions">
+            <button className={active ? "" : "primary"} onClick={() => run(Service.Toggle(view.tunnel.id))}>
+              {active ? "Stop" : "Start"}
+            </button>
+            <button onClick={() => onNavigate("editor", `edit:${view.tunnel.id}`)}>Edit</button>
+          </div>
         </div>
         <span className={`state-pill state-pill-${view.status.state}`}>
           <StateBadge state={view.status.state} />
@@ -699,17 +705,16 @@ function Detail({
         {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
       </div>
       {view.status.error && <p className="error-text">{view.status.error}</p>}
-      {view.status.address && (
-        <div className="address">
-          <code>{view.status.address}</code>
-          <button onClick={() => navigator.clipboard.writeText(view.status.address ?? "")}>Copy</button>
-        </div>
-      )}
       <section className="detail-section">
         <div className="section-line">
           <span className="field-label">Command</span>
-          <button className="small-button" onClick={() => navigator.clipboard.writeText(view.preview)}>
-            Copy
+          <button
+            className="icon-button copy-button"
+            aria-label="Copy command"
+            title="Copy command"
+            onClick={() => navigator.clipboard.writeText(view.preview)}
+          >
+            <CopyGlyph />
           </button>
         </div>
         <pre className="command mono command-dark">{view.preview}</pre>
@@ -815,10 +820,6 @@ function Detail({
         <pre className="log mono">{logText || "No output yet."}</pre>
       </section>
       <div className="detail-actions">
-        <button className={active ? "" : "primary"} onClick={() => run(Service.Toggle(view.tunnel.id))}>
-          {active ? "Stop" : "Start"}
-        </button>
-        <button onClick={() => onNavigate("editor", `edit:${view.tunnel.id}`)}>Edit</button>
         <button onClick={() => onNavigate("editor", `duplicate:${view.tunnel.id}`)}>Duplicate</button>
         {view.status.stale && <button onClick={() => run(Service.Restart(view.tunnel.id))}>Restart</button>}
       </div>
