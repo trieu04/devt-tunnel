@@ -132,6 +132,7 @@ kbd { padding: var(--space-1) var(--space-3); border: 1px solid var(--line-stron
 .screen { max-width: 100%; overflow-x: hidden; overflow-y: auto; padding: 0 0 32px; }
 .screen-header, .section-line, .actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .page-header { min-height: 74px; margin: 0; padding: var(--space-6) var(--space-10); border-bottom: 1px solid var(--line); background: var(--surface); }
+.editor > .page-header { position: sticky; z-index: 5; top: 0; }
 .page-title { display: flex; flex-direction: column; align-items: flex-start; }
 .breadcrumb { color: var(--muted); font-size: var(--text-sm); line-height: 18px; }
 .breadcrumb-button { min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; text-decoration: underline; }
