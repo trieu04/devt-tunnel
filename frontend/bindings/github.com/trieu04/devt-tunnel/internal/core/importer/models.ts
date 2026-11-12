@@ -3,16 +3,84 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import { Create as $Create } from "@wailsio/runtime";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as model$0 from "../model/models.js";
 
-export interface Result {
+export class Result {
     "tunnel": model$0.Tunnel;
-    "warnings": string[] | null;
-    "secrets": SecretCandidate[] | null;
+    "warnings": string[];
+    "secrets": SecretCandidate[];
+
+    /** Creates a new Result instance. */
+    constructor($$source: Partial<Result> = {}) {
+        if (!("tunnel" in $$source)) {
+            this["tunnel"] = (new model$0.Tunnel());
+        }
+        if (!("warnings" in $$source)) {
+            this["warnings"] = [];
+        }
+        if (!("secrets" in $$source)) {
+            this["secrets"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Result instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Result {
+        const $$createField0_0 = $$createType0;
+        const $$createField1_0 = $$createType1;
+        const $$createField2_0 = $$createType3;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("tunnel" in $$parsedSource) {
+            $$parsedSource["tunnel"] = $$createField0_0($$parsedSource["tunnel"]);
+        }
+        if ("warnings" in $$parsedSource) {
+            $$parsedSource["warnings"] = $$createField1_0($$parsedSource["warnings"]);
+        }
+        if ("secrets" in $$parsedSource) {
+            $$parsedSource["secrets"] = $$createField2_0($$parsedSource["secrets"]);
+        }
+        return new Result($$parsedSource as Partial<Result>);
+    }
 }
 
-export interface SecretCandidate {
+export class SecretCandidate {
     "suggested": string;
     "value": string;
     "kind": string;
+
+    /** Creates a new SecretCandidate instance. */
+    constructor($$source: Partial<SecretCandidate> = {}) {
+        if (!("suggested" in $$source)) {
+            this["suggested"] = "";
+        }
+        if (!("value" in $$source)) {
+            this["value"] = "";
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SecretCandidate instance from a string or object.
+     */
+    static createFrom($$source: any = {}): SecretCandidate {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SecretCandidate($$parsedSource as Partial<SecretCandidate>);
+    }
 }
+
+// Private type creation functions
+const $$createType0 = model$0.Tunnel.createFrom;
+const $$createType1 = $Create.Array($Create.Any);
+const $$createType2 = SecretCandidate.createFrom;
+const $$createType3 = $Create.Array($$createType2);

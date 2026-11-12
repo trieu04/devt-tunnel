@@ -3,6 +3,10 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import { Create as $Create } from "@wailsio/runtime";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as askpass$0 from "../askpass/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -20,13 +24,14 @@ import * as sshconfig$0 from "../core/sshconfig/models.js";
 // @ts-ignore: Unused imports
 import * as supervisor$0 from "../core/supervisor/models.js";
 
+export const Actor = model$0.Actor;
 export type Actor = model$0.Actor;
 
 /**
  * Approval is a fingerprint-bound request, not a deferred/background execution.
  * Code and Argv are omitted from MCP views. Only person clients can decide.
  */
-export interface Approval {
+export class Approval {
     "id": string;
     "actor": Actor;
     "session"?: string;
@@ -39,9 +44,9 @@ export interface Approval {
     "summary": string;
     "tunnelId"?: string;
     "action": string;
-    "argv"?: string[] | null;
+    "argv"?: string[];
     "fingerprint": string;
-    "choices": string[] | null;
+    "choices": string[];
     "code"?: string;
 
     /**
@@ -51,9 +56,68 @@ export interface Approval {
     "scope"?: string;
     "createdAt": string;
     "expiresAt": string;
+
+    /** Creates a new Approval instance. */
+    constructor($$source: Partial<Approval> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("actor" in $$source)) {
+            this["actor"] = (new Actor());
+        }
+        if (!("purpose" in $$source)) {
+            this["purpose"] = "";
+        }
+        if (!("requestedName" in $$source)) {
+            this["requestedName"] = "";
+        }
+        if (!("summary" in $$source)) {
+            this["summary"] = "";
+        }
+        if (!("action" in $$source)) {
+            this["action"] = "";
+        }
+        if (!("fingerprint" in $$source)) {
+            this["fingerprint"] = "";
+        }
+        if (!("choices" in $$source)) {
+            this["choices"] = [];
+        }
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+        if (!("createdAt" in $$source)) {
+            this["createdAt"] = "0001-01-01T00:00:00.000Z";
+        }
+        if (!("expiresAt" in $$source)) {
+            this["expiresAt"] = "0001-01-01T00:00:00.000Z";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Approval instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Approval {
+        const $$createField1_0 = $$createType0;
+        const $$createField8_0 = $$createType1;
+        const $$createField10_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("actor" in $$parsedSource) {
+            $$parsedSource["actor"] = $$createField1_0($$parsedSource["actor"]);
+        }
+        if ("argv" in $$parsedSource) {
+            $$parsedSource["argv"] = $$createField8_0($$parsedSource["argv"]);
+        }
+        if ("choices" in $$parsedSource) {
+            $$parsedSource["choices"] = $$createField10_0($$parsedSource["choices"]);
+        }
+        return new Approval($$parsedSource as Partial<Approval>);
+    }
 }
 
-export interface DecideApprovalParams {
+export class DecideApprovalParams {
     "id": string;
 
     /**
@@ -66,73 +130,419 @@ export interface DecideApprovalParams {
      */
     "scope": string;
     "code": string;
+
+    /** Creates a new DecideApprovalParams instance. */
+    constructor($$source: Partial<DecideApprovalParams> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("decision" in $$source)) {
+            this["decision"] = "";
+        }
+        if (!("scope" in $$source)) {
+            this["scope"] = "";
+        }
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DecideApprovalParams instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DecideApprovalParams {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DecideApprovalParams($$parsedSource as Partial<DecideApprovalParams>);
+    }
 }
 
-export interface DraftResult {
+export class DraftResult {
     "preview": string;
     "buildError": string;
-    "findings": checks$0.Finding[] | null;
+    "findings": checks$0.Finding[];
+
+    /** Creates a new DraftResult instance. */
+    constructor($$source: Partial<DraftResult> = {}) {
+        if (!("preview" in $$source)) {
+            this["preview"] = "";
+        }
+        if (!("buildError" in $$source)) {
+            this["buildError"] = "";
+        }
+        if (!("findings" in $$source)) {
+            this["findings"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DraftResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DraftResult {
+        const $$createField2_0 = $$createType3;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("findings" in $$parsedSource) {
+            $$parsedSource["findings"] = $$createField2_0($$parsedSource["findings"]);
+        }
+        return new DraftResult($$parsedSource as Partial<DraftResult>);
+    }
 }
 
-export interface Endpoint {
+export class Endpoint {
     "kind": string;
     "listen": string;
     "target"?: string;
     "public": boolean;
+
+    /** Creates a new Endpoint instance. */
+    constructor($$source: Partial<Endpoint> = {}) {
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("listen" in $$source)) {
+            this["listen"] = "";
+        }
+        if (!("public" in $$source)) {
+            this["public"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Endpoint instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Endpoint {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Endpoint($$parsedSource as Partial<Endpoint>);
+    }
 }
 
+export const Lease = model$0.Lease;
 export type Lease = model$0.Lease;
 
-export interface Overview {
+export class Overview {
     "configPath": string;
     "configError": string;
     "shortcut": string;
     "shortcutError": string;
-    "profiles": model$0.Profile[] | null;
-    "groups": model$0.Group[] | null;
-    "tunnels": TunnelView[] | null;
-    "orphans": supervisor$0.Record[] | null;
-    "prompts": PendingPrompt[] | null;
-    "lastUsed": { [_ in string]?: string } | null;
+    "profiles": model$0.Profile[];
+    "groups": model$0.Group[];
+    "tunnels": TunnelView[];
+    "orphans": supervisor$0.Record[];
+    "prompts": PendingPrompt[];
+    "lastUsed": { [_ in string]?: string };
     "keychainAvailable": boolean;
     "keychainName": string;
+
+    /** Creates a new Overview instance. */
+    constructor($$source: Partial<Overview> = {}) {
+        if (!("configPath" in $$source)) {
+            this["configPath"] = "";
+        }
+        if (!("configError" in $$source)) {
+            this["configError"] = "";
+        }
+        if (!("shortcut" in $$source)) {
+            this["shortcut"] = "";
+        }
+        if (!("shortcutError" in $$source)) {
+            this["shortcutError"] = "";
+        }
+        if (!("profiles" in $$source)) {
+            this["profiles"] = [];
+        }
+        if (!("groups" in $$source)) {
+            this["groups"] = [];
+        }
+        if (!("tunnels" in $$source)) {
+            this["tunnels"] = [];
+        }
+        if (!("orphans" in $$source)) {
+            this["orphans"] = [];
+        }
+        if (!("prompts" in $$source)) {
+            this["prompts"] = [];
+        }
+        if (!("lastUsed" in $$source)) {
+            this["lastUsed"] = {};
+        }
+        if (!("keychainAvailable" in $$source)) {
+            this["keychainAvailable"] = false;
+        }
+        if (!("keychainName" in $$source)) {
+            this["keychainName"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Overview instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Overview {
+        const $$createField4_0 = $$createType5;
+        const $$createField5_0 = $$createType7;
+        const $$createField6_0 = $$createType9;
+        const $$createField7_0 = $$createType11;
+        const $$createField8_0 = $$createType13;
+        const $$createField9_0 = $$createType14;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("profiles" in $$parsedSource) {
+            $$parsedSource["profiles"] = $$createField4_0($$parsedSource["profiles"]);
+        }
+        if ("groups" in $$parsedSource) {
+            $$parsedSource["groups"] = $$createField5_0($$parsedSource["groups"]);
+        }
+        if ("tunnels" in $$parsedSource) {
+            $$parsedSource["tunnels"] = $$createField6_0($$parsedSource["tunnels"]);
+        }
+        if ("orphans" in $$parsedSource) {
+            $$parsedSource["orphans"] = $$createField7_0($$parsedSource["orphans"]);
+        }
+        if ("prompts" in $$parsedSource) {
+            $$parsedSource["prompts"] = $$createField8_0($$parsedSource["prompts"]);
+        }
+        if ("lastUsed" in $$parsedSource) {
+            $$parsedSource["lastUsed"] = $$createField9_0($$parsedSource["lastUsed"]);
+        }
+        return new Overview($$parsedSource as Partial<Overview>);
+    }
 }
 
-export interface PendingPrompt {
+export class PendingPrompt {
     "id": string;
     "prompt": askpass$0.Prompt;
+
+    /** Creates a new PendingPrompt instance. */
+    constructor($$source: Partial<PendingPrompt> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("prompt" in $$source)) {
+            this["prompt"] = (new askpass$0.Prompt());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PendingPrompt instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PendingPrompt {
+        const $$createField1_0 = $$createType15;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("prompt" in $$parsedSource) {
+            $$parsedSource["prompt"] = $$createField1_0($$parsedSource["prompt"]);
+        }
+        return new PendingPrompt($$parsedSource as Partial<PendingPrompt>);
+    }
 }
 
-export interface SSHHostList {
+export class SSHHostList {
     "configPath": string;
-    "hosts": sshconfig$0.Host[] | null;
-    "warnings": string[] | null;
+    "hosts": sshconfig$0.Host[];
+    "warnings": string[];
+
+    /** Creates a new SSHHostList instance. */
+    constructor($$source: Partial<SSHHostList> = {}) {
+        if (!("configPath" in $$source)) {
+            this["configPath"] = "";
+        }
+        if (!("hosts" in $$source)) {
+            this["hosts"] = [];
+        }
+        if (!("warnings" in $$source)) {
+            this["warnings"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SSHHostList instance from a string or object.
+     */
+    static createFrom($$source: any = {}): SSHHostList {
+        const $$createField1_0 = $$createType17;
+        const $$createField2_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("hosts" in $$parsedSource) {
+            $$parsedSource["hosts"] = $$createField1_0($$parsedSource["hosts"]);
+        }
+        if ("warnings" in $$parsedSource) {
+            $$parsedSource["warnings"] = $$createField2_0($$parsedSource["warnings"]);
+        }
+        return new SSHHostList($$parsedSource as Partial<SSHHostList>);
+    }
 }
 
-export interface SecretView {
+export class SecretView {
     "name": string;
     "kind": secret$0.Kind;
     "state": string;
-    "usedBy": string[] | null;
+    "usedBy": string[];
     "lastUsed": string;
+
+    /** Creates a new SecretView instance. */
+    constructor($$source: Partial<SecretView> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = secret$0.Kind.$zero;
+        }
+        if (!("state" in $$source)) {
+            this["state"] = "";
+        }
+        if (!("usedBy" in $$source)) {
+            this["usedBy"] = [];
+        }
+        if (!("lastUsed" in $$source)) {
+            this["lastUsed"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SecretView instance from a string or object.
+     */
+    static createFrom($$source: any = {}): SecretView {
+        const $$createField3_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("usedBy" in $$parsedSource) {
+            $$parsedSource["usedBy"] = $$createField3_0($$parsedSource["usedBy"]);
+        }
+        return new SecretView($$parsedSource as Partial<SecretView>);
+    }
 }
 
-export interface ToolInfo {
+export class ToolInfo {
     "name": string;
     "path": string;
     "version": string;
     "source": string;
     "error": string;
+
+    /** Creates a new ToolInfo instance. */
+    constructor($$source: Partial<ToolInfo> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("version" in $$source)) {
+            this["version"] = "";
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("error" in $$source)) {
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ToolInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ToolInfo {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ToolInfo($$parsedSource as Partial<ToolInfo>);
+    }
 }
 
+export const TunnelOwner = model$0.TunnelOwner;
 export type TunnelOwner = model$0.TunnelOwner;
 
-export interface TunnelView {
+export class TunnelView {
     "owner": TunnelOwner;
-    "endpoints": Endpoint[] | null;
+    "endpoints": Endpoint[];
     "tunnel": model$0.Tunnel;
     "status": supervisor$0.Status;
     "preview": string;
-    "missingSecrets": string[] | null;
+    "missingSecrets": string[];
     "toolPath"?: string;
+
+    /** Creates a new TunnelView instance. */
+    constructor($$source: Partial<TunnelView> = {}) {
+        if (!("owner" in $$source)) {
+            this["owner"] = (new TunnelOwner());
+        }
+        if (!("endpoints" in $$source)) {
+            this["endpoints"] = [];
+        }
+        if (!("tunnel" in $$source)) {
+            this["tunnel"] = (new model$0.Tunnel());
+        }
+        if (!("status" in $$source)) {
+            this["status"] = (new supervisor$0.Status());
+        }
+        if (!("preview" in $$source)) {
+            this["preview"] = "";
+        }
+        if (!("missingSecrets" in $$source)) {
+            this["missingSecrets"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TunnelView instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TunnelView {
+        const $$createField0_0 = $$createType18;
+        const $$createField1_0 = $$createType20;
+        const $$createField2_0 = $$createType21;
+        const $$createField3_0 = $$createType22;
+        const $$createField5_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("owner" in $$parsedSource) {
+            $$parsedSource["owner"] = $$createField0_0($$parsedSource["owner"]);
+        }
+        if ("endpoints" in $$parsedSource) {
+            $$parsedSource["endpoints"] = $$createField1_0($$parsedSource["endpoints"]);
+        }
+        if ("tunnel" in $$parsedSource) {
+            $$parsedSource["tunnel"] = $$createField2_0($$parsedSource["tunnel"]);
+        }
+        if ("status" in $$parsedSource) {
+            $$parsedSource["status"] = $$createField3_0($$parsedSource["status"]);
+        }
+        if ("missingSecrets" in $$parsedSource) {
+            $$parsedSource["missingSecrets"] = $$createField5_0($$parsedSource["missingSecrets"]);
+        }
+        return new TunnelView($$parsedSource as Partial<TunnelView>);
+    }
 }
+
+// Private type creation functions
+const $$createType0 = model$0.Actor.createFrom;
+const $$createType1 = $Create.Array($Create.Any);
+const $$createType2 = checks$0.Finding.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = model$0.Profile.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = model$0.Group.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = TunnelView.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = supervisor$0.Record.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = PendingPrompt.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = $Create.Map($Create.Any, $Create.Any);
+const $$createType15 = askpass$0.Prompt.createFrom;
+const $$createType16 = sshconfig$0.Host.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = model$0.TunnelOwner.createFrom;
+const $$createType19 = Endpoint.createFrom;
+const $$createType20 = $Create.Array($$createType19);
+const $$createType21 = model$0.Tunnel.createFrom;
+const $$createType22 = supervisor$0.Status.createFrom;
