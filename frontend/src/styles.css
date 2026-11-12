@@ -263,7 +263,19 @@ kbd { padding: var(--space-1) var(--space-3); border: 1px solid var(--line-stron
 .detail-facts dt { color: var(--muted); font-size: var(--text-sm); }
 .detail-facts dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: var(--text-meta); }
 .detail-log { min-height: 140px; }
+.log-actions { position: relative; display: flex; align-items: center; gap: var(--space-1); }
+.log-actions .icon-button { border: 1px solid var(--line); }
+.log-menu { position: relative; display: flex; }
+.log-menu-popover { position: absolute; z-index: 110; top: calc(100% + var(--space-2)); right: 0; display: flex; min-width: 120px; flex-direction: column; padding: var(--space-2); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-selection); }
+.log-menu-popover button { display: flex; min-height: 34px; align-items: center; justify-content: flex-start; gap: var(--space-3); padding: 0 var(--space-4); border: 0; background: transparent; text-align: left; }
+.log-menu-popover button:hover { background: var(--surface-subtle); }
 .log { min-height: 120px; flex: 1 1 120px; overflow-y: auto; color: var(--text-soft); font-size: var(--text-sm); line-height: 18px; }
+.detail-log-sidebar > :not(.detail-log), .detail-log-window > :not(.detail-log) { display: none; }
+.detail-log-sidebar, .detail-log-window { padding: 0; }
+.detail-log-sidebar .detail-log, .detail-log-window .detail-log { min-height: 0; flex: 1 1 auto; gap: 0; }
+.detail-log-sidebar .section-line, .detail-log-window .section-line { padding: var(--space-6) var(--space-9); }
+.detail-log-sidebar .log, .detail-log-window .log { min-height: 0; padding: var(--space-6) var(--space-9); border: 0; border-top: 1px solid var(--line); }
+.detail-log-window { position: fixed; z-index: 100; inset: 0; width: 100%; min-width: 0; border: 0; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: auto; padding-top: var(--space-4); }
 .detail-actions button { height: 44px; padding: 0 var(--space-8); }
 .address { display: flex; align-items: center; gap: var(--space-4); }

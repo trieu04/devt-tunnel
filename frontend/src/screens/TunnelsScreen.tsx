@@ -9,13 +9,19 @@ import { ViewFilter, filterTunnels, inGroup, isActive } from "../lib/filter";
 import {
   ChevronGlyph,
   CopyGlyph,
+  DiagonalCollapseGlyph,
+  DiagonalExpandGlyph,
+  DownloadGlyph,
+  ExpandGlyph,
   HoverTip,
+  MoreVerticalGlyph,
   PlayGlyph,
   PlusGlyph,
   SearchGlyph,
   SettingsGlyph,
   StateBadge,
   StopGlyph,
+  TrashGlyph,
   AppLogo,
 } from "../parts";
 
@@ -578,7 +584,45 @@ function Detail({
   onSave: () => void;
 }) {
   const [logs, setLogs] = useState<{ seq: number; line: string }[]>([]);
+  type LogSize = "normal" | "sidebar" | "window";
+  const [logSizes, setLogSizes] = useState<Record<string, LogSize>>({});
+  const [logSidebarWidths, setLogSidebarWidths] = useState<Record<string, number>>({});
+  const [logMenuOpen, setLogMenuOpen] = useState(false);
+  const detailRef = useRef<HTMLElement>(null);
+  const logMenuRef = useRef<HTMLDivElement>(null);
+  const logSize = logSizes[view.tunnel.id] ?? "normal";
+  const setLogSize = (next: LogSize | ((current: LogSize) => LogSize)) => {
+    setLogSizes((current) => {
+      const previous = current[view.tunnel.id] ?? "normal";
+      return { ...current, [view.tunnel.id]: typeof next === "function" ? next(previous) : next };
+    });
+  };
   const active = isActive(view.status.state);
+  useEffect(() => {
+    if (logSize === "normal") return;
+    const shrinkLog = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (logMenuOpen) return;
+      setLogSize((current) => (current === "window" ? "sidebar" : "normal"));
+    };
+    window.addEventListener("keydown", shrinkLog);
+    return () => window.removeEventListener("keydown", shrinkLog);
+  }, [logMenuOpen, logSize, view.tunnel.id]);
+  useEffect(() => {
+    if (!logMenuOpen) return;
+    const closeMenu = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof MouseEvent && logMenuRef.current?.contains(event.target as Node)) return;
+      setLogMenuOpen(false);
+    };
+    window.addEventListener("mousedown", closeMenu);
+    window.addEventListener("keydown", closeMenu);
+    return () => {
+      window.removeEventListener("mousedown", closeMenu);
+      window.removeEventListener("keydown", closeMenu);
+    };
+  }, [logMenuOpen]);
+  useEffect(() => setLogMenuOpen(false), [view.tunnel.id]);
   useEffect(() => {
     let mounted = true;
     let initialized = false;
@@ -624,8 +668,23 @@ function Detail({
     },
     { key: "Tool", value: view.toolPath || "Not found" },
   ];
+  const sidebarWidth = logSidebarWidths[view.tunnel.id];
+  const logText = logs.map((line) => line.line).join("\n");
+  const saveLog = () => {
+    const url = URL.createObjectURL(new Blob([logText], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${view.tunnel.name.replace(/[^a-z0-9._-]+/gi, "-") || "tunnel"}.log`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
   return (
-    <aside className="detail" aria-label="Tunnel details">
+    <aside
+      ref={detailRef}
+      className={`detail detail-log-${logSize}`}
+      aria-label="Tunnel details"
+      style={logSize === "sidebar" && sidebarWidth ? { width: sidebarWidth, flex: `0 0 ${sidebarWidth}px` } : undefined}
+    >
       <div className="detail-head">
         <div>
           <span className="eyebrow">{view.tunnel.type}</span>
@@ -671,19 +730,89 @@ function Detail({
       <section className="detail-section detail-log">
         <div className="section-line">
           <span className="field-label">Log</span>
-          <div>
-            <button
-              className="small-button"
-              onClick={() => navigator.clipboard.writeText(logs.map((line) => line.line).join("\n"))}
-            >
-              Copy
-            </button>
-            <button className="small-button" onClick={() => setLogs([])}>
-              Clear
-            </button>
+          <div className="log-actions">
+            {logSize === "sidebar" && (
+              <button
+                className="icon-button copy-button"
+                aria-label="Expand log to full window"
+                title="Expand log to full window"
+                onClick={() => setLogSize("window")}
+              >
+                <ExpandGlyph />
+              </button>
+            )}
+            {logSize === "normal" ? (
+              <button
+                className="icon-button copy-button"
+                aria-label="Expand log to fill sidebar"
+                title="Expand log to fill sidebar"
+                onClick={() => {
+                  const width = detailRef.current?.getBoundingClientRect().width;
+                  if (width) setLogSidebarWidths((current) => ({ ...current, [view.tunnel.id]: width }));
+                  setLogSize("sidebar");
+                }}
+              >
+                <DiagonalExpandGlyph />
+              </button>
+            ) : (
+              <button
+                className="icon-button copy-button"
+                aria-label="Reduce log size"
+                title="Reduce log size"
+                onClick={() => setLogSize(logSize === "window" ? "sidebar" : "normal")}
+              >
+                <DiagonalCollapseGlyph />
+              </button>
+            )}
+            <div className="log-menu" ref={logMenuRef}>
+              <button
+                className="icon-button copy-button"
+                aria-label="Log options"
+                title="Log options"
+                aria-haspopup="menu"
+                aria-expanded={logMenuOpen}
+                onClick={() => setLogMenuOpen((open) => !open)}
+              >
+                <MoreVerticalGlyph />
+              </button>
+              {logMenuOpen && (
+                <div className="log-menu-popover" role="menu">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setLogs([]);
+                      setLogMenuOpen(false);
+                    }}
+                  >
+                    <TrashGlyph />
+                    Clear
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      navigator.clipboard.writeText(logText);
+                      setLogMenuOpen(false);
+                    }}
+                  >
+                    <CopyGlyph />
+                    Copy
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      saveLog();
+                      setLogMenuOpen(false);
+                    }}
+                  >
+                    <DownloadGlyph />
+                    Save
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        <pre className="log mono">{logs.map((line) => line.line).join("\n") || "No output yet."}</pre>
+        <pre className="log mono">{logText || "No output yet."}</pre>
       </section>
       <div className="detail-actions">
         <button className={active ? "" : "primary"} onClick={() => run(Service.Toggle(view.tunnel.id))}>
