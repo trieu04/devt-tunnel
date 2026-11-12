@@ -189,6 +189,24 @@ func TestInputPreparationAndShellFallback(t *testing.T) {
 	}
 }
 
+func TestParseNormalizesSmartDashes(t *testing.T) {
+	for _, tc := range []struct {
+		line     string
+		typeWant model.TunnelType
+	}{
+		{`ngrok http 8080 —domain=x.example`, model.TypeNgrok},
+		{`cloudflared tunnel —url http://localhost:3000`, model.TypeCloudflared},
+	} {
+		r, err := Parse(tc.line, command.POSIX, nil)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.line, err)
+		}
+		if r.Tunnel.Type != tc.typeWant {
+			t.Fatalf("Parse(%q) type = %q, want %q", tc.line, r.Tunnel.Type, tc.typeWant)
+		}
+	}
+}
+
 func TestSecretsNeverEnterTunnelOrExtraArgs(t *testing.T) {
 	for _, line := range []string{`ngrok http 80 --authtoken=VERYSECRET`, `TUNNEL_TOKEN=VERYSECRET cloudflared tunnel run demo`, `NGROK_AUTHTOKEN=VERYSECRET ngrok http 80`} {
 		r, err := Parse(line, command.POSIX, nil)

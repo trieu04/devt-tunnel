@@ -26,6 +26,7 @@ type SecretCandidate struct {
 
 func Parse(line string, d command.Dialect, knownHosts []string) (Result, error) {
 	original := line
+	line = normalizeDashes(line)
 	line = strings.TrimSpace(line)
 	if d == command.Windows {
 		line = strings.ReplaceAll(line, "^\r\n", " ")
@@ -82,6 +83,10 @@ func Parse(line string, d command.Dialect, knownHosts []string) (Result, error) 
 		res.Tunnel.Command.Line = original
 		return res, nil
 	}
+}
+
+func normalizeDashes(line string) string {
+	return strings.NewReplacer("—", "--", "–", "--").Replace(line)
 }
 
 // sshArgs collects the parts of an ssh argv while it is scanned. Anything it cannot map

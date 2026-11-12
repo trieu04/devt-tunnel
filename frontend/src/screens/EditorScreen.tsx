@@ -30,6 +30,7 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const request = useRef(0);
+  const importRequest = useRef(0);
 
   useEffect(() => {
     setPaste("");
@@ -76,6 +77,32 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
     );
     return () => clearTimeout(timer);
   }, [draft]);
+
+  useEffect(() => {
+    const id = ++importRequest.current;
+    if (!pasteMode || !paste.trim()) return;
+    const detectedType = detectCommandType(paste);
+    if (detectedType) {
+      Service.NewDraft(detectedType)
+        .then((fresh) => {
+          if (id !== importRequest.current) return;
+          setDraft((current) => (current?.type === detectedType ? current : mergeImportedDraft(current, fresh)));
+        })
+        .catch(() => {});
+    }
+    const timer = window.setTimeout(() => {
+      Service.ImportCommand(paste)
+        .then((result) => {
+          if (id !== importRequest.current) return;
+          if (detectedType && result.tunnel.type !== detectedType) return;
+          setDraft((current) => mergeImportedDraft(current, result.tunnel));
+          setWarnings(result.warnings ?? []);
+          setError("");
+        })
+        .catch(() => {});
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [paste, pasteMode]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -198,7 +225,7 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
                 className="mono"
                 value={paste}
                 onChange={(event) => {
-                  setPaste(event.target.value);
+                  setPaste(normalizeCommandDashes(event.target.value));
                   setPasteMode(true);
                 }}
                 placeholder="ssh -N -L 8080:localhost:80 server1"
@@ -216,131 +243,132 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
               </p>
             ))}
           </section>
-          {(!pasteMode || !paste.trim()) && (
-            <>
-              <section className="card">
-                <h2>Type</h2>
-                <div className="segments type-segments">
-                  {TYPE_OPTIONS.map(([type, label]) => (
-                    <button
-                      key={type}
-                      aria-pressed={draft.type === type}
-                      disabled={!!draft.id}
-                      onClick={() => switchType(type)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </section>
-              <section className="card grid basics-card">
-                <h2>Basics</h2>
-                <Field label="Name" invalid={!draft.name.trim()}>
-                  <input
-                    value={draft.name}
-                    required
-                    aria-invalid={!draft.name.trim()}
-                    onChange={(event) => update({ name: event.target.value })}
-                  />
-                </Field>
-                <Field label="Profile">
-                  <select value={draft.profile ?? ""} onChange={(event) => update({ profile: event.target.value })}>
-                    <option value="">No profile (default SSH config)</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <div className="field full">
-                  <span className="field-label">Groups</span>
-                  <div className="profile-options">
-                    {groups.length ? (
-                      groups.map((group) => {
-                        const pressed = (draft.groups ?? []).includes(group.id);
-                        return (
-                          <button
-                            key={group.id}
-                            aria-pressed={pressed}
-                            onClick={() =>
-                              update({
-                                groups: pressed
-                                  ? (draft.groups ?? []).filter((id) => id !== group.id)
-                                  : [...(draft.groups ?? []), group.id],
-                              })
-                            }
-                          >
-                            {pressed ? "✓ " : "+ "}
-                            {group.name}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <span className="muted">No groups yet</span>
-                    )}
-                  </div>
-                </div>
-                <div className="full toggle-row">
-                  <Toggle
-                    label="Favorite (shows in tray)"
-                    value={!!draft.favorite}
-                    onChange={(favorite) => update({ favorite })}
-                  />
-                  <Toggle
-                    label="Start when devt-tunnel opens"
-                    value={!!draft.startOnLaunch}
-                    onChange={(startOnLaunch) => update({ startOnLaunch })}
-                  />
-                  <Toggle
-                    label="Reconnect automatically"
-                    value={!!draft.reconnect}
-                    onChange={(reconnect) => update({ reconnect })}
-                  />
-                </div>
-              </section>
-              {draft.type === "ssh" && (
-                <SSHFields
-                  draft={draft}
-                  update={update}
-                  hosts={hosts}
-                  configPath={sshConfigPath}
-                  secrets={secrets}
-                  onHostsReloaded={(items, path) => {
-                    setHosts(items);
-                    setSSHConfigPath(path);
-                  }}
+          <div
+            className={`editor-config ${pasteMode && paste.trim() ? "editor-config-disabled" : ""}`}
+            aria-disabled={pasteMode && !!paste.trim()}
+          >
+            <section className="card">
+              <h2>Type</h2>
+              <div className="segments type-segments">
+                {TYPE_OPTIONS.map(([type, label]) => (
+                  <button
+                    key={type}
+                    aria-pressed={draft.type === type}
+                    disabled={!!draft.id}
+                    onClick={() => switchType(type)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="card grid basics-card">
+              <h2>Basics</h2>
+              <Field label="Name" invalid={!draft.name.trim()}>
+                <input
+                  value={draft.name}
+                  required
+                  aria-invalid={!draft.name.trim()}
+                  onChange={(event) => update({ name: event.target.value })}
                 />
-              )}
-              {draft.type === "ngrok" && <NgrokFields draft={draft} update={update} secrets={secrets} />}
-              {draft.type === "cloudflared" && <CloudflaredFields draft={draft} update={update} secrets={secrets} />}
-              {draft.type === "command" && (
-                <section className="card grid">
-                  <h2>Command</h2>
-                  <Field label="Command line" invalid={!draft.command?.line.trim()}>
-                    <textarea
-                      value={draft.command?.line ?? ""}
-                      required
-                      aria-invalid={!draft.command?.line.trim()}
-                      onChange={(event) => update({ command: { ...draft.command!, line: event.target.value } })}
-                    />
-                  </Field>
-                  <Field label="Working directory">
-                    <input
-                      value={draft.command?.dir ?? ""}
-                      onChange={(event) => update({ command: { ...draft.command!, dir: event.target.value } })}
-                    />
-                  </Field>
-                  <Field label="Ready log regex">
-                    <input
-                      value={draft.command?.readyLog ?? ""}
-                      onChange={(event) => update({ command: { ...draft.command!, readyLog: event.target.value } })}
-                    />
-                  </Field>
-                </section>
-              )}
-            </>
-          )}
+              </Field>
+              <Field label="Profile">
+                <select value={draft.profile ?? ""} onChange={(event) => update({ profile: event.target.value })}>
+                  <option value="">No profile (default SSH config)</option>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="field full">
+                <span className="field-label">Groups</span>
+                <div className="profile-options">
+                  {groups.length ? (
+                    groups.map((group) => {
+                      const pressed = (draft.groups ?? []).includes(group.id);
+                      return (
+                        <button
+                          key={group.id}
+                          aria-pressed={pressed}
+                          onClick={() =>
+                            update({
+                              groups: pressed
+                                ? (draft.groups ?? []).filter((id) => id !== group.id)
+                                : [...(draft.groups ?? []), group.id],
+                            })
+                          }
+                        >
+                          {pressed ? "✓ " : "+ "}
+                          {group.name}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span className="muted">No groups yet</span>
+                  )}
+                </div>
+              </div>
+              <div className="full toggle-row">
+                <Toggle
+                  label="Favorite (shows in tray)"
+                  value={!!draft.favorite}
+                  onChange={(favorite) => update({ favorite })}
+                />
+                <Toggle
+                  label="Start when devt-tunnel opens"
+                  value={!!draft.startOnLaunch}
+                  onChange={(startOnLaunch) => update({ startOnLaunch })}
+                />
+                <Toggle
+                  label="Reconnect automatically"
+                  value={!!draft.reconnect}
+                  onChange={(reconnect) => update({ reconnect })}
+                />
+              </div>
+            </section>
+            {draft.type === "ssh" && (
+              <SSHFields
+                draft={draft}
+                update={update}
+                hosts={hosts}
+                configPath={sshConfigPath}
+                secrets={secrets}
+                onHostsReloaded={(items, path) => {
+                  setHosts(items);
+                  setSSHConfigPath(path);
+                }}
+              />
+            )}
+            {draft.type === "ngrok" && <NgrokFields draft={draft} update={update} secrets={secrets} />}
+            {draft.type === "cloudflared" && <CloudflaredFields draft={draft} update={update} secrets={secrets} />}
+            {draft.type === "command" && (
+              <section className="card grid">
+                <h2>Command</h2>
+                <Field label="Command line" invalid={!draft.command?.line.trim()}>
+                  <textarea
+                    value={draft.command?.line ?? ""}
+                    required
+                    aria-invalid={!draft.command?.line.trim()}
+                    onChange={(event) => update({ command: { ...draft.command!, line: event.target.value } })}
+                  />
+                </Field>
+                <Field label="Working directory">
+                  <input
+                    value={draft.command?.dir ?? ""}
+                    onChange={(event) => update({ command: { ...draft.command!, dir: event.target.value } })}
+                  />
+                </Field>
+                <Field label="Ready log regex">
+                  <input
+                    value={draft.command?.readyLog ?? ""}
+                    onChange={(event) => update({ command: { ...draft.command!, readyLog: event.target.value } })}
+                  />
+                </Field>
+              </section>
+            )}
+          </div>
           {draft.id && (
             <section className="danger-zone card">
               <div>
@@ -446,4 +474,40 @@ function requiredFieldsMissing(draft: Tunnel | null): boolean {
 
 function stable(value: unknown): string {
   return JSON.stringify(value);
+}
+
+export function normalizeCommandDashes(value: string) {
+  return value.replace(/[—–]/g, "--");
+}
+
+export function detectCommandType(value: string): TunnelType | undefined {
+  const command = normalizeCommandDashes(value)
+    .trim()
+    .replace(/^(?:\$|>)\s+/, "");
+  const executable = command
+    .split(/\s+/, 1)[0]
+    ?.replace(/^['"]|['"]$/g, "")
+    .replace(/\\/g, "/");
+  const tool = executable
+    ?.split("/")
+    .pop()
+    ?.replace(/\.exe$/i, "")
+    .toLowerCase();
+  if (tool === "ssh") return TunnelType.TypeSSH;
+  if (tool === "cloudflared") return TunnelType.TypeCloudflared;
+  if (tool === "ngrok") return TunnelType.TypeNgrok;
+  return undefined;
+}
+
+function mergeImportedDraft(current: Tunnel | null, imported: Tunnel): Tunnel {
+  return {
+    ...imported,
+    id: "",
+    name: current?.name ?? "Imported tunnel",
+    profile: current?.profile,
+    groups: current?.groups,
+    favorite: current?.favorite,
+    reconnect: current?.reconnect,
+    startOnLaunch: current?.startOnLaunch,
+  };
 }

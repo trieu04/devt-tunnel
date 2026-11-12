@@ -298,6 +298,9 @@ kbd { padding: var(--space-1) var(--space-3); border: 1px solid var(--line-stron
 .source-row strong { flex: none; }
 .source-row input { flex: 1 1 280px; background: var(--ground); }
 .source-card p { margin: var(--space-3) 0 0; font-size: var(--text-sm); }
+.editor-config { position: relative; display: flex; flex-direction: column; gap: var(--space-8); }
+.editor-config-disabled::after { position: absolute; z-index: 10; inset: 0; background: color-mix(in srgb, var(--ground) 24%, transparent); content: ""; cursor: not-allowed; }
+.editor-config-disabled > * { opacity: .48; }
 .type-segments { border: 0; }
 .basics-card { grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr); }
 .profile-options { display: flex; min-height: var(--control); flex-wrap: wrap; align-items: center; gap: var(--space-3); }
