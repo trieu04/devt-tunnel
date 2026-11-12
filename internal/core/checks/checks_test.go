@@ -43,8 +43,12 @@ func messages(f []Finding) string {
 }
 
 func TestCleanSSH(t *testing.T) {
-	tun := model.Tunnel{ID: "a", Type: model.TypeSSH, SSH: &model.SSH{Host: "h", Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}}}
-	if f := Run(tun, model.Config{Tunnels: []model.Tunnel{tun}}, deps()); len(f) != 1 || f[0].Severity != OK {
+	tun := model.Tunnel{
+		ID: "a", Type: model.TypeSSH,
+		SSH:      &model.SSH{Host: "h", Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}},
+		Forwards: []model.Forward{{Kind: model.ForwardLocal, Bind: "127.0.0.1:5432", Target: "localhost:5432"}},
+	}
+	if f := Run(tun, model.Config{Tunnels: []model.Tunnel{tun}}, deps()); len(f) != 2 || f[0].Severity != OK || f[1].Severity != OK {
 		t.Errorf("findings:\n%s", messages(f))
 	}
 }
@@ -52,6 +56,13 @@ func TestCleanSSH(t *testing.T) {
 func TestMissingNWarns(t *testing.T) {
 	tun := model.Tunnel{ID: "a", Type: model.TypeSSH, SSH: &model.SSH{Host: "h"}}
 	if got := messages(Run(tun, model.Config{}, deps())); !strings.Contains(got, "warning: without -N") {
+		t.Errorf("findings:\n%s", got)
+	}
+}
+
+func TestSSHWithoutForwardsWarns(t *testing.T) {
+	tun := model.Tunnel{ID: "a", Type: model.TypeSSH, SSH: &model.SSH{Host: "h", Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}}}
+	if got := messages(Run(tun, model.Config{}, deps())); !strings.Contains(got, "warning: SSH tunnel has no port forwards") {
 		t.Errorf("findings:\n%s", got)
 	}
 }

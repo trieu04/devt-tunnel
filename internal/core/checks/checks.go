@@ -66,6 +66,9 @@ func Run(t model.Tunnel, cfg model.Config, d Deps) []Finding {
 // sshFindings reports risky or unsupported SSH options and whether the host alias is known.
 func sshFindings(t model.Tunnel, d Deps) []Finding {
 	var out []Finding
+	if len(t.Forwards) == 0 {
+		out = append(out, Finding{Severity: Warning, Message: "SSH tunnel has no port forwards", Field: "forwards"})
+	}
 	if !slices.Contains(t.SSH.Flags, "-N") {
 		out = append(out, Finding{Severity: Warning, Message: "without -N, ssh would open a remote shell", Field: "ssh.flags"})
 	}

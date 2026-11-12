@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 
 export type SecretOption = { name: string; kind: string; state: string };
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children, invalid = false }: { label: string; children: ReactNode; invalid?: boolean }) {
   return (
-    <label className="field">
+    <label className={`field${invalid ? " field-invalid" : ""}`}>
       <span className="field-label">{label}</span>
       {children}
     </label>

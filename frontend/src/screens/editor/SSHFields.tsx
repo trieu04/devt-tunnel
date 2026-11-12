@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ForwardKind } from "../../../bindings/github.com/trieu04/devt-tunnel/internal/core/model/models";
 import type { Tunnel } from "../../../bindings/github.com/trieu04/devt-tunnel/internal/core/model/models";
 import { Service } from "../../api";
+import { TrashGlyph } from "../../parts";
 import { Field, SecretOption, SecretSelect } from "./controls";
 
 export type SSHHost = { alias: string; source: string };
@@ -48,6 +49,7 @@ export function SSHFields({
   };
   const flags = ssh.flags ?? [];
   const options = ssh.options ?? {};
+  const identityFiles = customIdentityFiles(resolved?.IdentityFiles);
 
   useEffect(() => {
     if (connection !== "config" || !ssh.host) {
@@ -169,9 +171,11 @@ export function SSHFields({
       </div>
       {connection === "config" ? (
         <div className="connection-fields">
-          <Field label="SSH host">
+          <Field label="SSH host" invalid={!ssh.host?.trim()}>
             <select
               value={ssh.host ?? ""}
+              required
+              aria-invalid={!ssh.host?.trim()}
               onChange={(event) => {
                 configHost.current = event.target.value;
                 change({ host: event.target.value, hostname: "" });
@@ -188,10 +192,11 @@ export function SSHFields({
           <div className="ssh-config-meta">
             <span>
               {hosts.length} host{hosts.length === 1 ? "" : "s"} from <span className="mono">{configPath}</span>
+              <span>{". "}</span>
+              <button type="button" className="inline-text-button" disabled={reloading} onClick={reloadHosts}>
+                {reloading ? "Reloading…" : "Reload"}
+              </button>
             </span>
-            <button type="button" className="small-button" disabled={reloading} onClick={reloadHosts}>
-              {reloading ? "Reloading…" : "↻ Reload"}
-            </button>
           </div>
           {resolved && (
             <div className="resolved-host">
@@ -207,10 +212,12 @@ export function SSHFields({
                 <small>Port</small>
                 <strong>{resolved.Port || "22"}</strong>
               </span>
-              <span>
-                <small>IdentityFile</small>
-                <strong className="mono">{resolved.IdentityFiles?.join(", ") || "Agent / default"}</strong>
-              </span>
+              {identityFiles.length > 0 && (
+                <span>
+                  <small>IdentityFile</small>
+                  <strong className="mono">{identityFiles.join(", ")}</strong>
+                </span>
+              )}
               {resolved.ProxyJump && resolved.ProxyJump !== "none" && (
                 <span className="wide">
                   <small>ProxyJump</small>
@@ -231,9 +238,11 @@ export function SSHFields({
               placeholder="deploy"
             />
           </Field>
-          <Field label="Host">
+          <Field label="Host" invalid={!ssh.hostname?.trim()}>
             <input
               value={ssh.hostname ?? ""}
+              required
+              aria-invalid={!ssh.hostname?.trim()}
               onChange={(event) => changeManual({ hostname: event.target.value })}
               placeholder="server.example.com"
             />
@@ -355,13 +364,25 @@ function ForwardEditor({
   onChange: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
 }) {
+  const [showInfo, setShowInfo] = useState(false);
   const [bindHost, bindPort] = splitEndpoint(forward.bind);
   const [targetHost, targetPort] = splitEndpoint(forward.target ?? "");
   const dynamic = forward.kind === "D";
+  const remote = forward.kind === "R";
   return (
     <div className="forward-edit">
-      <div className="forward-kind">
+      <button
+        type="button"
+        className="forward-info-toggle"
+        aria-label="Toggle forward direction"
+        aria-expanded={showInfo}
+        onClick={() => setShowInfo((visible) => !visible)}
+      >
+        i
+      </button>
+      <Field label="Mode">
         <select
+          className="forward-kind"
           aria-label="Forward type"
           value={forward.kind}
           onChange={(event) =>
@@ -375,7 +396,7 @@ function ForwardEditor({
           <option value="R">-R Remote</option>
           <option value="D">-D SOCKS</option>
         </select>
-      </div>
+      </Field>
       <div className="endpoint-fields">
         <Field label="Bind host">
           <input
@@ -384,10 +405,12 @@ function ForwardEditor({
             placeholder="127.0.0.1"
           />
         </Field>
-        <Field label="Bind port">
+        <Field label="Bind port" invalid={!bindPort.trim()}>
           <input
             inputMode="numeric"
             value={bindPort}
+            required
+            aria-invalid={!bindPort.trim()}
             onChange={(event) => onChange({ bind: joinEndpoint(bindHost, event.target.value) })}
             placeholder={dynamic ? "1080" : "5432"}
           />
@@ -402,21 +425,36 @@ function ForwardEditor({
                 placeholder="localhost"
               />
             </Field>
-            <Field label="Target port">
+            <Field label="Target port" invalid={!targetPort.trim()}>
               <input
                 inputMode="numeric"
                 value={targetPort}
+                required
+                aria-invalid={!targetPort.trim()}
                 onChange={(event) => onChange({ target: joinEndpoint(targetHost, event.target.value) })}
                 placeholder="5432"
               />
             </Field>
           </>
         )}
+        {showInfo && (
+          <div className="forward-direction">
+            <div className="forward-direction-side forward-direction-bind">
+              <div className="forward-direction-line" />
+              <span>{remote ? "Remote" : "This computer"}</span>
+            </div>
+            {!dynamic && (
+              <div className="forward-direction-side forward-direction-target">
+                <div className="forward-direction-line" />
+                <span>{remote ? "This computer" : "Remote"}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <button type="button" className="icon-button danger-ghost" aria-label="Delete forward" onClick={onDelete}>
-        ×
+        <TrashGlyph />
       </button>
-      {dynamic && <p className="forward-help">Creates a local SOCKS proxy. No target is required.</p>}
     </div>
   );
 }
@@ -431,4 +469,21 @@ function splitEndpoint(value: string): [string, string] {
 
 function joinEndpoint(host: string, port: string): string {
   return host ? `${host}:${port}` : port;
+}
+
+function customIdentityFiles(files: string[] | null | undefined): string[] {
+  const defaultNames = new Set([
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ecdsa_sk",
+    "id_ed25519",
+    "id_ed25519_sk",
+    "id_xmss",
+    "id_mldsa44_ed25519",
+  ]);
+  return (files ?? []).filter((file) => {
+    const match = file.match(/^~\/.ssh\/([^/]+)$/);
+    return !match || !defaultNames.has(match[1]);
+  });
 }

@@ -104,10 +104,11 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
       (finding) =>
         finding.severity === "error" && !finding.message.includes("missing") && !finding.message.includes("not found"),
     );
+  const missingRequired = requiredFieldsMissing(draft);
   const save = async (start: boolean) => {
     if (
       !draft ||
-      !draft.name.trim() ||
+      missingRequired ||
       evaluation.buildError ||
       (start && evaluation.findings.some((finding) => finding.severity === "error"))
     )
@@ -171,13 +172,13 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
         <div className="actions">
           {dirty && <span className="unsaved-pill">Unsaved changes</span>}
           <button onClick={cancel}>Cancel</button>
-          <button className="outline-strong" onClick={() => save(false)} disabled={!draft.name || blocking}>
+          <button className="outline-strong" onClick={() => save(false)} disabled={missingRequired || blocking}>
             Save
           </button>
           <button
             className="primary"
             onClick={() => save(true)}
-            disabled={!draft.name || evaluation.findings.some((finding) => finding.severity === "error")}
+            disabled={missingRequired || evaluation.findings.some((finding) => finding.severity === "error")}
           >
             ▷ Save & start
           </button>
@@ -215,7 +216,7 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
               </p>
             ))}
           </section>
-          {!pasteMode && (
+          {(!pasteMode || !paste.trim()) && (
             <>
               <section className="card">
                 <h2>Type</h2>
@@ -234,8 +235,13 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
               </section>
               <section className="card grid basics-card">
                 <h2>Basics</h2>
-                <Field label="Name">
-                  <input value={draft.name} required onChange={(event) => update({ name: event.target.value })} />
+                <Field label="Name" invalid={!draft.name.trim()}>
+                  <input
+                    value={draft.name}
+                    required
+                    aria-invalid={!draft.name.trim()}
+                    onChange={(event) => update({ name: event.target.value })}
+                  />
                 </Field>
                 <Field label="Profile">
                   <select value={draft.profile ?? ""} onChange={(event) => update({ profile: event.target.value })}>
@@ -311,9 +317,11 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
               {draft.type === "command" && (
                 <section className="card grid">
                   <h2>Command</h2>
-                  <Field label="Command line">
+                  <Field label="Command line" invalid={!draft.command?.line.trim()}>
                     <textarea
                       value={draft.command?.line ?? ""}
+                      required
+                      aria-invalid={!draft.command?.line.trim()}
                       onChange={(event) => update({ command: { ...draft.command!, line: event.target.value } })}
                     />
                   </Field>
@@ -419,6 +427,22 @@ const TYPE_OPTIONS: [TunnelType, string][] = [
   [TunnelType.TypeNgrok, "ngrok"],
   [TunnelType.TypeCommand, "Command"],
 ];
+
+function requiredFieldsMissing(draft: Tunnel | null): boolean {
+  if (!draft) return true;
+  if (!draft.name.trim()) return true;
+  if (draft.type === TunnelType.TypeSSH) {
+    if (!draft.ssh?.host?.trim() && !draft.ssh?.hostname?.trim()) return true;
+    return (draft.forwards ?? []).some(
+      (forward) => !forward.bind.trim() || (forward.kind !== "D" && !forward.target?.trim()),
+    );
+  }
+  if (draft.type === TunnelType.TypeNgrok) return !draft.ngrok?.proto?.trim() || !draft.ngrok?.addr?.trim();
+  if (draft.type === TunnelType.TypeCloudflared)
+    return !draft.cloudflared?.name?.trim() && !draft.cloudflared?.secret?.trim() && !draft.cloudflared?.url?.trim();
+  if (draft.type === TunnelType.TypeCommand) return !draft.command?.line?.trim();
+  return true;
+}
 
 function stable(value: unknown): string {
   return JSON.stringify(value);

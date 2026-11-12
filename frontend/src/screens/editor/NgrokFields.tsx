@@ -23,9 +23,11 @@ export function NgrokFields({
           <option value="tls">TLS</option>
         </select>
       </Field>
-      <Field label="Local service URL">
+      <Field label="Local service URL" invalid={!ngrok.addr?.trim()}>
         <input
           value={ngrok.addr ?? ""}
+          required
+          aria-invalid={!ngrok.addr?.trim()}
           onChange={(event) => change({ addr: event.target.value })}
           placeholder="http://127.0.0.1:3000"
         />

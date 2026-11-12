@@ -78,9 +78,13 @@ export function CloudflaredFields({
             </Field>
           </>
         )}
-        <Field label="Local service URL">
+        <Field
+          label="Local service URL"
+          invalid={!cloudflared.name?.trim() && !cloudflared.secret?.trim() && !cloudflared.url?.trim()}
+        >
           <input
             value={cloudflared.url ?? ""}
+            aria-invalid={!cloudflared.name?.trim() && !cloudflared.secret?.trim() && !cloudflared.url?.trim()}
             onChange={(event) => change({ url: event.target.value })}
             placeholder="http://127.0.0.1:3000"
           />
