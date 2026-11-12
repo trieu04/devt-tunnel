@@ -28,7 +28,15 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
 
-const notifyDelay = 50 * time.Millisecond
+const (
+	notifyDelay             = 50 * time.Millisecond
+	overviewKeychainTimeout = 250 * time.Millisecond
+)
+
+type keychainProbe struct {
+	done chan struct{}
+	err  error
+}
 
 type Options struct {
 	Audit           *audit.Writer // Owned and closed by the daemon under its lifecycle lock.
@@ -86,24 +94,26 @@ type Engine struct {
 	broker            *askpass.Broker
 	shell             []string
 
-	configMu       sync.Mutex
-	settingsMu     sync.Mutex
-	secretIndexMu  sync.Mutex
-	lifecycleMu    sync.RWMutex
-	promptMu       sync.Mutex
-	orphanMu       sync.Mutex
-	mu             sync.Mutex
-	configError    string
-	orphans        []supervisor.Record
-	orphanCount    atomic.Int64
-	prompts        map[string]*waitingPrompt
-	nextPrompt     int
-	notifyTimer    *time.Timer
-	subscribers    map[uint64]func(api.Event)
-	nextSubscriber uint64
-	done           chan struct{}
-	shutdown       sync.Once
-	closed         bool
+	configMu        sync.Mutex
+	settingsMu      sync.Mutex
+	secretIndexMu   sync.Mutex
+	keychainProbeMu sync.Mutex
+	keychainProbe   *keychainProbe
+	lifecycleMu     sync.RWMutex
+	promptMu        sync.Mutex
+	orphanMu        sync.Mutex
+	mu              sync.Mutex
+	configError     string
+	orphans         []supervisor.Record
+	orphanCount     atomic.Int64
+	prompts         map[string]*waitingPrompt
+	nextPrompt      int
+	notifyTimer     *time.Timer
+	subscribers     map[uint64]func(api.Event)
+	nextSubscriber  uint64
+	done            chan struct{}
+	shutdown        sync.Once
+	closed          bool
 }
 
 type waitingPrompt struct {
@@ -367,18 +377,49 @@ func (s *Engine) Overview() api.Overview {
 		o.LastUsed = map[string]time.Time{}
 	}
 	o.KeychainName = keychainName()
-	_, keychainErr := secret.Has(s.secrets, "__devt_tunnel_availability_probe__")
-	o.KeychainAvailable = keychainErr == nil || errors.Is(keychainErr, secret.ErrNotFound)
+	o.KeychainAvailable = s.keychainAvailable(overviewKeychainTimeout)
 	o.Profiles = s.manager.Config().Profiles
 	o.Groups = s.manager.Config().Groups
-	o.Tunnels = s.views()
+	o.Tunnels = s.tunnelViewsFor(api.Actor{Kind: "gui"}, o.KeychainAvailable)
 	return o
+}
+
+func (s *Engine) keychainAvailable(timeout time.Duration) bool {
+	s.keychainProbeMu.Lock()
+	probe := s.keychainProbe
+	if probe == nil {
+		probe = &keychainProbe{done: make(chan struct{})}
+		s.keychainProbe = probe
+		go func() {
+			_, probe.err = secret.Has(s.secrets, "__devt_tunnel_availability_probe__")
+			close(probe.done)
+			s.keychainProbeMu.Lock()
+			if s.keychainProbe == probe {
+				s.keychainProbe = nil
+			}
+			s.keychainProbeMu.Unlock()
+		}()
+	}
+	s.keychainProbeMu.Unlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-probe.done:
+		return probe.err == nil || errors.Is(probe.err, secret.ErrNotFound)
+	case <-timer.C:
+		return false
+	}
 }
 
 func (s *Engine) views() []api.TunnelView { return s.TunnelViewsFor(api.Actor{Kind: "gui"}) }
 func (s *Engine) TunnelViewsFor(actor api.Actor) []api.TunnelView {
+	return s.tunnelViewsFor(actor, actor.Kind != "mcp")
+}
+
+func (s *Engine) tunnelViewsFor(actor api.Actor, keychainAvailable bool) []api.TunnelView {
 	statuses := s.manager.RuntimeStatuses()
-	if actor.Kind != "mcp" {
+	if actor.Kind != "mcp" && keychainAvailable {
 		statuses = s.manager.Statuses()
 	}
 	byID := map[string]supervisor.Status{}
@@ -401,10 +442,14 @@ func (s *Engine) TunnelViewsFor(actor api.Actor) []api.TunnelView {
 				preview = err.Error()
 			}
 
-			for _, name := range t.Secrets() {
-				if _, err := secret.Has(s.secrets, name); err != nil {
-					missing = append(missing, name)
+			if keychainAvailable {
+				for _, name := range t.Secrets() {
+					if _, err := secret.Has(s.secrets, name); err != nil {
+						missing = append(missing, name)
+					}
 				}
+			} else if status.State == supervisor.StateStopped && len(t.Secrets()) > 0 {
+				status.State = supervisor.StateKeyringUnavailable
 			}
 			spec, _ := command.Build(t, command.Options{Shell: s.shell, Home: platform.Home(), Dialect: platform.Dialect()})
 			toolPath, _ = s.tools.Resolve(spec.Tool)

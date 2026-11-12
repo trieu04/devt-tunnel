@@ -141,6 +141,34 @@ func TestTunnelLifecycle(t *testing.T) {
 	}
 }
 
+func TestOverviewTimesOutWhenKeychainBlocks(t *testing.T) {
+	tunnel := commandTunnel()
+	tunnel.ID = "blocked-keychain"
+	tunnel.Command.SecretEnvs = map[string]string{"TOKEN": "secret"}
+	e, _, _ := newTestEngine(t, model.Config{Tunnels: []model.Tunnel{tunnel}})
+	blocked := &blockingSecrets{called: make(chan struct{}, 1), release: make(chan struct{})}
+	e.secrets.Inner = blocked
+	e.ForgetSecrets()
+	defer close(blocked.release)
+
+	started := time.Now()
+	got := e.Overview()
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("overview waited %v for keychain", elapsed)
+	}
+	if got.KeychainAvailable {
+		t.Fatal("blocked keychain reported available")
+	}
+	if len(got.Tunnels) != 1 || got.Tunnels[0].Status.State != supervisor.StateKeyringUnavailable {
+		t.Fatalf("tunnels = %#v", got.Tunnels)
+	}
+	select {
+	case <-blocked.called:
+	default:
+		t.Fatal("overview did not probe keychain")
+	}
+}
+
 func TestOutsideEditConflictAndFocus(t *testing.T) {
 	e, _, store := newTestEngine(t, model.Config{})
 	if _, err := e.SaveTunnel(commandTunnel(), false); err != nil {
