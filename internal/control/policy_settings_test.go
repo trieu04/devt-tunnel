@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/core/model"
@@ -14,28 +13,19 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/engine"
 )
 
-func TestPolicySettingsTTLsPortRangeAndStableAutoApproval(t *testing.T) {
+func TestPolicySettingsPortRangeStableAutoApprovalAndNoAgentExpiry(t *testing.T) {
 	a := settings.StrictAgent()
-	a.DefaultTTL = "75s"
-	a.MaxTTL = "2m"
 	a.PortRange = "31234-31236"
 	a.AllowTunnels = []string{"t"}
-	_, socket, clock := policyServer(t, a, func(o *engine.Options, _ *model.Config) { o.Listening = func(string) bool { return false } })
-	mcp := leasedDial(t, socket, "mcp", "settings-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
-	var lease api.Lease
-	policyOK(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t"}, &lease)
-	if want := clock.Now().Add(75 * time.Second); !lease.ExpiresAt.Equal(want) {
-		t.Fatalf("default expiry=%s want=%s", lease.ExpiresAt, want)
+	_, socket, _ := policyServer(t, a, func(o *engine.Options, _ *model.Config) { o.Listening = func(string) bool { return false } })
+	mcp := dialClient(t, socket, "mcp", "settings-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	var opened string
+	policyOK(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"}, &opened)
+	if opened != "t" || policyTunnel(t, person, "t").Owner.Holder == nil {
+		t.Fatalf("agent open must hold the tunnel: %q", opened)
 	}
-	policyOK(t, mcp, "lease.renew", api.RenewLeaseParams{ID: lease.ID, TTL: "2m"}, &lease)
-	if !lease.ExpiresAt.Equal(clock.Now().Add(2 * time.Minute)) {
-		t.Fatal("max TTL was not applied")
-	}
-	if err := policyCall(t, mcp, "lease.renew", api.RenewLeaseParams{ID: lease.ID, TTL: "2m1ns"}, nil); err == nil {
-		t.Fatal("accepted TTL above configured max")
-	}
-	policyOK(t, mcp, "lease.close", api.IDParams{ID: lease.ID}, nil)
+	policyOK(t, mcp, "tunnel.release", api.IDParams{ID: "t"}, nil)
 	tunnel := policySSH("")
 	tunnel.Forwards = []model.Forward{{Kind: model.ForwardLocal, ListenPort: "auto", Target: "127.0.0.1:5432"}}
 	p := api.RunEphemeralParams{Tunnel: tunnel}
@@ -48,10 +38,10 @@ func TestPolicySettingsTTLsPortRangeAndStableAutoApproval(t *testing.T) {
 	var result api.RunEphemeralResult
 	policyOK(t, mcp, "tunnel.runEphemeral", p, &result)
 	after := policyTunnel(t, person, result.ID)
-	if result.ID != before.TunnelID || after.Tunnel.Forwards[0].Bind != "127.0.0.1:31234" || !result.Lease.ExpiresAt.Equal(clock.Now().Add(75*time.Second)) {
+	if result.ID != before.TunnelID || after.Tunnel.Forwards[0].Bind != "127.0.0.1:31234" {
 		t.Fatalf("auto approval drifted: before=%+v after=%+v result=%+v", before, after, result)
 	}
-	policyOK(t, mcp, "lease.close", api.IDParams{ID: result.Lease.ID}, nil)
+	policyOK(t, mcp, "tunnel.release", api.IDParams{ID: result.ID}, nil)
 }
 
 func TestPolicyAlwaysSavedLiteralAndFingerprintFence(t *testing.T) {
@@ -60,10 +50,10 @@ func TestPolicyAlwaysSavedLiteralAndFingerprintFence(t *testing.T) {
 		path = o.SettingsPath
 		cfg.Tunnels = append(cfg.Tunnels, policySSH("literal*"), policySSH("literal-other"))
 	})
-	mcp := leasedDial(t, socket, "mcp", "always-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
-	p := api.OpenLeaseParams{ID: "literal*"}
-	id := policyPending(t, mcp, "lease.open", p)
+	mcp := dialClient(t, socket, "mcp", "always-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	p := api.OpenSavedParams{ID: "literal*"}
+	id := policyPending(t, mcp, "tunnel.open", p)
 	policyDecide(t, person, id, "approve", "always")
 	cfg, err := settings.Load(path)
 	if err != nil {
@@ -72,21 +62,21 @@ func TestPolicyAlwaysSavedLiteralAndFingerprintFence(t *testing.T) {
 	if !slices.Contains(cfg.AgentPolicy().AllowTunnels, `literal\*`) {
 		t.Fatalf("always persisted nonliteral grant: %+v", cfg.AgentPolicy())
 	}
-	other := leasedDial(t, socket, "mcp", "another-agent", "")
-	policyPending(t, other, "lease.open", api.OpenLeaseParams{ID: "literal-other"})
+	other := dialClient(t, socket, "mcp", "another-agent", "")
+	policyPending(t, other, "tunnel.open", api.OpenSavedParams{ID: "literal-other"})
 	edited := policyTunnel(t, person, "literal*").Tunnel
 	edited.SSH.Hostname = "changed-after-approval.example.invalid"
 	policyOK(t, person, "tunnel.save", api.SaveTunnelParams{Tunnel: edited}, nil)
-	next := policyPending(t, mcp, "lease.open", p)
+	next := policyPending(t, mcp, "tunnel.open", p)
 	if next == id {
 		t.Fatal("always approval admitted a changed first retry")
 	}
 	policyDecide(t, person, next, "approve", "once")
-	var lease api.Lease
-	policyOK(t, mcp, "lease.open", p, &lease)
-	policyOK(t, mcp, "lease.close", api.IDParams{ID: lease.ID}, nil)
-	policyOK(t, other, "lease.open", p, &lease)
-	policyOK(t, other, "lease.close", api.IDParams{ID: lease.ID}, nil)
+	var opened string
+	policyOK(t, mcp, "tunnel.open", p, &opened)
+	policyOK(t, mcp, "tunnel.release", api.IDParams{ID: opened}, nil)
+	policyOK(t, other, "tunnel.open", p, &opened)
+	policyOK(t, other, "tunnel.release", api.IDParams{ID: opened}, nil)
 }
 
 func TestPolicyAlwaysAliasAndPurposeBound(t *testing.T) {
@@ -102,8 +92,8 @@ func TestPolicyAlwaysAliasAndPurposeBound(t *testing.T) {
 		}
 		_ = cfg
 	})
-	mcp := leasedDial(t, socket, "mcp", "alias-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "alias-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	tunnel := model.Tunnel{Name: "Alias", Type: model.TypeSSH, SSH: &model.SSH{Host: "bastion", Flags: []string{"-N"}}, Forwards: []model.Forward{{Kind: model.ForwardDynamic, Bind: "127.0.0.1:31237"}}}
 	p := api.RunEphemeralParams{Tunnel: tunnel, Purpose: strings.Repeat("x", engine.MaxApprovalPurpose+1)}
 	if err := policyCall(t, mcp, "tunnel.runEphemeral", p, nil); err == nil {
@@ -126,20 +116,20 @@ func TestPolicyAlwaysAliasAndPurposeBound(t *testing.T) {
 	}
 	var result api.RunEphemeralResult
 	policyOK(t, mcp, "tunnel.runEphemeral", p, &result)
-	policyOK(t, mcp, "lease.close", api.IDParams{ID: result.Lease.ID}, nil)
+	policyOK(t, mcp, "tunnel.release", api.IDParams{ID: result.ID}, nil)
 }
 
 func TestApprovalOnceConcurrentRetryCannotDoubleSpend(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	first := leasedDial(t, socket, "mcp", "adapter", "")
-	second := leasedDial(t, socket, "mcp", "adapter", first.Session())
-	person := leasedDial(t, socket, "gui", "person", "")
-	p := api.OpenLeaseParams{ID: "t"}
-	id := policyPending(t, first, "lease.open", p)
+	first := dialClient(t, socket, "mcp", "adapter", "")
+	second := dialClient(t, socket, "mcp", "adapter", first.Session())
+	person := dialClient(t, socket, "gui", "person", "")
+	p := api.OpenSavedParams{ID: "t"}
+	id := policyPending(t, first, "tunnel.open", p)
 	policyDecide(t, person, id, "approve", "once")
 	results := make(chan error, 2)
-	go func() { results <- policyCall(t, first, "lease.open", p, nil) }()
-	go func() { results <- policyCall(t, second, "lease.open", p, nil) }()
+	go func() { results <- policyCall(t, first, "tunnel.open", p, nil) }()
+	go func() { results <- policyCall(t, second, "tunnel.open", p, nil) }()
 	success, pending := 0, 0
 	for i := 0; i < 2; i++ {
 		err := <-results
@@ -153,19 +143,17 @@ func TestApprovalOnceConcurrentRetryCannotDoubleSpend(t *testing.T) {
 	if success != 1 || pending != 1 {
 		t.Fatalf("once double spend: success=%d pending=%d", success, pending)
 	}
-	var leases []api.Lease
-	policyOK(t, first, "lease.list", api.Empty{}, &leases)
-	if len(leases) != 1 {
-		t.Fatalf("once double spend leases=%+v", leases)
+	if view := policyTunnel(t, person, "t"); view.Owner.Holder == nil {
+		t.Fatalf("once double spend lost the hold: %+v", view.Owner)
 	}
-	policyOK(t, first, "lease.close", api.IDParams{ID: leases[0].ID}, nil)
+	policyOK(t, first, "tunnel.release", api.IDParams{ID: "t"}, nil)
 }
 
 func TestAgentSettingsPersonOnlyAndValidated(t *testing.T) {
 	var path string
 	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) { path = o.SettingsPath })
-	person := leasedDial(t, socket, "gui", "person", "")
-	mcp := leasedDial(t, socket, "mcp", "settings-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "settings-agent", "")
 	var initial settings.Agent
 	policyOK(t, person, "settings.getAgent", api.Empty{}, &initial)
 	if initial.Public != "ask" || !initial.Enabled || len(initial.AllowTunnels) != 0 {
@@ -177,11 +165,10 @@ func TestAgentSettingsPersonOnlyAndValidated(t *testing.T) {
 	next.AllowTunnels = []string{"dev-*"}
 	next.AllowSSHHosts = []string{"staging"}
 	next.PortRange = "31000-31010"
-	next.DefaultTTL, next.MaxTTL = "15m", "1h"
 	policyOK(t, person, "settings.setAgent", api.AgentSettingsParams{Agent: next}, nil)
 	var got settings.Agent
 	policyOK(t, person, "settings.getAgent", api.Empty{}, &got)
-	if got.Enabled || got.Public != "deny" || got.PortRange != next.PortRange || !slices.Equal(got.AllowTunnels, next.AllowTunnels) || !slices.Equal(got.AllowSSHHosts, next.AllowSSHHosts) || got.DefaultTTL != "15m" || got.MaxTTL != "1h" {
+	if got.Enabled || got.Public != "deny" || got.PortRange != next.PortRange || !slices.Equal(got.AllowTunnels, next.AllowTunnels) || !slices.Equal(got.AllowSSHHosts, next.AllowSSHHosts) {
 		t.Fatalf("policy did not round trip: %+v", got)
 	}
 	saved, err := settings.Load(path)
@@ -189,7 +176,7 @@ func TestAgentSettingsPersonOnlyAndValidated(t *testing.T) {
 		t.Fatalf("policy did not persist: %+v / %v", saved, err)
 	}
 	invalid := next
-	invalid.Public = "allow"
+	invalid.Public = "bogus"
 	if err := policyCall(t, person, "settings.setAgent", api.AgentSettingsParams{Agent: invalid}, nil); err == nil {
 		t.Fatal("invalid public policy accepted")
 	}

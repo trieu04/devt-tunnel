@@ -403,7 +403,7 @@ func mcpMethodAllowed(method string) bool {
 		"tunnel.openRequest", "tunnel.waitRequest", "tunnel.checkRequest", "policy.get",
 		"tunnel.list", "tunnel.get", "tunnel.waitReady", "tunnel.findings", "tunnel.evaluateDraft",
 		"ssh.hosts", "ssh.resolve", "tool.list", "prompt.list",
-		"lease.open", "lease.renew", "lease.close", "lease.list", "tunnel.runEphemeral",
+		"tunnel.open", "tunnel.release", "tunnel.runEphemeral",
 		"approval.list", "approval.get", "logs.read", "logs.since", "tunnel.promote", "tunnel.save":
 		return true
 	}

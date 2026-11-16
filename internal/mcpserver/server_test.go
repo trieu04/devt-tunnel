@@ -281,12 +281,12 @@ func TestPolicyLifecycleThroughMCP(t *testing.T) {
 	first["wait_seconds"] = 2
 	res, opened := f.tool(t, "tunnel_open", first)
 	good(t, res, opened)
-	if opened["lease_id"] == nil || opened["tunnel_id"] == nil {
+	if opened["tunnel_id"] == nil || opened["status"] == "pending_approval" {
 		t.Fatalf("not opened: %#v", opened)
 	}
 	res, retry := f.tool(t, "tunnel_open", inline("allowed", "one"))
 	good(t, res, retry)
-	if opened["lease_id"] != retry["lease_id"] || opened["tunnel_id"] != retry["tunnel_id"] || f.runner.starts() != 1 {
+	if opened["tunnel_id"] != retry["tunnel_id"] || f.runner.starts() != 1 {
 		t.Fatalf("retry duplicated: %#v %#v", opened, retry)
 	}
 	f.a.mu.Lock()
@@ -296,7 +296,7 @@ func TestPolicyLifecycleThroughMCP(t *testing.T) {
 	old.Close()
 	res, retry = f.tool(t, "tunnel_open", inline("allowed", "one"))
 	good(t, res, retry)
-	if retry["lease_id"] != opened["lease_id"] {
+	if retry["tunnel_id"] != opened["tunnel_id"] {
 		t.Fatal("reconnect lost idempotency")
 	}
 	f.a.mu.Lock()
@@ -310,7 +310,7 @@ func TestPolicyLifecycleThroughMCP(t *testing.T) {
 		name string
 		args any
 	}{
-		{"tunnel_list", map[string]any{}}, {"tunnel_get", map[string]any{"tunnel_id": opened["tunnel_id"]}}, {"tunnel_logs", map[string]any{"tunnel_id": opened["tunnel_id"]}}, {"ssh_host_list", map[string]any{}}, {"tunnel_check", inline("allowed", "dry")}, {"tunnel_wait", map[string]any{"request_id": "one", "wait_seconds": 0}}, {"tunnel_renew", map[string]any{"lease_id": opened["lease_id"], "ttl_seconds": 120}},
+		{"tunnel_list", map[string]any{}}, {"tunnel_get", map[string]any{"tunnel_id": opened["tunnel_id"]}}, {"tunnel_logs", map[string]any{"tunnel_id": opened["tunnel_id"]}}, {"ssh_host_list", map[string]any{}}, {"tunnel_check", inline("allowed", "dry")}, {"tunnel_wait", map[string]any{"request_id": "one", "wait_seconds": 0}},
 	} {
 		res, v := f.tool(t, tc.name, tc.args)
 		good(t, res, v)
@@ -350,9 +350,9 @@ func TestPolicyLifecycleThroughMCP(t *testing.T) {
 	if public["status"] != "pending_approval" {
 		t.Fatalf("public not held: %#v", public)
 	}
-	res, closed := f.tool(t, "tunnel_close", map[string]any{"lease_id": opened["lease_id"]})
+	res, closed := f.tool(t, "tunnel_close", map[string]any{"tunnel_id": opened["tunnel_id"]})
 	good(t, res, closed)
-	res, closed = f.tool(t, "tunnel_close", map[string]any{"lease_id": opened["lease_id"]})
+	res, closed = f.tool(t, "tunnel_close", map[string]any{"tunnel_id": opened["tunnel_id"]})
 	good(t, res, closed)
 	res, unknown := f.tool(t, "tunnel_get", map[string]any{"tunnel_id": "missing"})
 	if !res.IsError || unknown["code"] != "unknown_tunnel" {
@@ -372,7 +372,7 @@ func TestApprovalPollAndDenial(t *testing.T) {
 	}
 	res, opened := f.tool(t, "tunnel_wait", map[string]any{"request_id": "approve", "wait_seconds": 2})
 	good(t, res, opened)
-	if opened["lease_id"] == nil {
+	if opened["tunnel_id"] == nil {
 		t.Fatalf("approved not executed: %#v", opened)
 	}
 	res, pending = f.tool(t, "tunnel_open", inline("ask", "deny"))
@@ -453,7 +453,7 @@ func TestConcurrentCloseIdempotency(t *testing.T) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			result, err := f.client.CallTool(ctx, &mcp.CallToolParams{Name: "tunnel_close", Arguments: map[string]any{"lease_id": opened["lease_id"]}})
+			result, err := f.client.CallTool(ctx, &mcp.CallToolParams{Name: "tunnel_close", Arguments: map[string]any{"tunnel_id": opened["tunnel_id"]}})
 			if err == nil && result.IsError {
 				err = fmt.Errorf("tool error: %#v", result.StructuredContent)
 			}

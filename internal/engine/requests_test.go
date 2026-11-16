@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
 	"github.com/trieu04/devt-tunnel/internal/askpass"
@@ -17,9 +16,9 @@ func TestOpenRequestViewsRetentionAndPrivateArgs(t *testing.T) {
 	actor, token := session(t, e, "request-owner")
 	tunnel := commandTunnel()
 	tunnel.ID = ""
-	p := api.OpenRequestParams{RequestID: "owned", Tunnel: &tunnel, Purpose: "view polling", TTL: "5m"}
+	p := api.OpenRequestParams{RequestID: "owned", Tunnel: &tunnel, Purpose: "view polling"}
 	opened, err := e.OpenRequest(context.Background(), actor, token, p)
-	if err != nil || opened.Lease == nil {
+	if err != nil || opened.TunnelID == "" {
 		t.Fatalf("open=%+v, %v", opened, err)
 	}
 	original := cloneRequestTunnel(tunnel)
@@ -37,16 +36,15 @@ func TestOpenRequestViewsRetentionAndPrivateArgs(t *testing.T) {
 		t.Fatalf("prompt snapshot=%+v %v", got, err)
 	}
 	// Returned objects must not mutate cache ownership or expiry state.
-	got.Lease.ID = "changed-return"
-	*got.ExpiresAt = time.Time{}
+	got.Endpoints = append(got.Endpoints, api.Endpoint{Listen: "changed-return"})
 	e.promptMu.Lock()
 	delete(e.prompts, "request-test")
 	e.promptMu.Unlock()
 	got, err = e.WaitRequest(context.Background(), actor, token, api.WaitRequestParams{RequestID: "owned"})
-	if err != nil || got.Status != "ready" || got.Lease.ID != opened.Lease.ID || got.ExpiresAt.IsZero() {
+	if err != nil || got.Status != "ready" || got.TunnelID != opened.TunnelID || len(got.Endpoints) > 1 {
 		t.Fatalf("cached result mutated: %+v %v", got, err)
 	}
-	if err := e.CloseLease(actor, token, opened.Lease.ID); err != nil {
+	if err := e.ReleaseTunnel(actor, token, opened.TunnelID); err != nil {
 		t.Fatal(err)
 	}
 	got, err = e.WaitRequest(context.Background(), actor, token, api.WaitRequestParams{RequestID: "owned"})
@@ -54,7 +52,7 @@ func TestOpenRequestViewsRetentionAndPrivateArgs(t *testing.T) {
 		t.Fatalf("closed request=%+v %v", got, err)
 	}
 	clock.Advance(OpenRequestRetention)
-	if err := e.ExpireLeases(); err != nil {
+	if err := e.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.openRequests) != 0 {
@@ -85,7 +83,7 @@ func TestOpenRequestGlobalCapAndMaintenancePruning(t *testing.T) {
 		t.Fatalf("global cap not enforced: %v", err)
 	}
 	clock.Advance(OpenRequestRetention)
-	if err := e.ExpireLeases(); err != nil {
+	if err := e.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	if len(e.openRequests) != 0 {

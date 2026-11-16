@@ -43,7 +43,7 @@ func (r *allocatingRunner) Start(req supervisor.SpawnRequest) (supervisor.Proces
 		}
 	}
 	st, err := (corestate.RuntimeStore{Path: r.runtimePath}).Load()
-	if err == nil && (len(st.Ephemeral) != 1 || len(st.Leases) != 1 || st.Ephemeral[0].Forwards[0].Bind != bind) {
+	if err == nil && (len(st.Ephemeral) != 1 || st.Owners[st.Ephemeral[0].ID].Holder == nil || st.Ephemeral[0].Forwards[0].Bind != bind) {
 		err = fmt.Errorf("retry spawned before durable port update: bind=%s runtime=%+v", bind, st)
 	}
 	r.checked <- err

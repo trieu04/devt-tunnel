@@ -43,8 +43,8 @@ func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 				cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
 				cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 			})
-			mcp := leasedDial(t, socket, "mcp", "metadata-agent", "")
-			person := leasedDial(t, socket, "gui", "person", "")
+			mcp := dialClient(t, socket, "mcp", "metadata-agent", "")
+			person := dialClient(t, socket, "gui", "person", "")
 			base := policySSH("")
 			p := api.SaveTunnelParams{Tunnel: base}
 			id := policyPending(t, mcp, "tunnel.save", p)
@@ -76,33 +76,33 @@ func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 			policyOK(t, mcp, "tunnel.save", api.SaveTunnelParams{Tunnel: base}, &saved)
 			policyOK(t, person, "tunnel.startOnLaunch", api.Empty{}, nil)
 			policyStopped(t, person, saved)
-			policyNoLeases(t, person)
+			policyNoHolders(t, person)
 		})
 	}
 }
 
 func TestPersonBulkStartsSkipEphemeralTunnels(t *testing.T) {
-	s, socket, clock := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
+	s, socket, _ := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
 		cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 	})
-	person := leasedDial(t, socket, "gui", "person", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	tunnel := policySSH("")
 	tunnel.StartOnLaunch, tunnel.Favorite, tunnel.Profile, tunnel.Groups = true, true, "work", []string{"stack"}
 	var result api.RunEphemeralResult
-	policyOK(t, person, "tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: tunnel, TTL: "1m"}, &result)
+	policyOK(t, person, "tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: tunnel}, &result)
 	policyOK(t, person, "tunnel.waitReady", api.IDParams{ID: result.ID}, nil)
 	policyOK(t, person, "tunnel.startOnLaunch", api.Empty{}, nil)
 	policyOK(t, person, "group.start", api.IDParams{ID: "stack"}, nil)
 	if view := policyTunnel(t, person, result.ID); view.Owner.Pinned {
 		t.Fatal("bulk start pinned an ephemeral tunnel")
 	}
-	clock.advance(time.Minute)
-	if err := s.engine.ExpireLeases(); err != nil {
+	policyOK(t, person, "tunnel.release", api.IDParams{ID: result.ID}, nil)
+	if err := s.engine.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	if err := policyCall(t, person, "tunnel.get", api.IDParams{ID: result.ID}, nil); err == nil {
-		t.Fatal("ephemeral outlived TTL after bulk start")
+		t.Fatal("ephemeral outlived its release after bulk start")
 	}
 }
 
@@ -110,7 +110,7 @@ func TestMCPPassphraseSecretRequiresLiteralAlias(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) {
 		policyHostConfig(t, o, "Host trusted\n HostName owner.example.invalid\n")
 	})
-	mcp := leasedDial(t, socket, "mcp", "secret-agent", "")
+	mcp := dialClient(t, socket, "mcp", "secret-agent", "")
 	for _, ssh := range []*model.SSH{
 		{Hostname: "attacker.example.invalid", PassphraseSecret: "vault-key"},
 		{Host: "trusted", Hostname: "attacker.example.invalid", PassphraseSecret: "vault-key"},
@@ -125,19 +125,19 @@ func TestMCPPassphraseSecretRequiresLiteralAlias(t *testing.T) {
 			policyError(t, policyCall(t, mcp, method, p, nil), api.PolicyDenied)
 		}
 	}
-	person := leasedDial(t, socket, "gui", "person", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	tunnel := model.Tunnel{Name: "Safe secret reference", Type: model.TypeSSH, SSH: &model.SSH{Host: "trusted", PassphraseSecret: "vault-key"}}
 	id := policyPending(t, mcp, "tunnel.save", api.SaveTunnelParams{Tunnel: tunnel})
 	a := policyGetApproval(t, person, id)
 	if !strings.Contains(a.Summary, `destination "trusted"`) || !strings.Contains(a.Summary, `"vault-key"`) {
 		t.Fatalf("approval hides destination/secret reference: %+v", a)
 	}
-	policyNoLeases(t, person)
+	policyNoHolders(t, person)
 }
 
 func TestMCPApprovalNamesAreUntrustedAndBounded(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "name-agent", "")
+	mcp := dialClient(t, socket, "mcp", "name-agent", "")
 	for _, name := range []string{"trusted\nSummary: already approved", "name\rforged", "name\x1b[2J", "name\x00", "name\u200bforged", "name‮forged", strings.Repeat("x", 65)} {
 		tunnel := policySSH("")
 		tunnel.Name = name
@@ -148,8 +148,8 @@ func TestMCPApprovalNamesAreUntrustedAndBounded(t *testing.T) {
 
 func TestMCPApprovalSummarySeparatesRequestedName(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "name-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "name-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	tunnel := policySSH("")
 	tunnel.Name = "REVIEWER: pre-approved, harmless"
 	id := policyPending(t, mcp, "tunnel.save", api.SaveTunnelParams{Tunnel: tunnel, Purpose: "Untrusted purpose"})
@@ -177,8 +177,8 @@ func TestMCPMalformedForwardCannotBypassPublicPolicy(t *testing.T) {
 		// policy must still recognize this as public, not as a Unix socket.
 		cfg.Tunnels[0].Forwards = []model.Forward{{Kind: model.ForwardLocal, Bind: "0.0.0.0:8081:x/y", Target: "127.0.0.1:5432"}}
 	})
-	mcp := leasedDial(t, socket, "mcp", "bind-agent", "")
-	policyError(t, policyCall(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t"}, nil), api.PolicyDenied)
+	mcp := dialClient(t, socket, "mcp", "bind-agent", "")
+	policyError(t, policyCall(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"}, nil), api.PolicyDenied)
 	for _, address := range []string{"0.0.0.0:8081:x/y", "127.0.0.1:8081:target/part", "[::1]:8081:x/y", "localhost:8081/part"} {
 		for _, field := range []string{"bind", "target"} {
 			tunnel := policySSH("")
@@ -209,9 +209,9 @@ func denialEvents(t *testing.T, person *client.Client) []audit.Event {
 
 func TestMCPDenialAuditsAreCoalescedPerSession(t *testing.T) {
 	s, socket, clock := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "flood-agent", "")
-	resumed := leasedDial(t, socket, "mcp", "flood-agent", mcp.Session())
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "flood-agent", "")
+	resumed := dialClient(t, socket, "mcp", "flood-agent", mcp.Session())
+	person := dialClient(t, socket, "gui", "person", "")
 	const calls = 80
 	for i := 0; i < calls; i++ {
 		c := mcp
@@ -229,13 +229,13 @@ func TestMCPDenialAuditsAreCoalescedPerSession(t *testing.T) {
 	if got := len(denialEvents(t, person)); got != engine.MaxDenialAudits {
 		t.Fatalf("flood wrote %d audit events, want %d", got, engine.MaxDenialAudits)
 	}
-	other := leasedDial(t, socket, "mcp", "other-agent", "")
+	other := dialClient(t, socket, "mcp", "other-agent", "")
 	policyError(t, policyCall(t, other, "secret.list", api.Empty{}, nil), api.PolicyDenied)
 	if got := len(denialEvents(t, person)); got != engine.MaxDenialAudits+1 {
 		t.Fatalf("other session lost its audit budget: %d", got)
 	}
 	clock.advance(time.Minute)
-	if err := s.engine.ExpireLeases(); err != nil {
+	if err := s.engine.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	events := denialEvents(t, person)
@@ -254,33 +254,33 @@ func TestMCPPendingApprovalCapIsPerSession(t *testing.T) {
 			cfg.Tunnels = append(cfg.Tunnels, policySSH(fmt.Sprintf("saved-%d", i)))
 		}
 	})
-	mcp := leasedDial(t, socket, "mcp", "queue-agent", "")
-	resumed := leasedDial(t, socket, "mcp", "queue-agent", mcp.Session())
+	mcp := dialClient(t, socket, "mcp", "queue-agent", "")
+	resumed := dialClient(t, socket, "mcp", "queue-agent", mcp.Session())
 	for i := 0; i < engine.MaxPendingApprovalsPerSession; i++ {
-		policyPending(t, mcp, "lease.open", api.OpenLeaseParams{ID: fmt.Sprintf("saved-%d", i)})
+		policyPending(t, mcp, "tunnel.open", api.OpenSavedParams{ID: fmt.Sprintf("saved-%d", i)})
 	}
-	err := policyError(t, policyCall(t, resumed, "lease.open", api.OpenLeaseParams{ID: "t"}, nil), api.PolicyDenied)
+	err := policyError(t, policyCall(t, resumed, "tunnel.open", api.OpenSavedParams{ID: "t"}, nil), api.PolicyDenied)
 	if !strings.Contains(err.Message, "16 pending approvals") {
 		t.Fatalf("unclear queue cap: %v", err)
 	}
-	other := leasedDial(t, socket, "mcp", "queue-agent", "")
-	policyPending(t, other, "lease.open", api.OpenLeaseParams{ID: "t"})
+	other := dialClient(t, socket, "mcp", "queue-agent", "")
+	policyPending(t, other, "tunnel.open", api.OpenSavedParams{ID: "t"})
 }
 
 func TestMCPCompletedApprovalsPrunedWhileConnected(t *testing.T) {
 	s, socket, clock := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Tunnels = append(cfg.Tunnels, policySSH("denied"), policySSH("timeout"))
 	})
-	mcp := leasedDial(t, socket, "mcp", "retained-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
-	consumed := policyPending(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t"})
+	mcp := dialClient(t, socket, "mcp", "retained-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	consumed := policyPending(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"})
 	policyDecide(t, person, consumed, "approve", "once")
-	policyOK(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t"}, nil)
-	denied := policyPending(t, mcp, "lease.open", api.OpenLeaseParams{ID: "denied"})
+	policyOK(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"}, nil)
+	denied := policyPending(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "denied"})
 	policyDecide(t, person, denied, "deny", "once")
-	timed := policyPending(t, mcp, "lease.open", api.OpenLeaseParams{ID: "timeout"})
+	timed := policyPending(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "timeout"})
 	clock.advance(engine.ApprovalTimeout)
-	if err := s.engine.ExpireLeases(); err != nil {
+	if err := s.engine.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{consumed, denied} {
@@ -290,7 +290,7 @@ func TestMCPCompletedApprovalsPrunedWhileConnected(t *testing.T) {
 		t.Fatalf("not timed out: %+v", a)
 	}
 	clock.advance(engine.ApprovalRetention)
-	if err := s.engine.ExpireLeases(); err != nil {
+	if err := s.engine.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	policyError(t, policyCall(t, mcp, "approval.get", api.IDParams{ID: timed}, nil), api.Unknown)
@@ -320,8 +320,8 @@ func TestMCPDraftDoesNotProbeSecretPresence(t *testing.T) {
 		o.Secrets = store
 		cfg.Tunnels[0].SSH.PassphraseSecret = "saved-secret"
 	})
-	mcp := leasedDial(t, socket, "mcp", "probe-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "probe-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	policyOK(t, person, "secret.forget", api.Empty{}, nil)
 	before := store.reads.Load()
 	for _, name := range []string{"present-name", "absent-name"} {
@@ -363,13 +363,13 @@ func TestMCPPrintableClientNameAuditsMutations(t *testing.T) {
 	agent := settings.StrictAgent()
 	agent.AllowTunnels = []string{"t"}
 	_, socket, _ := policyServer(t, agent, nil)
-	mcp := leasedDial(t, socket, "mcp", "Claude Desktop (local)", "")
-	person := leasedDial(t, socket, "gui", "person", "")
-	var lease api.Lease
-	policyOK(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t"}, &lease)
+	mcp := dialClient(t, socket, "mcp", "Claude Desktop (local)", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	var opened string
+	policyOK(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"}, &opened)
 	var batch api.AuditReadResult
 	policyOK(t, person, "audit.read", api.AuditReadParams{Actor: "Claude Desktop (local)"}, &batch)
-	if len(batch.Events) != 1 || batch.Events[0].Action != audit.LeaseOpen {
+	if len(batch.Events) != 1 || batch.Events[0].Action != audit.TunnelOpen {
 		t.Fatalf("printable name broke audit: %+v", batch)
 	}
 	for _, name := range []string{"bad\nname", "bad\x00name", "bad\x1bname", "bad‮name", strings.Repeat("x", 257)} {
@@ -396,8 +396,8 @@ func TestMCPTunnelReadsHideExecutionAndCredentials(t *testing.T) {
 			{ID: "cloud-private", Name: "Cloud", Type: model.TypeCloudflared, Cloudflared: &model.Cloudflared{URL: "http://localhost:3000", ExtraArgs: "cloud-extra-sentinel", Secret: "cloud-reference-sentinel"}},
 		}
 	})
-	mcp := leasedDial(t, socket, "mcp", "reader-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "reader-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	var views []api.TunnelView
 	policyOK(t, mcp, "tunnel.list", api.Empty{}, &views)
 	if len(views) != 4 {
@@ -434,8 +434,8 @@ func TestMCPSSHResolveRequiresListedLiteralAlias(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) {
 		policyHostConfig(t, o, "Host trusted\n HostName owner.example.invalid\nHost *.wild.invalid\n HostName wildcard.invalid\n")
 	})
-	mcp := leasedDial(t, socket, "mcp", "resolve-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "resolve-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	for _, alias := range []string{"manual.invalid", "one.wild.invalid", "-Fbad", "host with space"} {
 		policyError(t, policyCall(t, mcp, "ssh.resolve", api.SSHParams{Alias: alias}, nil), api.PolicyDenied)
 	}
@@ -453,14 +453,14 @@ func TestMCPSSHResolveRequiresListedLiteralAlias(t *testing.T) {
 	}
 }
 
-func TestMCPAuditFailureCannotCommitRenewSaveOrPromote(t *testing.T) {
-	for _, method := range []string{"lease.renew", "tunnel.save", "tunnel.promote", "person save"} {
+func TestMCPAuditFailureCannotCommitSaveOrPromote(t *testing.T) {
+	for _, method := range []string{"tunnel.save", "tunnel.promote", "person save"} {
 		t.Run(method, func(t *testing.T) {
 			agent := settings.StrictAgent()
 			agent.AllowTunnels = []string{"t"}
 			var trail *audit.Writer
 			var configPath, runtimePath string
-			_, socket, clock := policyServer(t, agent, func(o *engine.Options, _ *model.Config) {
+			_, socket, _ := policyServer(t, agent, func(o *engine.Options, _ *model.Config) {
 				configPath, runtimePath = o.ConfigPath, filepath.Join(o.StateDir, "runtime.json")
 				var err error
 				trail, err = audit.Open(o.StateDir, audit.Options{})
@@ -470,19 +470,14 @@ func TestMCPAuditFailureCannotCommitRenewSaveOrPromote(t *testing.T) {
 				o.Audit = trail
 				t.Cleanup(func() { trail.Close() })
 			})
-			mcp := leasedDial(t, socket, "mcp", "audit-agent", "")
-			person := leasedDial(t, socket, "gui", "person", "")
+			mcp := dialClient(t, socket, "mcp", "audit-agent", "")
+			person := dialClient(t, socket, "gui", "person", "")
 			var params any
-			var lease api.Lease
 			rpcMethod, caller := method, mcp
 			switch method {
 			case "person save":
 				rpcMethod, caller = "tunnel.save", person
 				params = api.SaveTunnelParams{Tunnel: policySSH("")}
-			case "lease.renew":
-				policyOK(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t", TTL: "5m"}, &lease)
-				clock.advance(time.Second)
-				params = api.RenewLeaseParams{ID: lease.ID, TTL: "10m"}
 			case "tunnel.save":
 				params = api.SaveTunnelParams{Tunnel: policySSH("")}
 				id := policyPending(t, mcp, method, params)
@@ -514,13 +509,6 @@ func TestMCPAuditFailureCannotCommitRenewSaveOrPromote(t *testing.T) {
 			if string(beforeConfig) != string(afterConfig) || string(beforeRuntime) != string(afterRuntime) {
 				t.Fatalf("%s committed before refusing failed audit", method)
 			}
-			if method == "lease.renew" {
-				var leases []api.Lease
-				policyOK(t, mcp, "lease.list", api.Empty{}, &leases)
-				if len(leases) != 1 || !leases[0].ExpiresAt.Equal(lease.ExpiresAt) {
-					t.Fatalf("failed renewal changed in-memory expiry: %+v", leases)
-				}
-			}
 		})
 	}
 }
@@ -529,7 +517,7 @@ func TestMCPExplicitBindCannotSquatSavedListenPort(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Tunnels[0].Forwards = []model.Forward{{Kind: model.ForwardLocal, Bind: "127.0.0.1:24322", Target: "127.0.0.1:5432"}}
 	})
-	mcp := leasedDial(t, socket, "mcp", "squat-agent", "")
+	mcp := dialClient(t, socket, "mcp", "squat-agent", "")
 	for _, bind := range []string{"24322", "127.0.0.1:24322", "0.0.0.0:24322", "[::1]:24322"} {
 		for _, kind := range []model.ForwardKind{model.ForwardLocal, model.ForwardDynamic} {
 			tunnel := policySSH("")
@@ -538,7 +526,7 @@ func TestMCPExplicitBindCannotSquatSavedListenPort(t *testing.T) {
 			policyError(t, policyCall(t, mcp, "tunnel.save", api.SaveTunnelParams{Tunnel: tunnel}, nil), api.PolicyDenied)
 		}
 	}
-	person := leasedDial(t, socket, "gui", "person", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	tunnel := policySSH("")
 	tunnel.Name = "Person chosen port"
 	tunnel.Forwards = []model.Forward{{Kind: model.ForwardLocal, Bind: "127.0.0.1:24322", Target: "127.0.0.1:5432"}}
@@ -562,8 +550,8 @@ func TestMCPPromotionRejectsLegacyPersistenceMetadata(t *testing.T) {
 				case "favorite":
 					tunnel.Favorite = true
 				}
-				now := o.Clock.Now()
-				st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{tunnel}, Leases: []model.Lease{{ID: "ls_legacy", TunnelID: tunnel.ID, Holder: api.Actor{Kind: "mcp", Name: "legacy-agent"}, Session: "legacy-session-token", CreatedAt: now, ExpiresAt: now.Add(time.Hour), StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{tunnel.ID: {LeaseStarted: true}}}
+				holder := api.Actor{Kind: "mcp", Name: "legacy-agent"}
+				st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{tunnel}, Owners: map[string]corestate.RuntimeOwner{tunnel.ID: {Started: true, Holder: &holder, Session: "legacy-session-token", Detached: true}}}
 				if err := (corestate.RuntimeStore{Path: filepath.Join(o.StateDir, "runtime.json")}).Save(st); err != nil {
 					t.Fatal(err)
 				}
@@ -575,8 +563,8 @@ func TestMCPPromotionRejectsLegacyPersistenceMetadata(t *testing.T) {
 				o.ProcessIdentity = func(int) (string, error) { return "legacy-survivor", nil }
 				o.StopProcess = func(int, string, time.Duration) error { return nil }
 			})
-			mcp := leasedDial(t, socket, "mcp", "legacy-agent", "legacy-session-token")
-			person := leasedDial(t, socket, "gui", "person", "")
+			mcp := dialClient(t, socket, "mcp", "legacy-agent", "legacy-session-token")
+			person := dialClient(t, socket, "gui", "person", "")
 			policyError(t, policyCall(t, mcp, "tunnel.promote", api.PromoteTunnelParams{ID: "tmp-legacy", SavedID: "legacy-saved"}, nil), api.PolicyDenied)
 			if got := policyTunnel(t, person, "tmp-legacy"); !got.Owner.Ephemeral {
 				t.Fatal("denied promotion changed ephemeral")
@@ -592,7 +580,7 @@ func TestMCPPromotionRejectsLegacyPersistenceMetadata(t *testing.T) {
 
 func TestMCPRejectsToolOptionAndHostnameInjection(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "argument-agent", "")
+	mcp := dialClient(t, socket, "mcp", "argument-agent", "")
 	for _, field := range []string{"ngrok.addr", "ngrok.domain", "cloudflared.name", "cloudflared.url", "cloudflared.hostname", "ssh.hostname"} {
 		for _, value := range []string{"-attacker-option", "host with space", "host\nargument"} {
 			tunnel := policySSH("")

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 )
@@ -14,12 +13,11 @@ func TestRuntimeAtomicRoundTripAndPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.json")
 	store := RuntimeStore{Path: path}
 	st, err := store.Load()
-	if err != nil || st.Version != 1 || len(st.Ephemeral) != 0 || len(st.Leases) != 0 {
+	if err != nil || st.Version != 1 || len(st.Ephemeral) != 0 {
 		t.Fatalf("missing runtime=%+v %v", st, err)
 	}
 	st.Ephemeral = []model.Tunnel{{ID: "tmp-one", Name: "Temporary", Type: model.TypeSSH, SSH: &model.SSH{Host: "staging"}, Forwards: []model.Forward{{Kind: model.ForwardLocal, Bind: "127.0.0.1:20000", Target: "80"}}}}
-	st.Leases = []model.Lease{{ID: "ls_one", TunnelID: "tmp-one", Holder: model.Actor{Kind: "mcp", Name: "adapter"}, Session: "session", ExpiresAt: time.Now().Add(time.Hour)}}
-	st.Owners["tmp-one"] = RuntimeOwner{LeaseStarted: true}
+	st.Owners["tmp-one"] = RuntimeOwner{Started: true, Holder: &model.Actor{Kind: "mcp", Name: "adapter"}, Session: "session", Detached: true}
 	st.AutoPorts["tmp-one"] = []int{0}
 	if err := store.Save(st); err != nil {
 		t.Fatal(err)
@@ -48,7 +46,7 @@ func TestRuntimeAtomicRoundTripAndPermissions(t *testing.T) {
 	default:
 	}
 	loaded, err := store.Load()
-	if err != nil || len(loaded.Ephemeral) != 1 || len(loaded.Leases) != 1 || loaded.AutoPorts["tmp-one"][0] != 0 {
+	if err != nil || len(loaded.Ephemeral) != 1 || loaded.Owners["tmp-one"].Holder == nil || loaded.AutoPorts["tmp-one"][0] != 0 {
 		t.Fatalf("loaded=%+v %v", loaded, err)
 	}
 	info, err := os.Stat(path)

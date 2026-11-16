@@ -5,7 +5,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Agent is the per-machine MCP policy. A nil Settings.Agent means defaults;
@@ -14,11 +13,9 @@ import (
 type Agent struct {
 	Enabled       bool     `toml:"enabled" json:"enabled"`
 	PortRange     string   `toml:"port_range" json:"portRange"`
-	DefaultTTL    string   `toml:"default_ttl" json:"defaultTTL"`
-	MaxTTL        string   `toml:"max_ttl" json:"maxTTL"`
 	AllowTunnels  []string `toml:"allow_tunnels" json:"allowTunnels"`
 	AllowSSHHosts []string `toml:"allow_ssh_hosts" json:"allowSSHHosts"`
-	Public        string   `toml:"public" json:"public"` // ask | deny; public exposure cannot be allow-listed
+	Public        string   `toml:"public" json:"public"` // ask | deny | allow; ask/deny cannot be allow-listed, allow is an explicit opt-in
 }
 
 // DefaultAgent returns fresh allow-lists. A new installation trusts what the
@@ -27,7 +24,7 @@ type Agent struct {
 // Set the lists to [] to ask for everything.
 func DefaultAgent() Agent {
 	return Agent{
-		Enabled: true, PortRange: "20000-20999", DefaultTTL: "30m", MaxTTL: "8h",
+		Enabled: true, PortRange: "20000-20999",
 		AllowTunnels: []string{"*"}, AllowSSHHosts: []string{"*"}, Public: "ask",
 	}
 }
@@ -69,16 +66,8 @@ func (a Agent) Validate() error {
 	if _, _, err := a.Ports(); err != nil {
 		return err
 	}
-	defaultTTL, err := time.ParseDuration(a.DefaultTTL)
-	if err != nil || defaultTTL <= 0 {
-		return fmt.Errorf("default_ttl must be a positive duration")
-	}
-	maxTTL, err := time.ParseDuration(a.MaxTTL)
-	if err != nil || maxTTL <= 0 || maxTTL < defaultTTL {
-		return fmt.Errorf("max_ttl must be a positive duration at least default_ttl")
-	}
-	if a.Public != "ask" && a.Public != "deny" {
-		return fmt.Errorf("public must be ask or deny")
+	if a.Public != "ask" && a.Public != "deny" && a.Public != "allow" {
+		return fmt.Errorf("public must be ask, deny or allow")
 	}
 	for _, pattern := range a.AllowTunnels {
 		if _, err := path.Match(pattern, ""); err != nil || pattern == "" {

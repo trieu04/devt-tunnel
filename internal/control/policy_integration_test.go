@@ -28,13 +28,13 @@ func policySSH(id string) model.Tunnel {
 }
 
 // Replace testServerWithOptions' unsafe command fixture before engine.New loads
-// either file. All execution uses leaseRunner, never the host's SSH client.
-func policyServer(t *testing.T, agent settings.Agent, prepare func(*engine.Options, *model.Config)) (*Server, string, *leaseClock) {
+// either file. All execution uses fakeRunner, never the host's SSH client.
+func policyServer(t *testing.T, agent settings.Agent, prepare func(*engine.Options, *model.Config)) (*Server, string, *testClock) {
 	t.Helper()
-	clock := &leaseClock{now: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)}
+	clock := &testClock{now: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)}
 	s, socket := testServerWithOptions(t, func(opts *engine.Options) {
 		opts.Clock = clock
-		opts.Runner = leaseRunner{}
+		opts.Runner = fakeRunner{}
 		cfg := model.Config{Tunnels: []model.Tunnel{policySSH("t")}}
 		if prepare != nil {
 			prepare(opts, &cfg)
@@ -120,12 +120,14 @@ func policyDecide(t *testing.T, person *client.Client, id, decision, scope strin
 	}
 }
 
-func policyNoLeases(t *testing.T, person *client.Client) {
+func policyNoHolders(t *testing.T, person *client.Client) {
 	t.Helper()
-	var leases []api.Lease
-	policyOK(t, person, "lease.list", api.Empty{}, &leases)
-	if len(leases) != 0 {
-		t.Fatalf("unapproved operation acquired leases: %+v", leases)
+	var views []api.TunnelView
+	policyOK(t, person, "tunnel.list", api.Empty{}, &views)
+	for _, v := range views {
+		if v.Owner.Holder != nil {
+			t.Fatalf("unapproved operation acquired a hold: %+v", v)
+		}
 	}
 }
 
@@ -171,14 +173,14 @@ func TestPolicyIntegrationSavedAndUnsafeRows(t *testing.T) {
 			_, socket, _ := policyServer(t, agent, func(_ *engine.Options, cfg *model.Config) {
 				cfg.Tunnels = append(cfg.Tunnels, tc.make())
 			})
-			mcp := leasedDial(t, socket, "mcp", "row-agent", "")
-			person := leasedDial(t, socket, "gui", "reviewer", "")
-			params := api.OpenLeaseParams{ID: "row", Purpose: "test policy row"}
-			var lease api.Lease
-			err := policyCall(t, mcp, "lease.open", params, &lease)
+			mcp := dialClient(t, socket, "mcp", "row-agent", "")
+			person := dialClient(t, socket, "gui", "reviewer", "")
+			params := api.OpenSavedParams{ID: "row", Purpose: "test policy row"}
+			var opened string
+			err := policyCall(t, mcp, "tunnel.open", params, &opened)
 			if tc.want == "" {
-				if err != nil || lease.ID == "" || lease.TunnelID != "row" || lease.Session != mcp.Session() {
-					t.Fatalf("allowlisted saved open: lease=%+v error=%v", lease, err)
+				if err != nil || opened != "row" || policyTunnel(t, person, "row").Owner.Holder == nil {
+					t.Fatalf("allowlisted saved open: opened=%q error=%v", opened, err)
 				}
 				var approvals []api.Approval
 				policyOK(t, person, "approval.list", api.Empty{}, &approvals)
@@ -195,7 +197,7 @@ func TestPolicyIntegrationSavedAndUnsafeRows(t *testing.T) {
 			if !slices.Contains(a.Choices, "once") || !slices.Contains(a.Choices, "session") || slices.Contains(a.Choices, "always") != tc.always {
 				t.Fatalf("approval choices = %v, always=%v", a.Choices, tc.always)
 			}
-			if again := policyPending(t, mcp, "lease.open", params); again != id {
+			if again := policyPending(t, mcp, "tunnel.open", params); again != id {
 				t.Fatalf("unchanged retry created %s, want %s", again, id)
 			}
 			if !tc.always {
@@ -204,7 +206,7 @@ func TestPolicyIntegrationSavedAndUnsafeRows(t *testing.T) {
 					t.Fatalf("invalid persistent grant changed status to %s", got)
 				}
 			}
-			policyNoLeases(t, person)
+			policyNoHolders(t, person)
 			policyStopped(t, person, "row")
 		})
 	}
@@ -229,8 +231,8 @@ func TestPolicyIntegrationEphemeralExecutionExtensionsDenied(t *testing.T) {
 			agent.AllowTunnels = []string{"*"}
 			agent.AllowSSHHosts = []string{"bastion"}
 			_, socket, _ := policyServer(t, agent, nil)
-			mcp := leasedDial(t, socket, "mcp", "agent", "")
-			person := leasedDial(t, socket, "cli", "person", "")
+			mcp := dialClient(t, socket, "mcp", "agent", "")
+			person := dialClient(t, socket, "cli", "person", "")
 			tunnel := policySSH("")
 			tc.mutate(&tunnel)
 			policyError(t, policyCall(t, mcp, "tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: tunnel}, nil), api.PolicyDenied)
@@ -240,7 +242,7 @@ func TestPolicyIntegrationEphemeralExecutionExtensionsDenied(t *testing.T) {
 			if len(approvals) != 0 {
 				t.Fatalf("unsafe ephemeral queued approval: %+v", approvals)
 			}
-			policyNoLeases(t, person)
+			policyNoHolders(t, person)
 		})
 	}
 }
@@ -273,9 +275,9 @@ func TestPolicyIntegrationPublicExposureOverridesAllowLists(t *testing.T) {
 							cfg.Tunnels = append(cfg.Tunnels, tunnel)
 						}
 					})
-					mcp := leasedDial(t, socket, "mcp", "public-agent", "")
-					person := leasedDial(t, socket, "gui", "reviewer", "")
-					method, params := "lease.open", any(api.OpenLeaseParams{ID: tunnel.ID})
+					mcp := dialClient(t, socket, "mcp", "public-agent", "")
+					person := dialClient(t, socket, "gui", "reviewer", "")
+					method, params := "tunnel.open", any(api.OpenSavedParams{ID: tunnel.ID})
 					if !saved {
 						tunnel.ID = ""
 						method, params = "tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: tunnel}
@@ -291,7 +293,7 @@ func TestPolicyIntegrationPublicExposureOverridesAllowLists(t *testing.T) {
 						}
 						policyError(t, policyCall(t, person, "approval.decide", api.DecideApprovalParams{ID: id, Decision: "approve", Scope: "always", Code: a.Code}, nil), api.PolicyDenied)
 					}
-					policyNoLeases(t, person)
+					policyNoHolders(t, person)
 				})
 			}
 		}
@@ -300,10 +302,10 @@ func TestPolicyIntegrationPublicExposureOverridesAllowLists(t *testing.T) {
 
 func TestPolicyIntegrationApprovalOnceAndPrivateViews(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "agent", "")
-	person := leasedDial(t, socket, "gui", "reviewer", "")
-	params := api.OpenLeaseParams{ID: "t", Purpose: "inspect the database"}
-	id := policyPending(t, mcp, "lease.open", params)
+	mcp := dialClient(t, socket, "mcp", "agent", "")
+	person := dialClient(t, socket, "gui", "reviewer", "")
+	params := api.OpenSavedParams{ID: "t", Purpose: "inspect the database"}
+	id := policyPending(t, mcp, "tunnel.open", params)
 	a := policyGetApproval(t, person, id)
 	if a.Code == "" || len(a.Argv) == 0 {
 		t.Fatalf("person get lacks approval details: %+v", a)
@@ -336,42 +338,42 @@ func TestPolicyIntegrationApprovalOnceAndPrivateViews(t *testing.T) {
 	if got := policyGetApproval(t, person, id).Status; got != "pending" {
 		t.Fatalf("rejected decisions changed status to %s", got)
 	}
-	if got := policyPending(t, mcp, "lease.open", params); got != id {
+	if got := policyPending(t, mcp, "tunnel.open", params); got != id {
 		t.Fatalf("rejected decisions replaced pending request with %s", got)
 	}
 	policyDecide(t, person, id, "approve", "once")
 	// A decision is not a deferred start. Only the owning agent's retry runs.
-	policyNoLeases(t, person)
+	policyNoHolders(t, person)
 	policyStopped(t, person, "t")
-	var lease api.Lease
-	policyOK(t, mcp, "lease.open", params, &lease)
+	var opened string
+	policyOK(t, mcp, "tunnel.open", params, &opened)
 	var ready supervisor.Status
 	policyOK(t, mcp, "tunnel.waitReady", api.IDParams{ID: "t"}, &ready)
-	if ready.State != supervisor.StateRunning || ready.PID != 123 || lease.Session != mcp.Session() {
-		t.Fatalf("approved retry did not run fake process: lease=%+v status=%+v", lease, ready)
+	if ready.State != supervisor.StateRunning || ready.PID != 123 || opened != "t" || policyTunnel(t, person, "t").Owner.Holder == nil {
+		t.Fatalf("approved retry did not run fake process: opened=%q status=%+v", opened, ready)
 	}
 	if got := policyGetApproval(t, person, id).Status; got != "consumed" {
 		t.Fatalf("once grant status = %s", got)
 	}
-	policyOK(t, mcp, "lease.close", api.IDParams{ID: lease.ID}, nil)
-	if again := policyPending(t, mcp, "lease.open", params); again == id {
+	policyOK(t, mcp, "tunnel.release", api.IDParams{ID: "t"}, nil)
+	if again := policyPending(t, mcp, "tunnel.open", params); again == id {
 		t.Fatal("consumed once grant authorized a second operation")
 	}
-	policyNoLeases(t, person)
+	policyNoHolders(t, person)
 }
 
 func TestPolicyIntegrationSavedFingerprintChangesRequireNewApproval(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "agent", "")
-	person := leasedDial(t, socket, "gui", "editor", "")
-	params := api.OpenLeaseParams{ID: "t"}
-	id := policyPending(t, mcp, "lease.open", params)
+	mcp := dialClient(t, socket, "mcp", "agent", "")
+	person := dialClient(t, socket, "gui", "editor", "")
+	params := api.OpenSavedParams{ID: "t"}
+	id := policyPending(t, mcp, "tunnel.open", params)
 	before := policyGetApproval(t, person, id)
 	policyDecide(t, person, id, "approve", "once")
 	changed := policyTunnel(t, person, "t").Tunnel
 	changed.SSH.Hostname = "different.example.invalid"
 	policyOK(t, person, "tunnel.save", api.SaveTunnelParams{Tunnel: changed}, nil)
-	next := policyPending(t, mcp, "lease.open", params)
+	next := policyPending(t, mcp, "tunnel.open", params)
 	if next == id {
 		t.Fatal("changed saved spec reused the approved request")
 	}
@@ -379,7 +381,7 @@ func TestPolicyIntegrationSavedFingerprintChangesRequireNewApproval(t *testing.T
 	if after.Fingerprint == before.Fingerprint || slices.Equal(after.Argv, before.Argv) || after.Status != "pending" {
 		t.Fatalf("new saved spec not fingerprint-bound: before=%+v after=%+v", before, after)
 	}
-	policyNoLeases(t, person)
+	policyNoHolders(t, person)
 	policyStopped(t, person, "t")
 }
 
@@ -387,23 +389,23 @@ func TestPolicyIntegrationDeniedAndTimedOutApprovalsCannotRun(t *testing.T) {
 	for _, outcome := range []string{"deny", "timeout"} {
 		t.Run(outcome, func(t *testing.T) {
 			s, socket, clock := policyServer(t, settings.StrictAgent(), nil)
-			mcp := leasedDial(t, socket, "mcp", "agent", "")
-			person := leasedDial(t, socket, "cli", "reviewer", "")
-			params := api.OpenLeaseParams{ID: "t"}
-			id := policyPending(t, mcp, "lease.open", params)
+			mcp := dialClient(t, socket, "mcp", "agent", "")
+			person := dialClient(t, socket, "cli", "reviewer", "")
+			params := api.OpenSavedParams{ID: "t"}
+			id := policyPending(t, mcp, "tunnel.open", params)
 			want := "denied"
 			if outcome == "deny" {
 				policyDecide(t, person, id, "deny", "once")
 			} else {
 				clock.advance(engine.ApprovalTimeout - time.Nanosecond)
-				if err := s.engine.ExpireLeases(); err != nil {
+				if err := s.engine.Maintain(); err != nil {
 					t.Fatal(err)
 				}
 				if got := policyGetApproval(t, person, id).Status; got != "pending" {
 					t.Fatalf("approval expired before deadline: %s", got)
 				}
 				clock.advance(time.Nanosecond)
-				if err := s.engine.ExpireLeases(); err != nil {
+				if err := s.engine.Maintain(); err != nil {
 					t.Fatal(err)
 				}
 				want = "timed_out"
@@ -414,14 +416,14 @@ func TestPolicyIntegrationDeniedAndTimedOutApprovalsCannotRun(t *testing.T) {
 			}
 			policyError(t, policyCall(t, person, "approval.decide", api.DecideApprovalParams{ID: id, Decision: "approve", Scope: "once", Code: a.Code}, nil), api.PolicyDenied)
 			for i := 0; i < 2; i++ {
-				policyError(t, policyCall(t, mcp, "lease.open", params, nil), api.PolicyDenied)
+				policyError(t, policyCall(t, mcp, "tunnel.open", params, nil), api.PolicyDenied)
 			}
 			var approvals []api.Approval
 			policyOK(t, person, "approval.list", api.Empty{}, &approvals)
 			if len(approvals) != 1 {
 				t.Fatalf("denied retry minted another request: %+v", approvals)
 			}
-			policyNoLeases(t, person)
+			policyNoHolders(t, person)
 			policyStopped(t, person, "t")
 		})
 	}
@@ -429,25 +431,25 @@ func TestPolicyIntegrationDeniedAndTimedOutApprovalsCannotRun(t *testing.T) {
 
 func TestPolicyIntegrationSessionGrantAndApprovalIsolation(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	first := leasedDial(t, socket, "mcp", "same-name", "")
-	person := leasedDial(t, socket, "gui", "reviewer", "")
-	params := api.OpenLeaseParams{ID: "t"}
-	id := policyPending(t, first, "lease.open", params)
+	first := dialClient(t, socket, "mcp", "same-name", "")
+	person := dialClient(t, socket, "gui", "reviewer", "")
+	params := api.OpenSavedParams{ID: "t"}
+	id := policyPending(t, first, "tunnel.open", params)
 	policyDecide(t, person, id, "approve", "session")
 	for i := 0; i < 2; i++ {
-		var lease api.Lease
-		policyOK(t, first, "lease.open", params, &lease)
-		if lease.Session != first.Session() {
-			t.Fatalf("grant acquired lease for wrong session: %+v", lease)
+		var opened string
+		policyOK(t, first, "tunnel.open", params, &opened)
+		if opened != "t" {
+			t.Fatalf("grant opened wrong tunnel: %q", opened)
 		}
 	}
-	resumed := leasedDial(t, socket, "mcp", "same-name", first.Session())
-	policyOK(t, resumed, "lease.open", params, nil)
+	resumed := dialClient(t, socket, "mcp", "same-name", first.Session())
+	policyOK(t, resumed, "tunnel.open", params, nil)
 	if got := policyGetApproval(t, person, id).Status; got != "approved" {
 		t.Fatalf("session grant was consumed: %s", got)
 	}
 	for _, name := range []string{"same-name", "other-name"} {
-		other := leasedDial(t, socket, "mcp", name, "")
+		other := dialClient(t, socket, "mcp", name, "")
 		if other.Session() == first.Session() {
 			t.Fatal("different connection implicitly reused session")
 		}
@@ -457,7 +459,7 @@ func TestPolicyIntegrationSessionGrantAndApprovalIsolation(t *testing.T) {
 		if len(approvals) != 0 {
 			t.Fatalf("another session saw approvals: %+v", approvals)
 		}
-		next := policyPending(t, other, "lease.open", params)
+		next := policyPending(t, other, "tunnel.open", params)
 		if next == id {
 			t.Fatal("session grant escaped to another session")
 		}
@@ -497,8 +499,8 @@ func TestPolicyIntegrationAliasMustExistAndNewSecretsAsk(t *testing.T) {
 				}
 				_ = cfg
 			})
-			mcp := leasedDial(t, socket, "mcp", "alias-agent", "")
-			person := leasedDial(t, socket, "gui", "person", "")
+			mcp := dialClient(t, socket, "mcp", "alias-agent", "")
+			person := dialClient(t, socket, "gui", "person", "")
 			tunnel := model.Tunnel{
 				Name: "Alias tunnel", Type: model.TypeSSH,
 				SSH:      &model.SSH{Host: "bastion", Flags: []string{"-N"}},
@@ -514,25 +516,25 @@ func TestPolicyIntegrationAliasMustExistAndNewSecretsAsk(t *testing.T) {
 			var result api.RunEphemeralResult
 			err := policyCall(t, mcp, "tunnel.runEphemeral", params, &result)
 			if tc.allow {
-				if err != nil || result.ID == "" || result.Lease.Session != mcp.Session() {
+				if err != nil || result.ID == "" || policyTunnel(t, person, result.ID).Owner.Holder == nil {
 					t.Fatalf("known alias was not allowed: %+v %v", result, err)
 				}
-				policyOK(t, mcp, "lease.close", api.IDParams{ID: result.Lease.ID}, nil)
+				policyOK(t, mcp, "tunnel.release", api.IDParams{ID: result.ID}, nil)
 				return
 			}
 			id := policyError(t, err, api.PendingApproval).Data.ApprovalID
 			if a := policyGetApproval(t, person, id); slices.Contains(a.Choices, "always") {
 				t.Fatalf("unknown alias or new secret offered always: %+v", a)
 			}
-			policyNoLeases(t, person)
+			policyNoHolders(t, person)
 		})
 	}
 }
 
 func TestPolicyIntegrationSaveNeedsSeparateApprovalAndCannotEditOrStart(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "save-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "save-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	draft := policySSH("")
 	draft.Name = "Agent saved"
 	params := api.SaveTunnelParams{Tunnel: draft, Purpose: "remember this tunnel"}
@@ -561,9 +563,9 @@ func TestPolicyIntegrationSaveNeedsSeparateApprovalAndCannotEditOrStart(t *testi
 		t.Fatalf("save result = %q", savedID)
 	}
 	policyStopped(t, person, savedID)
-	policyNoLeases(t, person)
+	policyNoHolders(t, person)
 	policyError(t, policyCall(t, mcp, "tunnel.start", api.IDParams{ID: savedID}, nil), api.PolicyDenied)
-	policyPending(t, mcp, "lease.open", api.OpenLeaseParams{ID: savedID})
+	policyPending(t, mcp, "tunnel.open", api.OpenSavedParams{ID: savedID})
 	if got := policyGetApproval(t, person, id).Status; got != "consumed" {
 		t.Fatalf("save grant was not consumed: %s", got)
 	}
@@ -572,11 +574,11 @@ func TestPolicyIntegrationSaveNeedsSeparateApprovalAndCannotEditOrStart(t *testi
 	}
 }
 
-func TestPolicyIntegrationPromoteNeedsOwnLeaseAndSeparateApproval(t *testing.T) {
+func TestPolicyIntegrationPromoteNeedsOwnTunnelAndSeparateApproval(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "promote-agent", "")
-	other := leasedDial(t, socket, "mcp", "promote-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "promote-agent", "")
+	other := dialClient(t, socket, "mcp", "promote-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	params := api.RunEphemeralParams{Tunnel: policySSH("")}
 	runApproval := policyPending(t, mcp, "tunnel.runEphemeral", params)
 	policyDecide(t, person, runApproval, "approve", "once")
@@ -603,10 +605,8 @@ func TestPolicyIntegrationPromoteNeedsOwnLeaseAndSeparateApproval(t *testing.T) 
 	if savedID != "promoted" || view.Owner.Ephemeral || view.Status.PID != ready.PID || view.Status.State != supervisor.StateRunning {
 		t.Fatalf("promotion did not preserve process: before=%+v after=%+v", ready, view)
 	}
-	var leases []api.Lease
-	policyOK(t, mcp, "lease.list", api.Empty{}, &leases)
-	if len(leases) != 1 || leases[0].ID != run.Lease.ID || leases[0].TunnelID != savedID {
-		t.Fatalf("promotion lost/remapped wrong lease: %+v", leases)
+	if view.Owner.Holder == nil || view.Owner.Holder.Name != "promote-agent" {
+		t.Fatalf("promotion lost the holder: %+v", view.Owner)
 	}
 	policyError(t, policyCall(t, mcp, "tunnel.save", api.SaveTunnelParams{Tunnel: view.Tunnel}, nil), api.PolicyDenied)
 	policyError(t, policyCall(t, mcp, "tunnel.start", api.IDParams{ID: savedID}, nil), api.PolicyDenied)
@@ -618,8 +618,8 @@ func TestPolicyIntegrationDisabledDeniesAllAgentMethods(t *testing.T) {
 	agent.AllowTunnels = []string{"*"}
 	agent.AllowSSHHosts = []string{"bastion"}
 	_, socket, _ := policyServer(t, agent, nil)
-	mcp := leasedDial(t, socket, "mcp", "disabled-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "disabled-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	// Create an actual promotion target as a person so refusal cannot be
 	// confused with a nonexistent-ID error.
 	var run api.RunEphemeralResult
@@ -628,9 +628,8 @@ func TestPolicyIntegrationDisabledDeniesAllAgentMethods(t *testing.T) {
 		method string
 		params any
 	}{
-		{"lease.open", api.OpenLeaseParams{ID: "t"}},
-		{"lease.renew", api.RenewLeaseParams{ID: run.Lease.ID}},
-		{"lease.close", api.IDParams{ID: run.Lease.ID}},
+		{"tunnel.open", api.OpenSavedParams{ID: "t"}},
+		{"tunnel.release", api.IDParams{ID: run.ID}},
 		{"tunnel.runEphemeral", api.RunEphemeralParams{Tunnel: policySSH("")}},
 		{"tunnel.save", api.SaveTunnelParams{Tunnel: policySSH("")}},
 		{"tunnel.promote", api.PromoteTunnelParams{ID: run.ID, SavedID: "disabled-promote"}},
@@ -659,7 +658,7 @@ func TestPolicyIntegrationDisabledDeniesAllAgentMethods(t *testing.T) {
 func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 	// Deliberately literal, independent of handlers, readOnly and api.Methods.
 	// New API registrations must stay denied until this security contract is
-	// consciously changed. daemon.hello is covered by leasedDial's initial
+	// consciously changed. daemon.hello is covered by dialClient's initial
 	// handshake; replaying it is not an allow-list probe.
 	allowed := map[string]bool{
 		"daemon.hello": true, "daemon.status": true, "events.subscribe": true,
@@ -667,7 +666,7 @@ func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 		"tunnel.list": true, "tunnel.get": true, "tunnel.waitReady": true,
 		"tunnel.findings": true, "tunnel.evaluateDraft": true,
 		"ssh.hosts": true, "ssh.resolve": true, "tool.list": true, "prompt.list": true,
-		"lease.open": true, "lease.renew": true, "lease.close": true, "lease.list": true,
+		"tunnel.open": true, "tunnel.release": true,
 		"tunnel.runEphemeral": true, "approval.list": true, "approval.get": true,
 		"logs.read": true, "logs.since": true, "tunnel.promote": true, "tunnel.save": true,
 	}
@@ -676,7 +675,7 @@ func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 	// that classification may implicitly grant MCP access.
 	future := "future.readSensitiveState"
 	query(s, future, func(api.Empty) string { return "must-not-be-reachable" })
-	mcp := leasedDial(t, socket, "mcp", "allowlist-agent", "")
+	mcp := dialClient(t, socket, "mcp", "allowlist-agent", "")
 	if mcp.Session() == "" {
 		t.Fatal("initial daemon.hello did not establish an MCP session")
 	}
@@ -699,7 +698,7 @@ func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 		}
 	}
 	policyStopped(t, mcp, "t")
-	policyNoLeases(t, mcp)
+	policyNoHolders(t, mcp)
 }
 
 func TestHelloRejectsUnknownClientKinds(t *testing.T) {

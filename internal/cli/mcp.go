@@ -18,8 +18,8 @@ func init() { register(mcpCommand) }
 
 func mcpCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "mcp", Short: "Connect agents through the policy-controlled MCP adapter",
-		Long:    "Serve MCP over stdio, print paste-ready client configuration, or review tool descriptions and schemas offline. The adapter uses the daemon's agent policy, approvals and leases; it does not grant agents person-client privileges.",
+		Use: "mcp", Short: "Connect MCP clients through the policy-controlled adapter",
+		Long:    "Serve MCP over stdio, print paste-ready client configuration, or review tool descriptions and schemas offline. The adapter uses the daemon's MCP policy, approvals and ownership; it does not grant MCP clients person-client privileges.",
 		Example: "  devt-tunnel mcp config\n  devt-tunnel mcp tools --json\n  devt-tunnel mcp serve --name coding-agent",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },

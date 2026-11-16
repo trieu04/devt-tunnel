@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/trieu04/devt-tunnel/internal/api"
+	"github.com/trieu04/devt-tunnel/internal/core/audit"
 	"github.com/trieu04/devt-tunnel/internal/core/secret"
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
 	"github.com/trieu04/devt-tunnel/internal/core/supervisor"
@@ -104,7 +105,7 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, rpcCall{method: method, params: params})
 	switch method {
-	case api.EventsSubscribe, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks", "settings.setAgent", "lease.revoke":
+	case api.EventsSubscribe, "tunnel.start", "tunnel.stop", "tunnel.startOnLaunch", "settings.setUpdateChecks", "settings.setAgent":
 		if out, ok := result.(*api.Empty); ok {
 			*out = api.Empty{}
 		}
@@ -126,8 +127,16 @@ func (f *fakeDaemon) Call(_ context.Context, method string, params, result any) 
 		*(result.(*api.Approval)) = api.Approval{ID: p.ID, Status: "approved", Scope: p.Scope}
 	case "settings.getAgent":
 		*(result.(*settings.Agent)) = settings.DefaultAgent()
-	case "lease.list":
-		*(result.(*[]api.Lease)) = []api.Lease{{ID: "ls_test", TunnelID: "tmp_test"}}
+	case "audit.read":
+		if params.(api.AuditReadParams).After >= 2 {
+			*(result.(*api.AuditReadResult)) = api.AuditReadResult{Next: 2, Events: []audit.Event{}}
+			return nil
+		}
+		at := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+		*(result.(*api.AuditReadResult)) = api.AuditReadResult{Next: 2, Events: []audit.Event{
+			{Sequence: 1, Time: at, Actor: audit.Actor{Kind: audit.ActorMCP, Name: "dev-agent"}, Action: audit.TunnelOpen, TunnelID: "tmp-1", Result: audit.ResultOK},
+			{Sequence: 2, Time: at.Add(time.Minute), Actor: audit.Actor{Kind: audit.ActorMCP, Name: "dev-agent"}, Action: audit.PolicyDeny, Decision: audit.Deny, Result: audit.ResultDenied, Count: 3},
+		}}
 	case "tunnel.promote":
 		*(result.(*string)) = "saved-test"
 	case "settings.get":
@@ -732,21 +741,25 @@ func TestServiceForwardsAgentControls(t *testing.T) {
 	if calls := daemon.recorded("settings.setAgent"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, api.AgentSettingsParams{Agent: agent}) {
 		t.Fatalf("policy changed: %+v", calls)
 	}
-	leases, err := s.ListLeases()
-	if err != nil || len(leases) != 1 {
-		t.Fatalf("leases: %+v / %v", leases, err)
-	}
-	if err := s.RevokeLease(leases[0].ID); err != nil {
-		t.Fatal(err)
-	}
-	if calls := daemon.recorded("lease.revoke"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, api.IDParams{ID: "ls_test"}) {
-		t.Fatalf("revoke: %+v", calls)
-	}
 	id, err := s.PromoteTunnel("tmp_test", "Saved test")
 	if err != nil || id != "saved-test" {
 		t.Fatalf("promote: %s / %v", id, err)
 	}
 	if calls := daemon.recorded("tunnel.promote"); len(calls) != 1 || !reflect.DeepEqual(calls[0].params, api.PromoteTunnelParams{ID: "tmp_test", Name: "Saved test"}) {
 		t.Fatalf("promote: %+v", calls)
+	}
+}
+
+func TestServiceMCPHistoryIsNewestFirstAndMCPOnly(t *testing.T) {
+	daemon := newFakeDaemon("fake.toml")
+	s := newService(func(context.Context) (daemonClient, error) { return daemon, nil }, fakeAuth{}, &secret.Memory{})
+	t.Cleanup(s.Shutdown)
+	rows, err := s.MCPHistory()
+	if err != nil || len(rows) != 2 || rows[0].Seq != 2 || rows[0].Action != "policy.deny" || rows[0].Count != 3 || rows[1].Client != "dev-agent" {
+		t.Fatalf("history: %+v / %v", rows, err)
+	}
+	calls := daemon.recorded("audit.read")
+	if len(calls) == 0 || calls[0].params.(api.AuditReadParams).Kind != "mcp" {
+		t.Fatalf("history must filter by actor kind mcp: %+v", calls)
 	}
 }

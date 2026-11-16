@@ -52,16 +52,14 @@ func TestTypedDaemonErrorsThroughMCP(t *testing.T) {
 	})
 }
 
-func TestEndedLeaseRenewIsLeaseExpired(t *testing.T) {
+func TestClosedTunnelCloseIsIdempotent(t *testing.T) {
 	f := newFixture(t, nil)
 	args := inline("allowed", "ended-lease")
 	args["wait_seconds"] = 2
 	res, opened := f.tool(t, "tunnel_open", args)
 	good(t, res, opened)
-	res, closed := f.tool(t, "tunnel_close", map[string]any{"lease_id": opened["lease_id"]})
-	good(t, res, closed)
-	res, value := f.tool(t, "tunnel_renew", map[string]any{"lease_id": opened["lease_id"]})
-	if !res.IsError || value["code"] != "lease_expired" {
-		t.Fatalf("ended lease did not retain lease error semantics: %#v", value)
+	for range 2 {
+		res, closed := f.tool(t, "tunnel_close", map[string]any{"tunnel_id": opened["tunnel_id"]})
+		good(t, res, closed)
 	}
 }

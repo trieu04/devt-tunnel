@@ -1,5 +1,5 @@
 // Package policy implements the MCP policy table as pure decisions. It does
-// not authenticate actors, look up aliases, track lease ownership, or grant
+// not authenticate actors, look up aliases, track tunnel ownership, or grant
 // approvals. The daemon must supply those facts and enforce the result.
 package policy
 
@@ -14,7 +14,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/settings"
 )
 
-// ActorKind aliases the model's wire representation so policy and leases use
+// ActorKind aliases the model's wire representation so policy and ownership use
 // the same actor without conversions or a dependency on the API/daemon.
 type ActorKind = string
 
@@ -31,18 +31,16 @@ type Actor = model.Actor
 type Action string
 
 const (
-	ActionListTunnels  Action = "list_tunnels"
-	ActionListSSHHosts Action = "list_ssh_hosts"
-	ActionReadLogs     Action = "read_logs" // MCP logs must already be redacted.
-	ActionCheck        Action = "check"     // Dry run; never execute the spec.
-	ActionListLeases   Action = "list_leases"
-	ActionCloseLease   Action = "close_lease" // Only the caller's own lease.
-	ActionRenewLease   Action = "renew_lease" // Only the caller's own lease.
+	ActionListTunnels   Action = "list_tunnels"
+	ActionListSSHHosts  Action = "list_ssh_hosts"
+	ActionReadLogs      Action = "read_logs"      // MCP logs must already be redacted.
+	ActionCheck         Action = "check"          // Dry run; never execute the spec.
+	ActionReleaseTunnel Action = "release_tunnel" // Only a tunnel the caller opened.
 
 	// Saved means a definition loaded by the daemon from its saved registry,
 	// NOT an agent-supplied spec with an ID that happens to match a saved ID.
 	ActionOpenSaved  Action = "open_saved"
-	ActionStartSaved Action = "start_saved" // MCP starts still acquire a lease.
+	ActionStartSaved Action = "start_saved" // MCP starts still hold the tunnel.
 	ActionOpen       Action = "open"        // New/ephemeral agent-built spec.
 	ActionCreate     Action = "create"      // New/ephemeral agent-built spec.
 	ActionExpose     Action = "expose"      // Always requires public consent.
@@ -63,7 +61,7 @@ const (
 	ActionEditPolicy    Action = "edit_policy"
 	ActionEditSaved     Action = "edit_saved"
 	ActionDeleteSaved   Action = "delete_saved"
-	ActionStop          Action = "stop" // Direct stop, as distinct from releasing one's own lease.
+	ActionStop          Action = "stop" // Direct stop, as distinct from releasing a tunnel one opened.
 )
 
 type Decision string
@@ -77,7 +75,7 @@ const (
 // Decide implements policy without I/O or mutation. Settings loaded without an
 // [agent] section and zero in-memory Settings both use settings.DefaultAgent.
 // The daemon must distinguish saved opens from new specs, verify the existence
-// of config aliases, and check ownership before using CloseLease/RenewLease.
+// of config aliases, and check ownership before using ReleaseTunnel.
 // An Ask is not permission to spawn: run only the approved Spec.Fingerprint.
 func Decide(actor Actor, action Action, t model.Tunnel, cfg settings.Settings) (Decision, string) {
 	if !knownAction(action) {
@@ -92,18 +90,18 @@ func Decide(actor Actor, action Action, t model.Tunnel, cfg settings.Settings) (
 	}
 	a := cfg.AgentPolicy()
 	if err := a.Validate(); err != nil {
-		return Deny, "invalid agent policy: " + err.Error()
+		return Deny, "invalid MCP policy: " + err.Error()
 	}
 	if !a.Enabled {
-		return Deny, "agent access is disabled"
+		return Deny, "MCP access is disabled"
 	}
 	switch action {
-	case ActionListTunnels, ActionListSSHHosts, ActionReadLogs, ActionCheck, ActionListLeases:
-		return Allow, "read-only agent action"
-	case ActionCloseLease, ActionRenewLease:
-		return Allow, "agent may release or renew its own lease"
+	case ActionListTunnels, ActionListSSHHosts, ActionReadLogs, ActionCheck:
+		return Allow, "read-only MCP action"
+	case ActionReleaseTunnel:
+		return Allow, "MCP client may release a tunnel it opened"
 	case ActionCreateCommand, ActionEditCommand, ActionSetFlags, ActionSetOptions, ActionSetExtraArgs, ActionSetIdentity:
-		return Deny, "agents cannot create or edit execution extensions"
+		return Deny, "MCP clients cannot create or edit execution extensions"
 	case ActionReadSecret, ActionSetSecret, ActionRenameSecret, ActionDeleteSecret,
 		ActionAnswerPrompt, ActionEditPolicy, ActionEditSaved, ActionDeleteSaved, ActionStop:
 		return Deny, "action is reserved for a person"
@@ -114,15 +112,26 @@ func Decide(actor Actor, action Action, t model.Tunnel, cfg settings.Settings) (
 	saved := action == ActionOpenSaved || action == ActionStartSaved
 	unsafe := agentError(t)
 	if !saved && unsafe != "" {
-		return Deny, "unsafe agent-built tunnel: " + unsafe
+		return Deny, "unsafe MCP-built tunnel: " + unsafe
 	}
-	// Public exposure overrides every allow-list, including a saved tunnel ID.
+	// Public exposure overrides every allow-list (public = "allow" opts in explicitly), including a saved tunnel ID.
 	// Every remote forward is public for policy even when its bind is loopback.
 	if action == ActionExpose || PublicExposure(t) {
 		if a.Public == "deny" {
-			return Deny, "public exposure is disabled by agent policy"
+			return Deny, "public exposure is disabled by MCP policy"
 		}
-		return Ask, "public exposure always requires a person; never allow always"
+		if a.Public == "allow" {
+			switch {
+			case saved && unsafe != "":
+				return Ask, "unsafe saved tunnel requires approval; never allow always: " + unsafe
+			case action == ActionSave:
+				return Ask, "saving a tunnel requires approval"
+			case len(t.Secrets()) > 0:
+				return Ask, "using an existing secret for a new tunnel requires approval"
+			}
+			return Allow, "public exposure is allowed by MCP policy"
+		}
+		return Ask, "public exposure requires a person; never allow always"
 	}
 	if saved {
 		if unsafe != "" {
@@ -256,8 +265,8 @@ func validPort(value string) bool {
 
 func knownAction(action Action) bool {
 	switch action {
-	case ActionListTunnels, ActionListSSHHosts, ActionReadLogs, ActionCheck, ActionListLeases,
-		ActionCloseLease, ActionRenewLease, ActionOpenSaved, ActionStartSaved, ActionOpen,
+	case ActionListTunnels, ActionListSSHHosts, ActionReadLogs, ActionCheck,
+		ActionReleaseTunnel, ActionOpenSaved, ActionStartSaved, ActionOpen,
 		ActionCreate, ActionExpose, ActionSave, ActionUseSecret, ActionCreateCommand,
 		ActionEditCommand, ActionSetFlags, ActionSetOptions, ActionSetExtraArgs, ActionSetIdentity,
 		ActionReadSecret, ActionSetSecret, ActionRenameSecret, ActionDeleteSecret,

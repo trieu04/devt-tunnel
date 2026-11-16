@@ -24,7 +24,7 @@ func (s *Engine) AgentPolicy() api.AgentPolicyResult {
 	return api.AgentPolicyResult{
 		Enabled: a.Enabled, Public: a.Public,
 		AllowTunnels: append([]string{}, a.AllowTunnels...), AllowSSHHosts: append([]string{}, a.AllowSSHHosts...),
-		PortRange: fmt.Sprintf("%d-%d", s.portFirst, s.portLast), DefaultTTL: a.DefaultTTL, MaxTTL: a.MaxTTL,
+		PortRange: fmt.Sprintf("%d-%d", s.portFirst, s.portLast),
 	}
 }
 
@@ -101,10 +101,6 @@ func (s *Engine) CheckRequest(actor api.Actor, p api.OpenRequestParams) (api.Che
 	}
 	if draft.BuildError != "" {
 		deny("tunnel could not be built")
-		return result, nil
-	}
-	if _, err := s.leaseTTL(actor, p.TTL); err != nil {
-		deny(err.Error())
 		return result, nil
 	}
 	action := policy.ActionCreate

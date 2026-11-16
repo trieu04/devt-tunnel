@@ -309,7 +309,7 @@ func TestApprovalOutputLabelsAgentProvidedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{`requested name (agent-provided): "Agent <name>\nforged"`, `purpose (agent-provided): "purpose\nnot instructions"`, "Daemon-authored summary"} {
+	for _, want := range []string{`requested name (client-provided): "Agent <name>\nforged"`, `purpose (client-provided): "purpose\nnot instructions"`, "Daemon-authored summary"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("approval output missing %q: %s", want, text)
 		}

@@ -126,40 +126,28 @@ func TestRunDryRunRealDaemon(t *testing.T) {
 	}
 }
 
-func TestForwardAutoJSONAndDetachedLeaseRealDaemon(t *testing.T) {
+func TestForwardAutoJSONAndDetachedRealDaemon(t *testing.T) {
 	ephemeralDaemon(t)
 	result := ephemeralResult(t, "forward", "server1", "auto:5432")
 	tunnel := result.Tunnels[0]
 	if !strings.HasPrefix(tunnel.ID, "tmp-") || tunnel.State != "running" || len(tunnel.Endpoints) != 1 || tunnel.Endpoints[0].Listen == "" || tunnel.Endpoints[0].Target != "127.0.0.1:5432" || tunnel.Owner.Pinned || !tunnel.Owner.Ephemeral {
 		t.Fatalf("forward result: %+v", tunnel)
 	}
-	code, out, diagnostics := defineRun("leases", "--json")
-	var listed struct {
-		APIVersion int `json:"apiVersion"`
-		Leases     []api.Lease
+	if tunnel.Owner.Holder == nil || tunnel.Owner.Holder.Kind != "cli" {
+		t.Fatalf("holder: %+v", tunnel.Owner)
 	}
-	if err := json.Unmarshal([]byte(out), &listed); code != 0 || err != nil || diagnostics != "" || listed.APIVersion != 2 || len(listed.Leases) != 1 {
-		t.Fatalf("leases: %d %s %s %v", code, out, diagnostics, err)
-	}
-	lease := listed.Leases[0]
-	if !lease.Detached || !lease.StartedIt || lease.TunnelID != tunnel.ID || lease.Holder.Kind != "cli" || !lease.ExpiresAt.IsZero() || lease.GraceUntil != nil {
-		t.Fatalf("lease: %+v", lease)
-	}
-	if code, out, diagnostics := defineRun("leases"); code != 0 || !strings.Contains(out, "DETACHED") || !strings.Contains(out, "never") || !strings.Contains(out, lease.ID) {
-		t.Fatalf("table: %d %s %s", code, out, diagnostics)
-	}
-	if code, out, diagnostics := defineRun("leases", "revoke", lease.ID, "--json"); code != 0 || !strings.Contains(out, `"revoked":true`) || diagnostics != "" {
-		t.Fatalf("revoke: %d %s %s", code, out, diagnostics)
+	if code, out, diagnostics := defineRun("stop", tunnel.ID, "--json"); code != 0 {
+		t.Fatalf("stop: %d %s %s", code, out, diagnostics)
 	}
 	if c, err := net.DialTimeout("tcp", tunnel.Endpoints[0].Listen, time.Second); err == nil {
 		c.Close()
-		t.Fatal("listener survived revocation")
+		t.Fatal("listener survived stop")
 	}
 }
 
 func TestForwardSaveAndSaveProfileRealDaemon(t *testing.T) {
 	ephemeralDaemon(t)
-	result := ephemeralResult(t, "forward", "server1", "auto:5432", "--save", "Staging DB", "--ttl", "15m")
+	result := ephemeralResult(t, "forward", "server1", "auto:5432", "--save", "Staging DB")
 	if result.Tunnels[0].ID != "staging-db" || result.Tunnels[0].Owner.Ephemeral || result.Tunnels[0].Owner.Pinned {
 		t.Fatalf("promotion: %+v", result)
 	}
@@ -191,8 +179,8 @@ func TestForwardWarningsAndValidation(t *testing.T) {
 		t.Fatal(diagnostics)
 	}
 	for _, args := range [][]string{
-		{"forward", "server1"}, {"forward", "server1", "5433:5432", "--ttl", "0"},
-		{"forward", "server1", "--remote", "auto:5432"}, {"forward", "server1", "auto:5432", "--ttl", "9h"},
+		{"forward", "server1"},
+		{"forward", "server1", "--remote", "auto:5432"},
 		{"forward", "server1", "auto:5432", "--dry-run"}, {"run", "ssh", "-N"},
 		{"save", "tmp-x"}, {"approvals", "approve", "x", "--code", "do-not-accept"},
 	} {
@@ -215,7 +203,7 @@ func (w *readyOutput) Write(b []byte) (int, error) {
 	}
 	return n, err
 }
-func TestRunForegroundClosesLeaseOnInterruptRealDaemon(t *testing.T) {
+func TestRunForegroundStopsOnInterruptRealDaemon(t *testing.T) {
 	ephemeralDaemon(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -240,9 +228,6 @@ func TestRunForegroundClosesLeaseOnInterruptRealDaemon(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("interrupt hung")
-	}
-	if code, out, diagnostics := defineRun("leases", "--json"); code != 0 || !strings.Contains(out, `"leases":[]`) {
-		t.Fatalf("lease not closed: %d %s %s", code, out, diagnostics)
 	}
 	if c, err := net.DialTimeout("tcp", "127.0.0.1:15433", time.Second); err == nil {
 		c.Close()
@@ -372,8 +357,8 @@ func TestAuditFiltersRealDaemon(t *testing.T) {
 
 func TestRunDetachRealDaemon(t *testing.T) {
 	ephemeralDaemon(t)
-	result := ephemeralResult(t, "run", "--detach", "--name", "One-off SSH", "--ttl", "5m", "--", "ssh", "-N", "-L", "15434:127.0.0.1:5432", "server1")
-	if result.Tunnels[0].State != "running" || !result.Tunnels[0].Owner.Ephemeral || result.Tunnels[0].Owner.Expiry == nil {
+	result := ephemeralResult(t, "run", "--detach", "--name", "One-off SSH", "--", "ssh", "-N", "-L", "15434:127.0.0.1:5432", "server1")
+	if result.Tunnels[0].State != "running" || !result.Tunnels[0].Owner.Ephemeral || result.Tunnels[0].Owner.Holder == nil {
 		t.Fatalf("detached run: %+v", result)
 	}
 	if code, out, diagnostics := defineRun("stop", result.Tunnels[0].ID, "--json"); code != 0 || !strings.Contains(out, `"state":"stopped"`) {

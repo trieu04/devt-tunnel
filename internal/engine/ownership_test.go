@@ -95,13 +95,11 @@ func session(t *testing.T, e *Engine, name string) (api.Actor, string) {
 	}
 	return a, s
 }
-func openTestLease(t *testing.T, e *Engine, a api.Actor, s string) api.Lease {
+func openTestTunnel(t *testing.T, e *Engine, a api.Actor, s string) {
 	t.Helper()
-	l, err := e.OpenLease(a, s, api.OpenLeaseParams{ID: "service"})
-	if err != nil {
+	if _, err := e.OpenSaved(a, s, api.OpenSavedParams{ID: "service"}); err != nil {
 		t.Fatal(err)
 	}
-	return l
 }
 func readyOwned(t *testing.T, e *Engine, id string) {
 	t.Helper()
@@ -117,123 +115,93 @@ func requireRunning(t *testing.T, e *Engine, id string, want bool) {
 		t.Fatalf("running(%s) = %v want %v: %+v", id, got, want, e.Statuses())
 	}
 }
-func requireRevoked(t *testing.T, err error) {
+func requireNotHeld(t *testing.T, err error) {
 	t.Helper()
 	var rpc *api.Error
-	if !errors.As(err, &rpc) || rpc.Data.Kind != api.LeaseRevoked {
-		t.Fatalf("expected lease_revoked, got %v", err)
+	if !errors.As(err, &rpc) || rpc.Data.Kind != api.Unknown {
+		t.Fatalf("expected unknown, got %v", err)
 	}
 }
 
-func TestDetachedPersonLeaseDisconnectAndExpiry(t *testing.T) {
-	for _, ttl := range []string{"", "15m"} {
-		t.Run(ttl, func(t *testing.T) {
-			e, _, clock := ownedEngine(t, nil, model.Config{})
-			actor, token := session(t, e, "detached-cli")
-			result, err := e.RunEphemeral(actor, token, api.RunEphemeralParams{Tunnel: commandTunnel(), Detached: true, TTL: ttl})
-			if err != nil {
-				t.Fatal(err)
-			}
-			readyOwned(t, e, result.ID)
-			if !result.Lease.Detached || result.Lease.ExpiresAt.IsZero() != (ttl == "") {
-				t.Fatalf("lease = %+v", result.Lease)
-			}
-			if err := e.DisconnectSession(actor, token); err != nil {
-				t.Fatal(err)
-			}
-			leases := e.ListLeases(actor, token, false)
-			if len(leases) != 1 || leases[0].GraceUntil != nil {
-				t.Fatalf("detached grace = %+v", leases)
-			}
-			clock.Advance(DisconnectGrace + time.Second)
-			if err := e.ExpireLeases(); err != nil {
-				t.Fatal(err)
-			}
-			requireRunning(t, e, result.ID, true)
-			owner := e.owner(result.ID)
-			if owner.Pinned || owner.Holder == nil || (owner.Expiry == nil) != (ttl == "") {
-				t.Fatalf("owner = %+v", owner)
-			}
-			clock.Advance(24 * time.Hour)
-			if err := e.ExpireLeases(); err != nil {
-				t.Fatal(err)
-			}
-			if ttl != "" {
-				requireRunning(t, e, result.ID, false)
-				return
-			}
-			requireRunning(t, e, result.ID, true)
-			if err := e.RevokeLease(result.Lease.ID); err != nil {
-				t.Fatal(err)
-			}
-			requireRunning(t, e, result.ID, false)
-		})
-	}
-}
-
-// Phase 19.2 case 1.
-func TestLeasesTwoHoldersOneCloses(t *testing.T) {
-	e, _, _ := ownedEngine(t, nil, savedCommand())
-	a, s := session(t, e, "first")
-	b, u := session(t, e, "second")
-	first := openTestLease(t, e, a, s)
-	readyOwned(t, e, "service")
-	second := openTestLease(t, e, b, u)
-	if !first.StartedIt || second.StartedIt {
-		t.Fatalf("startedIt = %v/%v", first.StartedIt, second.StartedIt)
-	}
-	if err := e.CloseLease(a, s, first.ID); err != nil {
+func TestDetachedPersonSurvivesDisconnect(t *testing.T) {
+	e, _, _ := ownedEngine(t, nil, model.Config{})
+	actor, token := session(t, e, "detached-cli")
+	result, err := e.RunEphemeral(actor, token, api.RunEphemeralParams{Tunnel: commandTunnel(), Detached: true})
+	if err != nil {
 		t.Fatal(err)
 	}
-	requireRunning(t, e, "service", true)
-	if got := e.owner("service"); got.Leases != 1 || got.Pinned || got.Holder == nil || got.Holder.Name != "second" || got.Expiry == nil {
-		t.Fatalf("owner = %+v", got)
-	}
-	// StartedIt must outlive the first lease rather than disappearing with it.
-	if err := e.CloseLease(b, u, second.ID); err != nil {
+	readyOwned(t, e, result.ID)
+	if err := e.DisconnectSession(actor, token); err != nil {
 		t.Fatal(err)
 	}
-	requireRunning(t, e, "service", false)
+	if err := e.Maintain(); err != nil {
+		t.Fatal(err)
+	}
+	requireRunning(t, e, result.ID, true)
+	if owner := e.owner(result.ID); owner.Pinned || owner.Holder == nil {
+		t.Fatalf("owner = %+v", owner)
+	}
+	if err := e.StopTunnel(result.ID); err != nil {
+		t.Fatal(err)
+	}
+	requireRunning(t, e, result.ID, false)
 }
 
-// Phase 19.2 case 2.
-func TestLeasesLastHolderStopsLeaseStarted(t *testing.T) {
+func TestForegroundTunnelStopsOnDisconnect(t *testing.T) {
+	e, _, _ := ownedEngine(t, nil, model.Config{})
+	actor, token := session(t, e, "foreground-cli")
+	result, err := e.RunEphemeral(actor, token, api.RunEphemeralParams{Tunnel: commandTunnel()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyOwned(t, e, result.ID)
+	if err := e.DisconnectSession(actor, token); err != nil {
+		t.Fatal(err)
+	}
+	requireRunning(t, e, result.ID, false)
+	if e.Active() {
+		t.Fatal("disconnect left engine active")
+	}
+}
+
+func TestOpenSavedStartsAndReleaseStops(t *testing.T) {
 	e, _, _ := ownedEngine(t, nil, savedCommand())
 	a, s := session(t, e, "agent")
-	l := openTestLease(t, e, a, s)
+	openTestTunnel(t, e, a, s)
 	readyOwned(t, e, "service")
-	if err := e.CloseLease(a, s, l.ID); err != nil {
+	if got := e.owner("service"); got.Pinned || got.Holder == nil || got.Holder.Name != "agent" {
+		t.Fatalf("owner = %+v", got)
+	}
+	if err := e.ReleaseTunnel(a, s, "service"); err != nil {
 		t.Fatal(err)
 	}
 	requireRunning(t, e, "service", false)
 	if e.Active() {
-		t.Fatal("last close left engine active")
+		t.Fatal("release left engine active")
 	}
+	requireNotHeld(t, e.ReleaseTunnel(a, s, "service"))
 }
 
-// Phase 19.2 case 3: inherited/unowned running tunnel, not a person pin.
-func TestLeasesAlreadyRunningStaysUp(t *testing.T) {
+// A tunnel that was already running is not claimed by a later open.
+func TestOpenSavedAlreadyRunningStaysUp(t *testing.T) {
 	e, _, _ := ownedEngine(t, nil, savedCommand())
 	if err := e.manager.Start("service"); err != nil {
 		t.Fatal(err)
 	}
 	readyOwned(t, e, "service")
 	a, s := session(t, e, "agent")
-	l := openTestLease(t, e, a, s)
-	if l.StartedIt {
-		t.Fatal("claimed existing process start")
+	openTestTunnel(t, e, a, s)
+	if got := e.owner("service"); got.Holder != nil {
+		t.Fatalf("claimed existing process: %+v", got)
 	}
-	if err := e.CloseLease(a, s, l.ID); err != nil {
-		t.Fatal(err)
-	}
+	requireNotHeld(t, e.ReleaseTunnel(a, s, "service"))
 	requireRunning(t, e, "service", true)
 }
 
-// Phase 19.2 case 4, including a person pinning a lease-started tunnel.
-func TestLeasesPersonStartPinsAgainstExpiry(t *testing.T) {
+func TestPersonStartPinsAgainstRelease(t *testing.T) {
 	for _, personFirst := range []bool{false, true} {
 		t.Run(fmt.Sprint(personFirst), func(t *testing.T) {
-			e, _, c := ownedEngine(t, nil, savedCommand())
+			e, _, _ := ownedEngine(t, nil, savedCommand())
 			a, s := session(t, e, "agent")
 			if personFirst {
 				if err := e.Start("service"); err != nil {
@@ -241,120 +209,74 @@ func TestLeasesPersonStartPinsAgainstExpiry(t *testing.T) {
 				}
 				readyOwned(t, e, "service")
 			}
-			l := openTestLease(t, e, a, s)
+			openTestTunnel(t, e, a, s)
 			readyOwned(t, e, "service")
 			if err := e.Start("service"); err != nil {
 				t.Fatal(err)
 			}
-			c.Advance(DefaultLeaseTTL)
-			if err := e.ExpireLeases(); err != nil {
+			if !personFirst {
+				if err := e.ReleaseTunnel(a, s, "service"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := e.Maintain(); err != nil {
 				t.Fatal(err)
 			}
 			requireRunning(t, e, "service", true)
-			if got := e.owner("service"); !got.Pinned || got.Leases != 0 {
-				t.Fatalf("owner=%+v lease=%+v", got, l)
+			if got := e.owner("service"); !got.Pinned || got.Holder != nil && !personFirst {
+				t.Fatalf("owner=%+v", got)
 			}
 		})
 	}
 }
 
-// Phase 19.2 case 5.
-func TestLeasesPersonStopRevokesImmediately(t *testing.T) {
+func TestPersonStopReleasesHolder(t *testing.T) {
 	e, _, _ := ownedEngine(t, nil, savedCommand())
 	a, s := session(t, e, "agent")
-	l := openTestLease(t, e, a, s)
+	openTestTunnel(t, e, a, s)
 	readyOwned(t, e, "service")
 	if err := e.StopTunnel("service"); err != nil {
 		t.Fatal(err)
 	}
 	requireRunning(t, e, "service", false)
-	_, err := e.RenewLease(a, s, api.RenewLeaseParams{ID: l.ID})
-	requireRevoked(t, err)
-	requireRevoked(t, e.CloseLease(a, s, l.ID))
-	if o := e.owner("service"); o.Pinned || o.Leases != 0 {
+	requireNotHeld(t, e.ReleaseTunnel(a, s, "service"))
+	if o := e.owner("service"); o.Pinned || o.Holder != nil {
 		t.Fatalf("stopped owner = %+v", o)
 	}
 	if e.Active() {
-		t.Fatal("revocation tombstone counted as active lease")
+		t.Fatal("stopped tunnel counted as held")
 	}
 }
 
-// Phase 19.2 case 6.
-func TestLeasesTTLExpires(t *testing.T) {
-	e, _, c := ownedEngine(t, nil, savedCommand())
-	a, s := session(t, e, "agent")
-	l, err := e.OpenLease(a, s, api.OpenLeaseParams{ID: "service", TTL: "5m"})
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDisconnectReleasesSavedTunnel(t *testing.T) {
+	e, _, _ := ownedEngine(t, nil, savedCommand())
+	a, s := session(t, e, "adapter")
+	openTestTunnel(t, e, a, s)
 	readyOwned(t, e, "service")
-	c.Advance(5*time.Minute - time.Nanosecond)
-	if err := e.ExpireLeases(); err != nil {
-		t.Fatal(err)
-	}
-	requireRunning(t, e, "service", true)
-	c.Advance(time.Nanosecond)
-	if err := e.ExpireLeases(); err != nil {
+	if err := e.DisconnectSession(a, s); err != nil {
 		t.Fatal(err)
 	}
 	requireRunning(t, e, "service", false)
-	if got := e.ListLeases(a, s, true); len(got) != 0 {
-		t.Fatalf("expired lease retained %+v (%+v)", got, l)
+	// Reconnecting with the old token does not resurrect the hold.
+	if _, err := e.ConnectSession(a, s); err != nil {
+		t.Fatal(err)
 	}
+	requireNotHeld(t, e.ReleaseTunnel(a, s, "service"))
 }
 
-// Phase 19.2 case 7.
-func TestLeasesConnectionGraceAndReconnect(t *testing.T) {
-	for _, reconnect := range []bool{false, true} {
-		t.Run(fmt.Sprint(reconnect), func(t *testing.T) {
-			e, _, c := ownedEngine(t, nil, savedCommand())
-			a, s := session(t, e, "adapter")
-			l := openTestLease(t, e, a, s)
-			readyOwned(t, e, "service")
-			if err := e.DisconnectSession(a, s); err != nil {
-				t.Fatal(err)
-			}
-			c.Advance(DisconnectGrace - time.Nanosecond)
-			if err := e.ExpireLeases(); err != nil {
-				t.Fatal(err)
-			}
-			requireRunning(t, e, "service", true)
-			if reconnect {
-				if _, err := e.ConnectSession(a, s); err != nil {
-					t.Fatal(err)
-				}
-			}
-			c.Advance(time.Nanosecond)
-			if err := e.ExpireLeases(); err != nil {
-				t.Fatal(err)
-			}
-			requireRunning(t, e, "service", reconnect)
-			if reconnect {
-				if _, err := e.RenewLease(a, s, api.RenewLeaseParams{ID: l.ID}); err != nil {
-					t.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
-// Phase 19.2 case 8, with fake OS identities: Unix survivor and Windows job death.
-func TestLeasesDaemonRestartRecovery(t *testing.T) {
+// Fake OS identities: Unix survivor and Windows job death.
+func TestDaemonRestartRecovery(t *testing.T) {
 	for _, tc := range []struct {
-		name                   string
-		expired, alive, pinned bool
+		name                    string
+		detached, alive, pinned bool
 	}{
-		{"expired orphan", true, true, false}, {"surviving orphan", false, true, false}, {"OS killed child", false, false, false}, {"expired pinned orphan", true, true, true},
+		{"released orphan", false, true, false}, {"detached orphan", true, true, false}, {"OS killed child", true, false, false}, {"released pinned orphan", false, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stops := 0
-			e, r, c := ownedEngine(t, func(opts *Options) {
-				now := opts.Clock.Now()
-				expiry := now.Add(time.Hour)
-				if tc.expired {
-					expiry = now.Add(-time.Second)
-				}
-				st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Leases: []model.Lease{{ID: "ls_old", TunnelID: "service", Holder: api.Actor{Kind: "cli", Name: "adapter"}, Session: "old-session", CreatedAt: now.Add(-time.Hour), ExpiresAt: expiry, StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{"service": {Pinned: tc.pinned, LeaseStarted: true}}}
+			e, r, _ := ownedEngine(t, func(opts *Options) {
+				holder := api.Actor{Kind: "cli", Name: "adapter"}
+				st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Owners: map[string]corestate.RuntimeOwner{"service": {Pinned: tc.pinned, Started: true, Holder: &holder, Session: "old-session", Detached: tc.detached}}}
 				if err := (corestate.RuntimeStore{Path: filepath.Join(opts.StateDir, "runtime.json")}).Save(st); err != nil {
 					t.Fatal(err)
 				}
@@ -370,32 +292,17 @@ func TestLeasesDaemonRestartRecovery(t *testing.T) {
 				}
 				opts.StopProcess = func(int, string, time.Duration) error { stops++; return nil }
 			}, savedCommand())
-			wantAlive := tc.alive && (!tc.expired || tc.pinned)
+			wantAlive := tc.alive && (tc.detached || tc.pinned)
 			if e.hasOrphan("service") != wantAlive {
 				t.Fatalf("orphan retained=%v want=%v", e.hasOrphan("service"), wantAlive)
-			}
-			if got := e.ListLeases(api.Actor{}, "", false); (len(got) == 0) != tc.expired {
-				t.Fatalf("restored leases=%+v", got)
 			}
 			select {
 			case <-r.started:
 				t.Fatal("restart respawned a tunnel")
 			default:
 			}
-			if !tc.expired && tc.alive {
-				if _, err := e.ConnectSession(api.Actor{Kind: "cli", Name: "adapter"}, "old-session"); err != nil {
-					t.Fatal(err)
-				}
-				c.Advance(time.Hour)
-				if err := e.ExpireLeases(); err != nil {
-					t.Fatal(err)
-				}
-				if e.hasOrphan("service") {
-					t.Fatal("expiry left surviving child")
-				}
-			}
 			wantStops := 0
-			if tc.alive && !tc.pinned {
+			if tc.alive && !tc.detached && !tc.pinned {
 				wantStops = 1
 			}
 			if stops != wantStops {
@@ -405,31 +312,16 @@ func TestLeasesDaemonRestartRecovery(t *testing.T) {
 	}
 }
 
-func TestLeasesRenewLimitsAndHolderIsolation(t *testing.T) {
-	e, _, c := ownedEngine(t, nil, savedCommand())
+func TestReleaseHolderIsolation(t *testing.T) {
+	e, _, _ := ownedEngine(t, nil, savedCommand())
 	a, s := session(t, e, "a")
 	b, u := session(t, e, "b")
-	for _, ttl := range []string{"-1m", "0s", "8h1s", "bad"} {
-		if _, err := e.OpenLease(a, s, api.OpenLeaseParams{ID: "service", TTL: ttl}); err == nil {
-			t.Fatalf("accepted %q", ttl)
-		}
-	}
-	l := openTestLease(t, e, a, s)
+	openTestTunnel(t, e, a, s)
 	readyOwned(t, e, "service")
-	if err := e.CloseLease(b, u, l.ID); err == nil {
-		t.Fatal("released another holder's lease")
+	if err := e.ReleaseTunnel(b, u, "service"); err == nil {
+		t.Fatal("released another holder's tunnel")
 	}
-	if _, err := e.RenewLease(b, u, api.RenewLeaseParams{ID: l.ID}); err == nil {
-		t.Fatal("renewed another holder's lease")
-	}
-	c.Advance(29 * time.Minute)
-	renewed, err := e.RenewLease(a, s, api.RenewLeaseParams{ID: l.ID, TTL: "8h"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !renewed.ExpiresAt.Equal(c.Now().Add(MaxLeaseTTL)) {
-		t.Fatalf("renewed %+v", renewed)
-	}
+	requireRunning(t, e, "service", true)
 	if _, err := e.ConnectSession(b, s); err == nil {
 		t.Fatal("another actor reused session")
 	}
@@ -466,7 +358,7 @@ func TestEphemeralSaveKeepsProcessAndPromoteIsNotStale(t *testing.T) {
 			promoted = v
 		}
 	}
-	if promoted.Status.Stale || promoted.Status.PID != before.Status.PID || promoted.Status.State != supervisor.StateRunning || promoted.Owner.Ephemeral || promoted.Owner.Leases != 1 {
+	if promoted.Status.Stale || promoted.Status.PID != before.Status.PID || promoted.Status.State != supervisor.StateRunning || promoted.Owner.Ephemeral || promoted.Owner.Holder == nil {
 		t.Fatalf("promoted=%+v before=%+v", promoted, before)
 	}
 	select {
@@ -479,14 +371,14 @@ func TestEphemeralSaveKeepsProcessAndPromoteIsNotStale(t *testing.T) {
 		t.Fatalf("promoted saved=%+v %v", cfg, err)
 	}
 	st, err := e.runtimeStore.Load()
-	if err != nil || len(st.Ephemeral) != 0 || st.Leases[0].TunnelID != id {
+	if err != nil || len(st.Ephemeral) != 0 || st.Owners[id].Holder == nil {
 		t.Fatalf("runtime=%+v %v", st, err)
 	}
 	recs, err := e.records.List()
 	if err != nil || len(recs) != 1 || recs[0].TunnelID != id {
 		t.Fatalf("records=%+v %v", recs, err)
 	}
-	if err := e.CloseLease(a, s, result.Lease.ID); err != nil {
+	if err := e.ReleaseTunnel(a, s, id); err != nil {
 		t.Fatal(err)
 	}
 	requireRunning(t, e, id, false)
@@ -516,7 +408,7 @@ func TestEphemeralRemovedOnStopAndFailure(t *testing.T) {
 					}
 				}
 			} else {
-				if err := e.CloseLease(a, s, result.Lease.ID); err != nil {
+				if err := e.ReleaseTunnel(a, s, result.ID); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -542,13 +434,13 @@ func (r inspectRunner) Start(p supervisor.SpawnRequest) (supervisor.Process, err
 	}
 	return r.inner.Start(p)
 }
-func TestEphemeralPersistsDefinitionAndLeaseBeforeSpawn(t *testing.T) {
+func TestEphemeralPersistsDefinitionAndHolderBeforeSpawn(t *testing.T) {
 	checked := make(chan error, 1)
 	e, r, _ := ownedEngine(t, func(opts *Options) {
 		path := filepath.Join(opts.StateDir, "runtime.json")
 		opts.Runner = inspectRunner{opts.Runner, func(supervisor.SpawnRequest) error {
 			st, err := (corestate.RuntimeStore{Path: path}).Load()
-			if err == nil && (len(st.Ephemeral) != 1 || len(st.Leases) != 1 || st.Leases[0].TunnelID != st.Ephemeral[0].ID) {
+			if err == nil && (len(st.Ephemeral) != 1 || st.Owners[st.Ephemeral[0].ID].Holder == nil) {
 				err = fmt.Errorf("not persisted before spawn: %+v", st)
 			}
 			checked <- err
@@ -660,7 +552,7 @@ func TestOwnershipJSONShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"owner":{"pinned":true,"ephemeral":false,"leases":0}`) {
+	if !strings.Contains(string(data), `"owner":{"pinned":true,"ephemeral":false}`) {
 		t.Fatalf("owner contract: %s", data)
 	}
 	if !e.Statuses()[0].Owner.Pinned {

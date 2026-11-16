@@ -20,7 +20,6 @@ type Endpoint struct {
 }
 
 type Actor = model.Actor
-type Lease = model.Lease
 type TunnelOwner = model.TunnelOwner
 
 type TunnelView struct {

@@ -6,7 +6,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List SSH config aliases, whether they have a tunnel and whether agent policy allows a local forward. Resolved hostnames, users and key paths are withheld.",
+    "description": "List SSH config aliases, whether they have a tunnel and whether MCP policy allows a local forward. Resolved hostnames, users and key paths are withheld.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -90,6 +90,11 @@
           "type": "string"
         },
         "request_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "save_as": {
+          "maxLength": 64,
           "minLength": 1,
           "type": "string"
         },
@@ -254,11 +259,6 @@
             }
           ]
         },
-        "ttl_seconds": {
-          "maximum": 2147483647,
-          "minimum": 1,
-          "type": "integer"
-        },
         "tunnel_id": {
           "minLength": 1,
           "type": "string"
@@ -333,17 +333,17 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Release your lease when finished. Idempotent. A tunnel pinned by a person or held by another lease keeps running.",
+    "description": "Close a tunnel you opened, when finished. Idempotent. A tunnel pinned by a person or still used by another client keeps running.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
-        "lease_id": {
+        "tunnel_id": {
           "minLength": 1,
           "type": "string"
         }
       },
       "required": [
-        "lease_id"
+        "tunnel_id"
       ],
       "type": "object"
     },
@@ -376,7 +376,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Get one tunnel with state, endpoints, ownership, findings and your leases. Command previews and missing secret names are withheld by the daemon for agents.",
+    "description": "Get one tunnel with state, endpoints, ownership, findings. Command previews and missing secret names are withheld from MCP clients by the daemon.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -473,13 +473,14 @@
         "owner": {
           "additionalProperties": false,
           "properties": {
+            "client": {
+              "type": "string"
+            },
             "ephemeral": {
               "type": "boolean"
             },
-            "leases": {
-              "maximum": 1000000,
-              "minimum": 0,
-              "type": "integer"
+            "opened_via_mcp": {
+              "type": "boolean"
             },
             "pinned": {
               "type": "boolean"
@@ -488,7 +489,8 @@
           "required": [
             "pinned",
             "ephemeral",
-            "leases"
+            "opened_via_mcp",
+            "client"
           ],
           "type": "object"
         },
@@ -503,26 +505,6 @@
         },
         "usable_without_approval": {
           "type": "boolean"
-        },
-        "your_leases": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "expires_at": {
-                "type": "string"
-              },
-              "lease_id": {
-                "minLength": 1,
-                "type": "string"
-              }
-            },
-            "required": [
-              "lease_id",
-              "expires_at"
-            ],
-            "type": "object"
-          },
-          "type": "array"
         }
       },
       "required": [
@@ -536,8 +518,7 @@
         "usable_without_approval",
         "missing_secrets",
         "preview",
-        "findings",
-        "your_leases"
+        "findings"
       ],
       "type": "object"
     }
@@ -628,13 +609,14 @@
               "owner": {
                 "additionalProperties": false,
                 "properties": {
+                  "client": {
+                    "type": "string"
+                  },
                   "ephemeral": {
                     "type": "boolean"
                   },
-                  "leases": {
-                    "maximum": 1000000,
-                    "minimum": 0,
-                    "type": "integer"
+                  "opened_via_mcp": {
+                    "type": "boolean"
                   },
                   "pinned": {
                     "type": "boolean"
@@ -643,7 +625,8 @@
                 "required": [
                   "pinned",
                   "ephemeral",
-                  "leases"
+                  "opened_via_mcp",
+                  "client"
                 ],
                 "type": "object"
               },
@@ -763,7 +746,7 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Open a tunnel for your task. Pass tunnel_id to use a saved one, or spec to create a temporary one. You get a lease: call tunnel_close when finished. Public tunnels always need approval from a person. Retry with the same request_id, never a new one, to avoid duplicates.",
+    "description": "Open a tunnel for your task. Pass tunnel_id to use a saved one, or spec to create a temporary one. With spec, add save_as (a name) to also keep it as a saved tunnel once it is ready; saving needs approval from a person, and if it is not granted the tunnel stays temporary (retry with tunnel_save). Omit save_as for a temporary-only tunnel. The tunnel keeps running until you call tunnel_close, so close it when finished. Public tunnels always need approval from a person. Retry with the same request_id, never a new one, to avoid duplicates.",
     "inputSchema": {
       "additionalProperties": false,
       "oneOf": [
@@ -794,6 +777,11 @@
           "type": "string"
         },
         "request_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "save_as": {
+          "maxLength": 64,
           "minLength": 1,
           "type": "string"
         },
@@ -958,11 +946,6 @@
             }
           ]
         },
-        "ttl_seconds": {
-          "maximum": 2147483647,
-          "minimum": 1,
-          "type": "integer"
-        },
         "tunnel_id": {
           "minLength": 1,
           "type": "string"
@@ -1022,10 +1005,6 @@
         "expires_at": {
           "type": "string"
         },
-        "lease_id": {
-          "minLength": 1,
-          "type": "string"
-        },
         "message": {
           "type": "string"
         },
@@ -1073,52 +1052,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Extend your lease within the daemon's maximum TTL. A revoked or expired lease cannot be renewed.",
-    "inputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "lease_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "ttl_seconds": {
-          "maximum": 2147483647,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "lease_id"
-      ],
-      "type": "object"
-    },
-    "name": "tunnel_renew",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "expires_at": {
-          "type": "string"
-        },
-        "lease_id": {
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "lease_id",
-        "expires_at"
-      ],
-      "type": "object"
-    }
-  },
-  {
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false,
-      "readOnlyHint": false
-    },
-    "description": "Ask a person to keep your temporary tunnel as a saved definition. Always requires approval. Retry this same call after the person approves; agents cannot set profiles or start-on-launch.",
+    "description": "Ask a person to keep your temporary tunnel as a saved definition. Always requires approval. Retry this same call after the person approves; MCP clients cannot set profiles or start-on-launch.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1179,10 +1113,6 @@
           "type": "array"
         },
         "expires_at": {
-          "type": "string"
-        },
-        "lease_id": {
-          "minLength": 1,
           "type": "string"
         },
         "message": {
@@ -1292,10 +1222,6 @@
           "type": "array"
         },
         "expires_at": {
-          "type": "string"
-        },
-        "lease_id": {
-          "minLength": 1,
           "type": "string"
         },
         "message": {

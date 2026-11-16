@@ -36,15 +36,11 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err := s.agentBuilt(actor, session, p.Tunnel); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	if err := s.agentLeaseCapacity(actor, session); err != nil {
+	if err := s.agentTunnelCapacity(actor, session); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
 	if p.Detached && actor.Kind != "cli" && actor.Kind != "gui" {
 		return api.RunEphemeralResult{}, s.denySession(actor, session, "", "")
-	}
-	ttl, err := s.leaseTTL(actor, p.TTL)
-	if err != nil {
-		return api.RunEphemeralResult{}, err
 	}
 	key := approvalOperationKey(ctx, requestKey(struct {
 		Method string
@@ -77,6 +73,7 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	}
 	var auto []int
 	if !prepared {
+		var err error
 		auto, err = s.allocatePorts(&t, nil)
 		if err != nil {
 			return api.RunEphemeralResult{}, err
@@ -99,13 +96,9 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 		return api.RunEphemeralResult{}, err
 	}
 	st := s.runtimeSnapshot()
-	l := api.Lease{ID: randomID("ls_"), TunnelID: t.ID, Holder: actor, Session: session, CreatedAt: s.clock.Now(), ExpiresAt: s.clock.Now().Add(ttl), StartedIt: true, Detached: p.Detached}
-	if p.Detached && p.TTL == "" {
-		l.ExpiresAt = time.Time{}
-	}
+	holder := actor
 	st.Ephemeral = append(st.Ephemeral, t)
-	st.Leases = append(st.Leases, l)
-	st.Owners[t.ID] = corestate.RuntimeOwner{LeaseStarted: true}
+	st.Owners[t.ID] = corestate.RuntimeOwner{Started: true, Holder: &holder, Session: session, Detached: p.Detached || actor.Kind == "mcp"}
 	if len(auto) > 0 {
 		st.AutoPorts[t.ID] = auto
 	}
@@ -115,11 +108,7 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 	if err := s.applyWhileAlive(func() { s.setManagerConfig(cfg) }); err != nil {
 		return api.RunEphemeralResult{}, err
 	}
-	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelRunEphemeral, TunnelID: t.ID, LeaseID: l.ID, Fingerprint: fingerprint, Decision: audit.Allow, Result: audit.ResultOK}); err != nil {
-		_ = s.removeEphemeralLocked(t.ID)
-		return api.RunEphemeralResult{}, err
-	}
-	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.LeaseOpen, TunnelID: t.ID, LeaseID: l.ID, Fingerprint: fingerprint, Result: audit.ResultOK}); err != nil {
+	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.TunnelRunEphemeral, TunnelID: t.ID, Fingerprint: fingerprint, Decision: audit.Allow, Result: audit.ResultOK}); err != nil {
 		_ = s.removeEphemeralLocked(t.ID)
 		return api.RunEphemeralResult{}, err
 	}
@@ -127,7 +116,7 @@ func (s *Engine) RunEphemeralContext(ctx context.Context, actor api.Actor, sessi
 		_ = s.removeEphemeralLocked(t.ID)
 		return api.RunEphemeralResult{}, err
 	}
-	return api.RunEphemeralResult{ID: t.ID, Lease: l}, nil
+	return api.RunEphemeralResult{ID: t.ID}, nil
 }
 
 func (s *Engine) removeEphemeralLocked(id string) error {
@@ -148,15 +137,6 @@ func (s *Engine) removeEphemeralLocked(id string) error {
 	delete(s.portHistory, id)
 	delete(st.AutoPorts, id)
 	delete(st.Owners, id)
-	var revocations []audit.Event
-	for i := range st.Leases {
-		if st.Leases[i].TunnelID == id {
-			if !st.Leases[i].Revoked {
-				revocations = append(revocations, audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.LeaseRevoke, TunnelID: id, LeaseID: st.Leases[i].ID, Result: audit.ResultRevoked})
-			}
-			st.Leases[i].Revoked = true
-		}
-	}
 	if err := s.commitRuntime(st); err != nil {
 		return err
 	}
@@ -164,15 +144,11 @@ func (s *Engine) removeEphemeralLocked(id string) error {
 	if err := s.applyWhileAlive(func() { s.setManagerConfig(s.merged(cfg)) }); err != nil {
 		return err
 	}
-	var auditErr error
-	for _, event := range revocations {
-		auditErr = errors.Join(auditErr, s.recordAudit(event))
-	}
-	return errors.Join(auditErr, s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.TunnelStopEphemeral, TunnelID: id, Result: audit.ResultOK}))
+	return errors.Join(s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.TunnelStopEphemeral, TunnelID: id, Result: audit.ResultOK}))
 }
 
 // PromoteTunnel renames the supervisor entry in place, preserving process,
-// fingerprint and leases. A write-ahead intent repairs crashes between files.
+// fingerprint and owner. A write-ahead intent repairs crashes between files.
 func (s *Engine) PromoteTunnel(p api.PromoteTunnelParams) (string, error) {
 	return s.PromoteTunnelFor(api.Actor{Kind: "gui", Name: "person"}, "", p)
 }
@@ -217,13 +193,7 @@ func (s *Engine) PromoteTunnelFor(actor api.Actor, session string, p api.Promote
 		if err := s.validSession(actor, session); err != nil {
 			return "", err
 		}
-		owns := false
-		for _, l := range st.Leases {
-			if l.TunnelID == p.ID && ownsLease(l, actor, session) && leaseAlive(l, s.clock.Now()) {
-				owns = true
-			}
-		}
-		if !owns {
+		if !holds(st.Owners[p.ID], actor, session) {
 			return "", s.denySession(actor, session, p.ID, "")
 		}
 	}
@@ -292,11 +262,6 @@ func remapRuntime(st *corestate.Runtime, from, to string) {
 		st.Owners[to] = o
 		delete(st.Owners, from)
 	}
-	for i := range st.Leases {
-		if st.Leases[i].TunnelID == from {
-			st.Leases[i].TunnelID = to
-		}
-	}
 	delete(st.AutoPorts, from)
 	delete(st.Promotions, from)
 }
@@ -349,29 +314,24 @@ func (s *Engine) recoverPromotions() {
 
 func (s *Engine) recoverRuntime() error {
 	// Existing Unix children remain represented as orphans (never spawn a second
-	// process). Windows job objects leave no survivors; saved leases stay stopped.
+	// process). Windows job objects leave no survivors; saved tunnels stay stopped.
 	st := s.runtimeSnapshot()
 	for id := range st.Owners {
 		if !s.hasOrphan(id) {
 			delete(st.Owners, id)
 		}
 	}
-	for i := range st.Leases {
-		l := &st.Leases[i]
-		if l.Revoked || l.Detached {
-			continue
-		}
-		// No connection survives a daemon restart. Preserve an earlier disconnect
-		// deadline rather than granting repeated restarts an unlimited extension.
-		until := s.clock.Now().Add(DisconnectGrace)
-		if l.GraceUntil == nil || until.Before(*l.GraceUntil) {
-			l.GraceUntil = &until
+	for id, owner := range st.Owners {
+		// No connection survives a daemon restart, so only detached holders remain.
+		if owner.Holder != nil && !owner.Detached {
+			owner.Holder, owner.Session = nil, ""
+			st.Owners[id] = owner
 		}
 	}
 	if err := s.commitRuntime(st); err != nil {
 		return err
 	}
-	return s.ExpireLeases()
+	return s.Maintain()
 }
 
 func parsePortRange(value string) (int, int, error) {

@@ -255,7 +255,7 @@ func TestOfflineDocumentationCommands(t *testing.T) {
 	}{
 		{[]string{"docs"}, 0, "quickstart"},
 		{[]string{"docs", "quickstart"}, 0, "# Quick start"},
-		{[]string{"docs", "agents"}, 0, "# Agent guide"},
+		{[]string{"docs", "agents"}, 0, "# MCP guide"},
 		{[]string{"docs", "troubleshooting", "--json"}, 0, `"apiVersion":2`},
 		{[]string{"docs", "missing"}, 2, "unknown documentation topic"},
 		{[]string{"docs", "../../README"}, 2, "unknown documentation topic"},

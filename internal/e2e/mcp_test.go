@@ -197,23 +197,22 @@ func mcpTool(t *testing.T, session *mcp.ClientSession, name string, args map[str
 
 func (f mcpSSHFixture) openArgs(request string) map[string]any {
 	return map[string]any{
-		"request_id": request, "purpose": "Verify private SSH echo forwarding", "wait_seconds": 20, "ttl_seconds": 60,
+		"request_id": request, "purpose": "Verify private SSH echo forwarding", "wait_seconds": 20,
 		"spec": map[string]any{"type": "ssh", "host": "mcp-test", "forwards": []any{
 			map[string]any{"kind": "L", "listen_port": "auto", "target": f.env.echoAddr},
 		}},
 	}
 }
 
-func mcpReady(t *testing.T, result map[string]any) (lease, tunnelID, listen string) {
+func mcpReady(t *testing.T, result map[string]any) (tunnelID, listen string) {
 	t.Helper()
 	if result["status"] != "ready" {
 		t.Fatalf("open did not become ready: %+v", result)
 	}
-	lease, _ = result["lease_id"].(string)
 	tunnelID, _ = result["tunnel_id"].(string)
 	endpoints, ok := result["endpoints"].([]any)
-	if lease == "" || tunnelID == "" || !ok || len(endpoints) != 1 {
-		t.Fatalf("missing lease, tunnel, or endpoint: %+v", result)
+	if tunnelID == "" || !ok || len(endpoints) != 1 {
+		t.Fatalf("missing tunnel or endpoint: %+v", result)
 	}
 	endpoint, ok := endpoints[0].(map[string]any)
 	if !ok {
@@ -227,14 +226,14 @@ func mcpReady(t *testing.T, result map[string]any) (lease, tunnelID, listen stri
 	if got, err := echoThrough(listen); err != nil || got != "ping" {
 		t.Fatalf("MCP SSH echo: %q, %v", got, err)
 	}
-	return lease, tunnelID, listen
+	return tunnelID, listen
 }
 
-func (f mcpSSHFixture) running(t *testing.T, id string, leases int, pinned bool) supervisor.Status {
+func (f mcpSSHFixture) running(t *testing.T, id string, held, pinned bool) supervisor.Status {
 	t.Helper()
 	for _, st := range f.engine.Statuses() {
 		if st.ID == id {
-			if st.State != supervisor.StateRunning || st.PID <= 0 || st.Owner.Leases != leases || st.Owner.Pinned != pinned {
+			if st.State != supervisor.StateRunning || st.PID <= 0 || (st.Owner.Holder != nil) != held || st.Owner.Pinned != pinned {
 				t.Fatalf("unexpected running ownership: %+v", st)
 			}
 			if _, err := platform.ProcessIdentity(st.PID); err != nil {
@@ -254,9 +253,9 @@ func (f mcpSSHFixture) stopped(t *testing.T, id, listen string, pid int) {
 			t.Fatalf("tunnel remains active after release: %+v", st)
 		}
 	}
-	for _, lease := range f.engine.ListLeases(api.Actor{}, "", false) {
-		if lease.TunnelID == id && !lease.Revoked {
-			t.Fatalf("live lease remains after release: %+v", lease)
+	for _, st := range f.engine.Statuses() {
+		if st.ID == id && st.Owner.Holder != nil {
+			t.Fatalf("holder remains after release: %+v", st.Owner)
 		}
 	}
 	if _, err := platform.ProcessIdentity(pid); err == nil {
@@ -268,63 +267,67 @@ func (f mcpSSHFixture) stopped(t *testing.T, id, listen string, pid int) {
 	}
 }
 
-func (f mcpSSHFixture) lease(t *testing.T, id string) api.Lease {
+// holder returns the client that holds a tunnel; agent holds never expire.
+func (f mcpSSHFixture) holder(t *testing.T, id string) api.Actor {
 	t.Helper()
-	for _, lease := range f.engine.ListLeases(api.Actor{}, "", false) {
-		if lease.ID == id {
-			return lease
+	for _, st := range f.engine.Statuses() {
+		if st.ID == id && st.Owner.Holder != nil {
+			return *st.Owner.Holder
 		}
 	}
-	t.Fatalf("lease %s not found", id)
-	return api.Lease{}
+	t.Fatalf("no holder on %s", id)
+	return api.Actor{}
 }
 
 func TestMCPSSHLifecycle(t *testing.T) {
 	f := newMCPSSHFixture(t)
-	t.Run("open retry renew close", func(t *testing.T) {
+	t.Run("open retry close", func(t *testing.T) {
 		session, _ := f.connect(t)
 		args := f.openArgs("private-ssh-lifecycle")
-		lease, id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", args))
-		st := f.running(t, id, 1, false)
+		id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", args))
+		st := f.running(t, id, true, false)
+		if holder := f.holder(t, id); holder.Kind != "mcp" {
+			t.Fatalf("agent must hold its tunnel: %+v", holder)
+		}
 		// The wrapper must have exec'd this very SSH process, not merely been
 		// configured as a preview tool or invoked for an unrelated SSH query.
 		pid, err := os.ReadFile(f.sshUsed)
 		if err != nil || string(pid) != strconv.Itoa(st.PID) {
 			t.Fatalf("isolated SSH wrapper not used for PID %d: %q, %v", st.PID, pid, err)
 		}
-		again, againID, againListen := mcpReady(t, mcpTool(t, session, "tunnel_open", args))
-		if again != lease || againID != id || againListen != listen || f.running(t, id, 1, false).PID != st.PID {
-			t.Fatalf("same request spawned another lease/process: %s/%s/%s", again, againID, againListen)
+		againID, againListen := mcpReady(t, mcpTool(t, session, "tunnel_open", args))
+		if againID != id || againListen != listen || f.running(t, id, true, false).PID != st.PID {
+			t.Fatalf("same request spawned another process: %s/%s", againID, againListen)
 		}
-		before := f.lease(t, lease)
-		f.clock.advance(5 * time.Second)
-		renewed := mcpTool(t, session, "tunnel_renew", map[string]any{"lease_id": lease, "ttl_seconds": 120})
-		after := f.lease(t, lease)
-		if renewed["lease_id"] != lease || !after.ExpiresAt.Equal(f.clock.Now().Add(120*time.Second)) || !after.ExpiresAt.After(before.ExpiresAt) {
-			t.Fatalf("lease not renewed: before=%+v after=%+v result=%+v", before, after, renewed)
+		// Time passing never stops an agent tunnel.
+		f.clock.advance(48 * time.Hour)
+		if err := f.engine.Maintain(); err != nil {
+			t.Fatal(err)
 		}
-		if f.running(t, id, 1, false).PID != st.PID {
-			t.Fatal("renewal replaced the SSH process")
+		f.running(t, id, true, false)
+		got := mcpTool(t, session, "tunnel_get", map[string]any{"tunnel_id": id})
+		if owner, _ := got["owner"].(map[string]any); owner["opened_via_mcp"] != true || owner["client"] == "" {
+			t.Fatalf("agent marker missing: %+v", got["owner"])
 		}
-		closed := mcpTool(t, session, "tunnel_close", map[string]any{"lease_id": lease})
+		closed := mcpTool(t, session, "tunnel_close", map[string]any{"tunnel_id": id})
 		if closed["stopped"] != true {
 			t.Fatalf("close did not report stopped: %+v", closed)
 		}
 		f.stopped(t, id, listen, st.PID)
-		mcpTool(t, session, "tunnel_close", map[string]any{"lease_id": lease})
+		mcpTool(t, session, "tunnel_close", map[string]any{"tunnel_id": id})
 		batch, err := audit.NewReader(f.state).Read(0, audit.Filter{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, action := range []audit.Action{audit.LeaseOpen, audit.LeaseRenew, audit.LeaseClose} {
+		for _, action := range []audit.Action{audit.TunnelRunEphemeral, audit.TunnelRelease} {
 			found := false
 			for _, event := range batch.Events {
-				if event.Action == action && event.LeaseID == lease && event.Actor.Kind == audit.ActorMCP {
+				if event.Action == action && event.TunnelID == id && event.Actor.Kind == audit.ActorMCP {
 					found = true
 				}
 			}
 			if !found {
-				t.Errorf("missing real MCP audit event %s for %s", action, lease)
+				t.Errorf("missing real MCP audit event %s for %s", action, id)
 			}
 		}
 	})
@@ -339,15 +342,15 @@ func TestMCPSSHLifecycle(t *testing.T) {
 		if _, err := f.engine.WaitReady(ctx, "saved"); err != nil {
 			t.Fatalf("start pinned saved SSH: %v, logs=%v", err, f.engine.Logs("saved"))
 		}
-		st := f.running(t, "saved", 0, true)
+		st := f.running(t, "saved", false, true)
 		session, _ := f.connect(t)
-		lease, id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", map[string]any{
+		id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", map[string]any{
 			"request_id": "pinned-saved", "purpose": "Borrow the person's existing SSH forward", "tunnel_id": "saved", "wait_seconds": 20,
 		}))
-		f.running(t, id, 1, true)
-		closed := mcpTool(t, session, "tunnel_close", map[string]any{"lease_id": lease})
-		if closed["stopped"] != false || f.running(t, id, 0, true).PID != st.PID {
-			t.Fatalf("closing borrowed lease stopped pinned process: %+v", closed)
+		f.running(t, id, false, true)
+		closed := mcpTool(t, session, "tunnel_close", map[string]any{"tunnel_id": id})
+		if closed["stopped"] != false || f.running(t, id, false, true).PID != st.PID {
+			t.Fatalf("closing borrowed tunnel stopped pinned process: %+v", closed)
 		}
 		if got, err := echoThrough(listen); err != nil || got != "ping" {
 			t.Fatalf("pinned forward stopped: %q, %v", got, err)
@@ -358,83 +361,44 @@ func TestMCPSSHLifecycle(t *testing.T) {
 		f.stopped(t, id, listen, st.PID)
 	})
 
-	t.Run("two leases share saved tunnel", func(t *testing.T) {
+	t.Run("two agents share a saved tunnel, close stops it", func(t *testing.T) {
 		first, _ := f.connect(t)
 		second, _ := f.connect(t)
 		args := map[string]any{"request_id": "shared-saved", "purpose": "Share saved private SSH", "tunnel_id": "saved", "wait_seconds": 20}
-		lease1, id, listen := mcpReady(t, mcpTool(t, first, "tunnel_open", args))
-		st := f.running(t, id, 1, false)
+		id, listen := mcpReady(t, mcpTool(t, first, "tunnel_open", args))
+		st := f.running(t, id, true, false)
 		// The same request ID in another adapter is scoped to a different
 		// daemon session, even though initialize uses the same display name.
-		lease2, id2, listen2 := mcpReady(t, mcpTool(t, second, "tunnel_open", args))
-		if lease1 == lease2 || id2 != id || listen2 != listen || f.running(t, id, 2, false).PID != st.PID {
-			t.Fatalf("saved process not shared: %s/%s %s/%s", lease1, lease2, id, id2)
+		id2, listen2 := mcpReady(t, mcpTool(t, second, "tunnel_open", args))
+		if id2 != id || listen2 != listen || f.running(t, id, true, false).PID != st.PID {
+			t.Fatalf("saved process not shared: %s/%s", id, id2)
 		}
-		closed := mcpTool(t, first, "tunnel_close", map[string]any{"lease_id": lease1})
-		if closed["stopped"] != false || f.running(t, id, 1, false).PID != st.PID {
-			t.Fatalf("first close stopped another holder's process: %+v", closed)
-		}
-		if got, err := echoThrough(listen); err != nil || got != "ping" {
-			t.Fatalf("shared forward stopped: %q, %v", got, err)
-		}
-		mcpTool(t, second, "tunnel_close", map[string]any{"lease_id": lease2})
-		f.stopped(t, id, listen, st.PID)
-	})
-
-	t.Run("TTL expiry stops private SSH", func(t *testing.T) {
-		session, _ := f.connect(t)
-		lease, id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", f.openArgs("expire-private-ssh")))
-		st := f.running(t, id, 1, false)
-		f.clock.advance(f.lease(t, lease).ExpiresAt.Sub(f.clock.Now()) - time.Nanosecond)
-		if err := f.engine.ExpireLeases(); err != nil {
-			t.Fatal(err)
-		}
-		f.running(t, id, 1, false)
-		f.clock.advance(time.Nanosecond)
-		if err := f.engine.ExpireLeases(); err != nil {
-			t.Fatal(err)
+		closed := mcpTool(t, first, "tunnel_close", map[string]any{"tunnel_id": id})
+		if closed["stopped"] != true {
+			t.Fatalf("close should stop the tunnel for every agent: %+v", closed)
 		}
 		f.stopped(t, id, listen, st.PID)
 	})
 
-	t.Run("adapter disconnect grace stops private SSH", func(t *testing.T) {
+	t.Run("adapter disconnect leaves tunnel running until closed", func(t *testing.T) {
 		session, adapter := f.connect(t)
-		args := f.openArgs("disconnect-private-ssh")
-		args["ttl_seconds"] = 3600 // Isolate disconnect grace from TTL expiry.
-		lease, id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", args))
-		st := f.running(t, id, 1, false)
-		// Closing the daemon connection models an adapter process dying: do
-		// not call tunnel_close, and retain the MCP session while it drops.
+		id, listen := mcpReady(t, mcpTool(t, session, "tunnel_open", f.openArgs("disconnect-private-ssh")))
+		st := f.running(t, id, true, false)
+		// Closing the daemon connection models an adapter process dying. There
+		// is no grace period and no cleanup: the tunnel stays, marked as an
+		// agent's, until someone closes it.
 		if err := adapter.Close(); err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.NewTimer(5 * time.Second)
-		defer deadline.Stop()
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-		var claim api.Lease
-		for claim.GraceUntil == nil {
-			claim = f.lease(t, lease)
-			if claim.GraceUntil != nil {
-				break
-			}
-			select {
-			case <-deadline.C:
-				t.Fatal("adapter disconnect did not start grace")
-			case <-ticker.C:
-			}
-		}
-		if !claim.GraceUntil.Equal(f.clock.Now().Add(engine.DisconnectGrace)) {
-			t.Fatalf("unexpected disconnect deadline: %+v", claim)
-		}
-		f.clock.advance(engine.DisconnectGrace - time.Nanosecond)
-		if err := f.engine.ExpireLeases(); err != nil {
+		f.clock.advance(time.Hour)
+		if err := f.engine.Maintain(); err != nil {
 			t.Fatal(err)
 		}
-		f.running(t, id, 1, false)
-		f.clock.advance(time.Nanosecond)
-		if err := f.engine.ExpireLeases(); err != nil {
-			t.Fatal(err)
+		f.running(t, id, true, false)
+		other, _ := f.connect(t)
+		closed := mcpTool(t, other, "tunnel_close", map[string]any{"tunnel_id": id})
+		if closed["stopped"] != true {
+			t.Fatalf("a later agent session could not close it: %+v", closed)
 		}
 		f.stopped(t, id, listen, st.PID)
 	})

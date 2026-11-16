@@ -9,7 +9,7 @@ import (
 )
 
 func TestAgentDefaults(t *testing.T) {
-	want := Agent{Enabled: true, PortRange: "20000-20999", DefaultTTL: "30m", MaxTTL: "8h", AllowTunnels: []string{"*"}, AllowSSHHosts: []string{"*"}, Public: "ask"}
+	want := Agent{Enabled: true, PortRange: "20000-20999", AllowTunnels: []string{"*"}, AllowSSHHosts: []string{"*"}, Public: "ask"}
 	for _, input := range []string{"", "shortcut = 'Ctrl+K'\n", "[agent]\n", "[agent]\npublic = 'ask'\n"} {
 		t.Run(input, func(t *testing.T) {
 			p := filepath.Join(t.TempDir(), "settings.toml")
@@ -31,7 +31,7 @@ func TestAgentDefaults(t *testing.T) {
 func TestAgentRoundTrip(t *testing.T) {
 	for _, agent := range []Agent{
 		DefaultAgent(),
-		{Enabled: false, PortRange: "31000-31009", DefaultTTL: "5m", MaxTTL: "2h", AllowTunnels: []string{"dev-*", "prod-db"}, AllowSSHHosts: []string{"staging", "bastion"}, Public: "deny"},
+		{Enabled: false, PortRange: "31000-31009", AllowTunnels: []string{"dev-*", "prod-db"}, AllowSSHHosts: []string{"staging", "bastion"}, Public: "deny"},
 	} {
 		t.Run(agent.Public, func(t *testing.T) {
 			updates := false
@@ -48,7 +48,7 @@ func TestAgentRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, key := range []string{"[agent]", "enabled =", "port_range =", "default_ttl =", "max_ttl =", "allow_tunnels =", "allow_ssh_hosts =", "public ="} {
+			for _, key := range []string{"[agent]", "enabled =", "port_range =", "allow_tunnels =", "allow_ssh_hosts =", "public ="} {
 				if !strings.Contains(string(text), key) {
 					t.Errorf("missing %q in %s", key, text)
 				}
@@ -99,12 +99,6 @@ func TestAgentInvalidSettings(t *testing.T) {
 		{"port_range = '20000-65536'", "port_range"},
 		{"port_range = '+1-2'", "port_range"},
 		{"port_range = '20000'", "port_range"},
-		{"default_ttl = 'forever'", "default_ttl"},
-		{"default_ttl = '0s'", "default_ttl"},
-		{"default_ttl = '-1m'", "default_ttl"},
-		{"max_ttl = 'no'", "max_ttl"},
-		{"max_ttl = '10m'", "max_ttl"},
-		{"public = 'allow'", "public"},
 		{"public = 'ASK'", "public"},
 		{"allow_tunnels = ['[']", "allow_tunnels"},
 		{"allow_tunnels = ['']", "allow_tunnels"},
@@ -131,7 +125,7 @@ func TestInvalidAgentSaveLeavesFileUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := DefaultAgent()
-	a.Public = "allow"
+	a.Public = "bogus"
 	if err := Save(p, Settings{Agent: &a}); err == nil {
 		t.Fatal("invalid public policy was saved")
 	}
@@ -149,5 +143,16 @@ func TestAgentPorts(t *testing.T) {
 		if err != nil || first < 1 || last < first || last > 65535 {
 			t.Fatalf("Ports(%q)=%d,%d,%v", input, first, last, err)
 		}
+	}
+}
+
+func TestAgentLegacyTTLKeysAreIgnored(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "settings.toml")
+	if err := os.WriteFile(p, []byte("[agent]\ndefault_ttl = '30m'\nmax_ttl = '8h'\npublic = 'deny'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(p)
+	if err != nil || s.AgentPolicy().Public != "deny" {
+		t.Fatalf("agent=%+v err=%v", s.Agent, err)
 	}
 }

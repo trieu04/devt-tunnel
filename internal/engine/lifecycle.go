@@ -81,13 +81,6 @@ func (s *Engine) Shutdown() {
 			}
 		}
 		snapshot := s.runtimeSnapshot()
-		for _, lease := range snapshot.Leases {
-			if !lease.Revoked {
-				if err := s.recordAudit(audit.Event{Actor: audit.Actor{Kind: audit.ActorDaemon, Name: "daemon"}, Action: audit.LeaseRevoke, TunnelID: lease.TunnelID, LeaseID: lease.ID, Result: audit.ResultRevoked}); err != nil {
-					log.Printf("audit shutdown: %v", err)
-				}
-			}
-		}
 		for _, tunnel := range snapshot.Ephemeral {
 			result := audit.ResultOK
 			if s.hasOrphan(tunnel.ID) {
@@ -113,8 +106,8 @@ func (s *Engine) Active() bool {
 	}
 	s.runtimeMu.RLock()
 	owned := len(s.runtime.Ephemeral) > 0
-	for _, l := range s.runtime.Leases {
-		owned = owned || !l.Revoked
+	for _, owner := range s.runtime.Owners {
+		owned = owned || owner.Holder != nil
 	}
 	s.runtimeMu.RUnlock()
 	return owned || s.orphanCount.Load() > 0 || s.manager.Active()

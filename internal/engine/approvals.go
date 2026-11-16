@@ -66,7 +66,7 @@ func (s *Engine) mutationEnabled(actor api.Actor, session string) error {
 		err := s.denySession(actor, session, "", "")
 		if rpc, ok := err.(*api.Error); ok && rpc.Data.Kind == api.PolicyDenied {
 			rpc.Data.Kind = api.AgentDisabled
-			rpc.Message = "agent access is disabled"
+			rpc.Message = "MCP access is disabled"
 		}
 		return err
 	}
@@ -79,7 +79,7 @@ func (s *Engine) policyDenied(actor api.Actor, id string) error {
 	if err := s.recordAudit(audit.Event{Actor: auditActor(actor), Action: audit.PolicyDeny, TunnelID: id, Decision: audit.Deny, Result: audit.ResultDenied}); err != nil {
 		return err
 	}
-	return api.NewError(api.PolicyDenied, "agent policy denied this operation")
+	return api.NewError(api.PolicyDenied, "MCP policy denied this operation")
 }
 
 func auditActor(actor api.Actor) audit.Actor {
@@ -100,7 +100,7 @@ func (s *Engine) ReadAudit(p api.AuditReadParams) (api.AuditReadResult, error) {
 	if limit < 1 || limit > 1000 {
 		return api.AuditReadResult{}, api.NewError(api.Unknown, "audit limit must be between 1 and 1000")
 	}
-	batch, err := s.auditReader.Read(p.After, audit.Filter{Actor: p.Actor, Tunnel: p.Tunnel, Since: p.Since})
+	batch, err := s.auditReader.Read(p.After, audit.Filter{Actor: p.Actor, ActorKind: audit.ActorKind(p.Kind), Tunnel: p.Tunnel, Since: p.Since})
 	if err != nil {
 		return api.AuditReadResult{}, err
 	}
@@ -219,7 +219,7 @@ func (s *Engine) authorize(actor api.Actor, session string, action policy.Action
 		}
 	}
 	if pending >= MaxPendingApprovalsPerSession {
-		return "", s.denySession(actor, session, t.ID, "agent session has reached its limit of 16 pending approvals")
+		return "", s.denySession(actor, session, t.ID, "MCP session has reached its limit of 16 pending approvals")
 	}
 	if len(s.approvals) >= maxApprovals {
 		return "", api.NewError(api.PolicyDenied, "approval queue is full")

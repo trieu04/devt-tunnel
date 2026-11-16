@@ -44,11 +44,8 @@ const (
 	TunnelDelete        Action = "tunnel.delete"
 	TunnelPromote       Action = "tunnel.promote"
 	TunnelImport        Action = "tunnel.import"
-	LeaseOpen           Action = "lease.open"
-	LeaseRenew          Action = "lease.renew"
-	LeaseClose          Action = "lease.close"
-	LeaseExpire         Action = "lease.expire"
-	LeaseRevoke         Action = "lease.revoke"
+	TunnelOpen          Action = "tunnel.open"
+	TunnelRelease       Action = "tunnel.release"
 	ApprovalRequest     Action = "approval.request"
 	ApprovalTimeout     Action = "approval.timeout"
 	PolicyDeny          Action = "policy.deny"
@@ -120,7 +117,6 @@ type Event struct {
 	Actor         Actor         `json:"actor"`
 	Action        Action        `json:"action"`
 	TunnelID      string        `json:"tunnel_id,omitempty"`
-	LeaseID       string        `json:"lease_id,omitempty"`
 	RequestID     string        `json:"request_id,omitempty"`
 	ApprovalID    string        `json:"approval_id,omitempty"`
 	Fingerprint   string        `json:"fingerprint,omitempty"` // SHA-256 hex, not argv
@@ -146,7 +142,7 @@ func (e Event) Validate() error {
 	}
 	switch e.Action {
 	case TunnelStart, TunnelStop, TunnelRestart, TunnelSave, TunnelDelete, TunnelPromote,
-		TunnelImport, LeaseOpen, LeaseRenew, LeaseClose, LeaseExpire, LeaseRevoke,
+		TunnelImport, TunnelOpen, TunnelRelease,
 		ApprovalRequest, ApprovalTimeout, PolicyDeny, TunnelRunEphemeral, TunnelStopEphemeral, ApprovalDecide, SecretSet, SecretRename, SecretDelete, SecretForget,
 		PromptAnswer, SettingsUpdate, PolicyUpdate, ProfileSave, ProfileDelete,
 		ProfileActivate, ProfileStart, ProfileStop, ConfigReload, OrphanStop, DaemonShutdown:
@@ -170,7 +166,7 @@ func (e Event) Validate() error {
 		return invalid("approval_scope")
 	}
 	for _, field := range []struct{ name, value string }{
-		{"tunnel_id", e.TunnelID}, {"lease_id", e.LeaseID},
+		{"tunnel_id", e.TunnelID},
 		{"request_id", e.RequestID}, {"approval_id", e.ApprovalID},
 	} {
 		if !identifier(field.value, false) {
@@ -212,13 +208,15 @@ func identifier(value string, required bool) bool {
 // and --since (inclusive time lower bound). A CLI converts its duration/date
 // argument to Since. Empty/zero fields match all events; fields combine by AND.
 type Filter struct {
-	Actor  string
-	Tunnel string
-	Since  time.Time
+	Actor     string
+	ActorKind ActorKind // gui, cli, mcp or daemon
+	Tunnel    string
+	Since     time.Time
 }
 
 func (f Filter) Match(e Event) bool {
 	return (f.Actor == "" || e.Actor.Name == f.Actor) &&
+		(f.ActorKind == "" || e.Actor.Kind == f.ActorKind) &&
 		(f.Tunnel == "" || e.TunnelID == f.Tunnel) &&
 		(f.Since.IsZero() || !e.Time.Before(f.Since))
 }

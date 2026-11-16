@@ -56,7 +56,7 @@ func AgentSafe(t model.Tunnel) []Finding {
 	}
 	switch t.Type {
 	case model.TypeCommand:
-		reject("type", "agents cannot build command tunnels")
+		reject("type", "MCP clients cannot build command tunnels")
 	case model.TypeSSH:
 		if t.SSH == nil {
 			reject("ssh", "SSH settings are missing")
@@ -70,20 +70,20 @@ func AgentSafe(t model.Tunnel) []Finding {
 			reject("cloudflared", "cloudflared settings are missing")
 		}
 	default:
-		reject("type", "unsupported agent tunnel type")
+		reject("type", "unsupported MCP tunnel type")
 	}
 	// Inspect all present sections, even an inactive one: switching the type
 	// must not smuggle an unchecked extension through a previously safe spec.
 	if c := t.SSH; c != nil {
 		if c.PassphraseSecret != "" && (c.Host == "" || c.Hostname != "") {
-			reject("ssh.passphraseSecret", "agents may reference an SSH passphrase secret only with a config alias, not a manual hostname")
+			reject("ssh.passphraseSecret", "MCP clients may reference an SSH passphrase secret only with a config alias, not a manual hostname")
 		}
 		if c.Hostname != "" && !agentHostname(c.Hostname) {
 			reject("ssh.hostname", "manual SSH hostname contains unsupported characters")
 		}
 		for _, flag := range c.Flags {
 			if flag != "-N" {
-				reject("ssh.flags", "agents may use only the standard -N SSH flag")
+				reject("ssh.flags", "MCP clients may use only the standard -N SSH flag")
 				break
 			}
 		}
@@ -96,14 +96,14 @@ func AgentSafe(t model.Tunnel) []Finding {
 			check, ok := agentSafeSSHOptions[strings.ToLower(key)]
 			if !ok || !check(c.Options[key]) {
 				// Do not reflect supplied option names or values into diagnostics.
-				reject("ssh.options", "SSH option is outside the agent-safe defaults")
+				reject("ssh.options", "SSH option is outside the MCP-safe defaults")
 			}
 		}
 		if c.ExtraArgs != "" {
-			reject("ssh.extraArgs", "agents cannot supply SSH extra arguments")
+			reject("ssh.extraArgs", "MCP clients cannot supply SSH extra arguments")
 		}
 		if c.Identity != "" {
-			reject("ssh.identity", "agents cannot supply an SSH identity path")
+			reject("ssh.identity", "MCP clients cannot supply an SSH identity path")
 		}
 		for _, destination := range []struct{ field, value string }{
 			{"host", c.Host}, {"hostname", c.Hostname}, {"user", c.User},
@@ -116,13 +116,13 @@ func AgentSafe(t model.Tunnel) []Finding {
 	for _, f := range t.Forwards {
 		for _, address := range []struct{ field, value string }{{"bind", f.Bind}, {"target", f.Target}} {
 			if address.value != "" && !agentForwardAddress(address.value) {
-				reject("forwards."+address.field, "agent forward addresses must be a port, host:port, strict bracketed IPv6:port, or an absolute/relative Unix socket path without colons")
+				reject("forwards."+address.field, "MCP forward addresses must be a port, host:port, strict bracketed IPv6:port, or an absolute/relative Unix socket path without colons")
 			}
 		}
 	}
 	if c := t.Ngrok; c != nil {
 		if c.ExtraArgs != "" {
-			reject("ngrok.extraArgs", "agents cannot supply ngrok extra arguments")
+			reject("ngrok.extraArgs", "MCP clients cannot supply ngrok extra arguments")
 		}
 		for _, v := range []string{c.Addr, c.Domain} {
 			if unsafeArgument(v) {
@@ -132,7 +132,7 @@ func AgentSafe(t model.Tunnel) []Finding {
 	}
 	if c := t.Cloudflared; c != nil {
 		if c.ExtraArgs != "" {
-			reject("cloudflared.extraArgs", "agents cannot supply cloudflared extra arguments")
+			reject("cloudflared.extraArgs", "MCP clients cannot supply cloudflared extra arguments")
 		}
 		for _, v := range []string{c.Name, c.URL, c.Hostname} {
 			if unsafeArgument(v) {

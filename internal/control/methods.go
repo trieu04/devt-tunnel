@@ -83,25 +83,13 @@ func (s *Server) register() {
 		actor, session := connectionActor(ctx)
 		return e.RunEphemeralContext(ctx, actor, session, p)
 	})
-	handle(s, "lease.open", func(ctx context.Context, p api.OpenLeaseParams) (api.Lease, error) {
+	handle(s, "tunnel.open", func(ctx context.Context, p api.OpenSavedParams) (string, error) {
 		actor, session := connectionActor(ctx)
-		return e.OpenLeaseContext(ctx, actor, session, p)
+		return e.OpenSavedContext(ctx, actor, session, p)
 	})
-	handle(s, "lease.renew", func(ctx context.Context, p api.RenewLeaseParams) (api.Lease, error) {
+	handle(s, "tunnel.release", func(ctx context.Context, p api.IDParams) (api.Empty, error) {
 		actor, session := connectionActor(ctx)
-		return e.RenewLease(actor, session, p)
-	})
-	handle(s, "lease.close", func(ctx context.Context, p api.IDParams) (api.Empty, error) {
-		actor, session := connectionActor(ctx)
-		return api.Empty{}, e.CloseLease(actor, session, p.ID)
-	})
-	read(s, "lease.list", func(ctx context.Context, _ api.Empty) ([]api.Lease, error) {
-		actor, session := connectionActor(ctx)
-		return e.ListLeases(actor, session, actor.Kind == "mcp"), nil
-	})
-	handle(s, "lease.revoke", func(ctx context.Context, p api.IDParams) (api.Empty, error) {
-		actor, _ := connectionActor(ctx)
-		return api.Empty{}, e.RevokeLeaseFor(actor, p.ID)
+		return api.Empty{}, e.ReleaseTunnel(actor, session, p.ID)
 	})
 	query(s, api.DaemonHello, func(api.HelloParams) api.HelloResult { return s.Hello() })
 	read(s, api.DaemonStatusMethod, func(ctx context.Context, _ api.Empty) (api.DaemonStatus, error) {

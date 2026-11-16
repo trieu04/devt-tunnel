@@ -21,7 +21,7 @@ import (
 var testTime = time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 
 func testEvent() Event {
-	return Event{Actor: Actor{Kind: ActorMCP, Name: "coding-agent"}, Action: LeaseOpen,
+	return Event{Actor: Actor{Kind: ActorMCP, Name: "coding-agent"}, Action: TunnelOpen,
 		TunnelID: "tmp-staging-1", Decision: Allow, Result: ResultOK}
 }
 
@@ -370,7 +370,7 @@ func TestFullOpenApproveCloseFlowOmitsSecretsAndLogText(t *testing.T) {
 	input.Failure = fmt.Errorf("%s: %s", input.SecretValue, input.LogLine)
 	fingerprint := sha256.Sum256([]byte("ngrok http 3000; secret_name=ngrok-personal"))
 	base := Event{Actor: input.Actor, TunnelID: input.TunnelID, RequestID: "req-1",
-		LeaseID: "ls-1", ApprovalID: "ap-1", Fingerprint: hex.EncodeToString(fingerprint[:]),
+		ApprovalID: "ap-1", Fingerprint: hex.EncodeToString(fingerprint[:]),
 		SecretNames: []string{input.SecretName}}
 	dir := t.TempDir()
 	w := openWriter(t, dir, Options{MaxBytes: 600, KeepFiles: 8})
@@ -380,11 +380,11 @@ func TestFullOpenApproveCloseFlowOmitsSecretsAndLogText(t *testing.T) {
 		decision Decision
 		result   Result
 	}{
-		{LeaseOpen, input.Actor, Ask, ResultPendingApproval},
+		{TunnelOpen, input.Actor, Ask, ResultPendingApproval},
 		{ApprovalRequest, input.Actor, Ask, ResultPendingApproval},
 		{ApprovalDecide, Actor{Kind: ActorGUI, Name: "owner"}, Allow, ResultOK},
-		{LeaseOpen, input.Actor, Allow, ResultOK},
-		{LeaseClose, input.Actor, Allow, ResultOK},
+		{TunnelOpen, input.Actor, Allow, ResultOK},
+		{TunnelRelease, input.Actor, Allow, ResultOK},
 	}
 	for _, step := range flow {
 		event := base
@@ -455,7 +455,7 @@ func TestValidationRejectsFreeTextWithoutEchoingIt(t *testing.T) {
 	}
 	// This allowlist intentionally fails if Event gains an unreviewed field.
 	typ := reflect.TypeFor[Event]()
-	wantFields := []string{"Count", "Sequence", "Time", "Actor", "Action", "TunnelID", "LeaseID", "RequestID", "ApprovalID", "Fingerprint", "SecretNames", "Decision", "ApprovalScope", "Result"}
+	wantFields := []string{"Count", "Sequence", "Time", "Actor", "Action", "TunnelID", "RequestID", "ApprovalID", "Fingerprint", "SecretNames", "Decision", "ApprovalScope", "Result"}
 	var fields []string
 	for i := 0; i < typ.NumField(); i++ {
 		fields = append(fields, typ.Field(i).Name)
@@ -559,5 +559,17 @@ func TestActorNamesAllowPrintableLabelsNotControlText(t *testing.T) {
 		if err := e.Validate(); err == nil {
 			t.Errorf("invalid actor %q accepted", name)
 		}
+	}
+}
+
+func TestFilterMatchesActorKind(t *testing.T) {
+	mcp := Event{Actor: Actor{Kind: ActorMCP, Name: "agent"}}
+	gui := Event{Actor: Actor{Kind: ActorGUI, Name: "person"}}
+	f := Filter{ActorKind: ActorMCP}
+	if !f.Match(mcp) || f.Match(gui) {
+		t.Fatal("kind filter must match only mcp events")
+	}
+	if !(Filter{}).Match(gui) {
+		t.Fatal("empty filter matches everything")
 	}
 }

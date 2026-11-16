@@ -53,7 +53,7 @@ func (s *Engine) denySession(actor api.Actor, session, id, reason string) error 
 		w.suppressed++
 	}
 	if reason == "" {
-		reason = "agent policy denied this operation"
+		reason = "MCP policy denied this operation"
 	}
 	return api.NewError(api.PolicyDenied, reason)
 }

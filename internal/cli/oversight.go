@@ -15,70 +15,16 @@ import (
 )
 
 func init() {
-	register(leasesCommand)
 	register(approvalsCommand)
 	register(func(a *app) *cobra.Command { return decideApprovalCommand(a, true) })
 	register(func(a *app) *cobra.Command { return decideApprovalCommand(a, false) })
 	register(auditCommand)
 }
 
-func leasesCommand(a *app) *cobra.Command {
-	cmd := &cobra.Command{
-		Use: "leases", Short: "List clients holding tunnels and their expiries",
-		Long:    "Inspect the claims keeping tunnels running, rather than guessing from process IDs. Shows lease ID, tunnel, holder, effective expiry, whether it started the tunnel and whether it is detached. Detached person leases survive CLI exit; an expiry of never means explicit stop or revoke is required.",
-		Example: "  devt-tunnel leases\n  devt-tunnel leases --json\n  devt-tunnel leases revoke ls_123",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			leases := []api.Lease{}
-			if err := a.call(cmd.Context(), "lease.list", api.Empty{}, &leases); err != nil {
-				return err
-			}
-			if leases == nil {
-				leases = []api.Lease{}
-			}
-			if a.json {
-				return a.writeJSON(map[string]any{"leases": leases})
-			}
-			rows := make([][]string, 0, len(leases))
-			for _, lease := range leases {
-				expires := lease.ExpiresAt
-				if lease.GraceUntil != nil && (expires.IsZero() || lease.GraceUntil.Before(expires)) {
-					expires = *lease.GraceUntil
-				}
-				expiry := "never"
-				if !expires.IsZero() {
-					expiry = expires.Format(time.RFC3339)
-				}
-				if lease.Revoked {
-					expiry = "revoked"
-				}
-				rows = append(rows, []string{lease.ID, lease.TunnelID, lease.Holder.Kind + "/" + lease.Holder.Name, expiry, strconv.FormatBool(lease.StartedIt), strconv.FormatBool(lease.Detached)})
-			}
-			return a.table([]string{"ID", "TUNNEL", "HOLDER", "EXPIRES", "STARTED-IT", "DETACHED"}, rows)
-		},
-	}
-	cmd.AddCommand(&cobra.Command{
-		Use: "revoke <id>", Short: "Revoke a lease and stop its unowned tunnel",
-		Long:    "Revoke a client's claim immediately. If no other lease or person pin keeps the tunnel running, its process tree is stopped. Replaces killing an agent's tunnel process directly; the agent receives lease_revoked on its next operation.",
-		Example: "  devt-tunnel leases revoke ls_123\n  devt-tunnel leases revoke ls_123 --json",
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := a.call(cmd.Context(), "lease.revoke", api.IDParams{ID: args[0]}, nil); err != nil {
-				return err
-			}
-			if a.json {
-				return a.writeJSON(map[string]any{"id": args[0], "revoked": true})
-			}
-			return nil
-		},
-	})
-	return cmd
-}
-
 func approvalsCommand(a *app) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "approvals", Short: "List pending agent requests for a person",
-		Long:    "Show pending fingerprint-bound agent requests with their summary, exact argv, actor, purpose, allowed scopes, expiry and confirmation code. Codes are intentionally visible to person clients, never to agents. Approval does not run anything: the requesting agent must retry. Use approvals approve/deny, or their top-level approve/deny aliases.",
+		Use: "approvals", Short: "List pending MCP requests for a person",
+		Long:    "Show pending fingerprint-bound MCP requests with their summary, exact argv, actor, purpose, allowed scopes, expiry and confirmation code. Codes are intentionally visible to person clients, never to agents. Approval does not run anything: the requesting agent must retry. Use approvals approve/deny, or their top-level approve/deny aliases.",
 		Example: "  devt-tunnel approvals\n  devt-tunnel approvals --json\n  devt-tunnel approvals approve ap_123 --scope once",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -112,7 +58,7 @@ func writeApproval(out io.Writer, request api.Approval, showCode bool) error {
 	if len(request.Argv) > 0 {
 		argv = defineJoinArgs(request.Argv)
 	}
-	_, err := fmt.Fprintf(out, "%s: %s\n  argv: %s\n  actor: %s/%s\n  requested name (agent-provided): %q\n  purpose (agent-provided): %q\n  scopes: %s\n  expires: %s\n", request.ID, request.Summary, argv, request.Actor.Kind, request.Actor.Name, request.RequestedName, request.Purpose, strings.Join(request.Choices, ", "), request.ExpiresAt.Format(time.RFC3339))
+	_, err := fmt.Fprintf(out, "%s: %s\n  argv: %s\n  actor: %s/%s\n  requested name (client-provided): %q\n  purpose (client-provided): %q\n  scopes: %s\n  expires: %s\n", request.ID, request.Summary, argv, request.Actor.Kind, request.Actor.Name, request.RequestedName, request.Purpose, strings.Join(request.Choices, ", "), request.ExpiresAt.Format(time.RFC3339))
 	if err == nil && showCode {
 		_, err = fmt.Fprintln(out, "  code: "+request.Code)
 	}
@@ -126,8 +72,8 @@ func decideApprovalCommand(a *app, approve bool) *cobra.Command {
 	}
 	var scope string
 	cmd := &cobra.Command{
-		Use: verb + " <id>", Short: strings.ToUpper(verb[:1]) + verb[1:] + " a pending agent request",
-		Long:    "Deny an agent request without granting permission. No terminal or confirmation code input is needed to deny. The request is fingerprint-bound, and deciding it never starts a tunnel. This command is also available as devt-tunnel deny.",
+		Use: verb + " <id>", Short: strings.ToUpper(verb[:1]) + verb[1:] + " a pending MCP request",
+		Long:    "Deny an MCP request without granting permission. No terminal or confirmation code input is needed to deny. The request is fingerprint-bound, and deciding it never starts a tunnel. This command is also available as devt-tunnel deny.",
 		Example: "  devt-tunnel approvals deny ap_123\n  devt-tunnel deny ap_123 --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -180,7 +126,7 @@ func decideApprovalCommand(a *app, approve bool) *cobra.Command {
 		},
 	}
 	if approve {
-		cmd.Long = "Approve a pending fingerprint-bound agent request. Requires a TTY, even with --json, and asks you to type the code displayed in devt-tunnel approvals. Codes are read from the terminal, never flags or piped stdin; --no-input exits 4. --scope must be one of the request's allowed scopes. The agent must retry after approval; no command is run by this decision. Also available as devt-tunnel approve."
+		cmd.Long = "Approve a pending fingerprint-bound MCP request. Requires a TTY, even with --json, and asks you to type the code displayed in devt-tunnel approvals. Codes are read from the terminal, never flags or piped stdin; --no-input exits 4. --scope must be one of the request's allowed scopes. The agent must retry after approval; no command is run by this decision. Also available as devt-tunnel approve."
 		cmd.Example = "  devt-tunnel approvals approve ap_123\n  devt-tunnel approve ap_123 --scope session"
 		cmd.Flags().StringVar(&scope, "scope", "once", "Permission scope: once, session or always (must be allowed by the request)")
 	} else {

@@ -118,7 +118,7 @@ func TestMCPTools(t *testing.T) {
 			t.Fatalf("tools must be raw Tools() with no envelope: %s (%v)", &out, err)
 		}
 		var tools []*mcp.Tool
-		if err := json.Unmarshal(compact.Bytes(), &tools); err != nil || len(tools) != 10 {
+		if err := json.Unmarshal(compact.Bytes(), &tools); err != nil || len(tools) != 9 {
 			t.Fatalf("tool array: len=%d err=%v", len(tools), err)
 		}
 		for _, tool := range tools {
@@ -180,7 +180,7 @@ func TestMCPServeStdoutPurity(t *testing.T) {
 				t.Fatal(err)
 			}
 			tools, err := session.ListTools(ctx, nil)
-			if err != nil || len(tools.Tools) != 10 {
+			if err != nil || len(tools.Tools) != 9 {
 				t.Fatalf("tools/list: %+v (%v)", tools, err)
 			}
 			// A tool-level daemon failure must also remain a JSON-RPC frame,

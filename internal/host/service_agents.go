@@ -31,14 +31,6 @@ func (s *Service) SetAgentSettings(agent settings.Agent) error {
 	return nil
 }
 
-func (s *Service) ListLeases() ([]api.Lease, error) {
-	return call[[]api.Lease](s, "lease.list", api.Empty{})
-}
-
-func (s *Service) RevokeLease(id string) error {
-	return action(s, "lease.revoke", api.IDParams{ID: id})
-}
-
 func (s *Service) PromoteTunnel(id, name string) (string, error) {
 	return call[string](s, "tunnel.promote", api.PromoteTunnelParams{ID: id, Name: name})
 }

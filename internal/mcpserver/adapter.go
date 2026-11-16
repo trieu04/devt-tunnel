@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,16 +19,10 @@ func numberArg(args map[string]any, key string, fallback int) int {
 	}
 	return fallback
 }
-func ttlArg(args map[string]any) string {
-	if n := numberArg(args, "ttl_seconds", 0); n > 0 {
-		return strconv.Itoa(n) + "s"
-	}
-	return ""
-}
 func openParams(args map[string]any) api.OpenRequestParams {
-	p := api.OpenRequestParams{RequestID: stringArg(args, "request_id"), ID: stringArg(args, "tunnel_id"), Purpose: stringArg(args, "purpose"), TTL: ttlArg(args)}
+	p := api.OpenRequestParams{RequestID: stringArg(args, "request_id"), ID: stringArg(args, "tunnel_id"), Purpose: stringArg(args, "purpose")}
 	if spec, ok := args["spec"].(map[string]any); ok {
-		t := model.Tunnel{Name: "Agent tunnel"}
+		t := model.Tunnel{Name: "MCP tunnel"}
 		switch stringArg(spec, "type") {
 		case "ssh":
 			t.Type, t.SSH = model.TypeSSH, &model.SSH{Host: stringArg(spec, "host"), Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}}
@@ -114,7 +107,7 @@ func (a *Adapter) invoke(ctx context.Context, session *mcp.ServerSession, name s
 				}
 			}
 			// Ask the daemon rather than copying the allow-list or interpreting policy.
-			t := model.Tunnel{Name: "Agent tunnel", Type: model.TypeSSH, SSH: &model.SSH{Host: host.Alias, Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}}, Forwards: []model.Forward{{Kind: model.ForwardDynamic, ListenPort: "auto"}}}
+			t := model.Tunnel{Name: "MCP tunnel", Type: model.TypeSSH, SSH: &model.SSH{Host: host.Alias, Flags: []string{"-N"}, Options: map[string]string{"ServerAliveInterval": "30"}}, Forwards: []model.Forward{{Kind: model.ForwardDynamic, ListenPort: "auto"}}}
 			var check api.CheckRequestResult
 			if err := a.call(ctx, session, "tunnel.checkRequest", api.OpenRequestParams{Tunnel: &t}, &check); err != nil {
 				return nil, err
@@ -161,15 +154,20 @@ func (a *Adapter) invoke(ctx context.Context, session *mcp.ServerSession, name s
 				return nil, err
 			}
 		}
-		return openResult(opened), nil
-	case "tunnel_renew":
-		var lease api.Lease
-		if err := a.call(ctx, session, "lease.renew", api.RenewLeaseParams{ID: stringArg(args, "lease_id"), TTL: ttlArg(args)}, &lease); err != nil {
-			return nil, err
+		out := openResult(opened)
+		// Optional save: the tunnel stays temporary unless a person approves keeping it.
+		if saveAs := stringArg(args, "save_as"); saveAs != "" && opened.Status == "ready" && opened.TunnelID != "" && stringArg(args, "tunnel_id") == "" {
+			var id string
+			if err := a.call(ctx, session, "tunnel.promote", api.PromoteTunnelParams{ID: opened.TunnelID, Name: saveAs, Purpose: "Keep temporary tunnel as " + saveAs}, &id); err != nil {
+				out["message"] = "Tunnel is running but still temporary; saving as " + saveAs + " was not completed: " + err.Error() + ". Retry with tunnel_save after a person approves."
+			} else {
+				out["saved_id"] = id
+				out["tunnel_id"] = id
+			}
 		}
-		return map[string]any{"lease_id": lease.ID, "expires_at": lease.ExpiresAt.Format(time.RFC3339Nano)}, nil
+		return out, nil
 	case "tunnel_close":
-		return a.closeLease(ctx, session, stringArg(args, "lease_id"))
+		return a.closeTunnel(ctx, session, stringArg(args, "tunnel_id"))
 	case "tunnel_save":
 		var id string
 		if err := a.call(ctx, session, "tunnel.promote", api.PromoteTunnelParams{ID: stringArg(args, "tunnel_id"), Name: stringArg(args, "name"), Purpose: "Keep temporary tunnel as " + stringArg(args, "name")}, &id); err != nil {
@@ -207,9 +205,6 @@ func openResult(o api.OpenRequestResult) map[string]any {
 	if o.ExpiresAt != nil {
 		out["expires_at"] = o.ExpiresAt.Format(time.RFC3339Nano)
 	}
-	if o.Lease != nil {
-		out["lease_id"], out["expires_at"] = o.Lease.ID, o.Lease.ExpiresAt.Format(time.RFC3339Nano)
-	}
 	if o.Endpoints != nil {
 		out["endpoints"] = o.Endpoints
 	}
@@ -229,7 +224,7 @@ func (a *Adapter) tunnel(ctx context.Context, session *mcp.ServerSession, v api.
 		return nil, err
 	}
 	t := map[string]any{"id": v.Tunnel.ID, "name": v.Tunnel.Name, "type": string(v.Tunnel.Type), "state": string(v.Status.State), "error": v.Status.Error,
-		"endpoints": endpoints, "owner": map[string]any{"pinned": v.Owner.Pinned, "ephemeral": v.Owner.Ephemeral, "leases": v.Owner.Leases},
+		"endpoints": endpoints, "owner": a.owner(v),
 		"usable_without_approval": check.Decision == "allow", "missing_secrets": missing}
 	if detail {
 		var findings []checks.Finding
@@ -239,41 +234,29 @@ func (a *Adapter) tunnel(ctx context.Context, session *mcp.ServerSession, v api.
 		if findings == nil {
 			findings = []checks.Finding{}
 		}
-		var leases []api.Lease
-		if err := a.call(ctx, session, "lease.list", api.Empty{}, &leases); err != nil {
-			return nil, err
-		}
-		yours := []any{}
-		for _, lease := range leases {
-			if lease.TunnelID == v.Tunnel.ID && !lease.Revoked {
-				yours = append(yours, map[string]any{"lease_id": lease.ID, "expires_at": lease.ExpiresAt.Format(time.RFC3339Nano)})
-			}
-		}
-		t["preview"], t["findings"], t["your_leases"] = v.Preview, findings, yours
+		t["preview"], t["findings"] = v.Preview, findings
 	}
 	return t, nil
 }
-func (a *Adapter) closeLease(ctx context.Context, session *mcp.ServerSession, id string) (map[string]any, error) {
-	var leases []api.Lease
-	if err := a.call(ctx, session, "lease.list", api.Empty{}, &leases); err != nil {
-		return nil, err
+
+// owner is the marker people and agents see: whether a person pinned the
+// tunnel and whether an agent opened it (and which one).
+func (a *Adapter) owner(v api.TunnelView) map[string]any {
+	o := map[string]any{"pinned": v.Owner.Pinned, "ephemeral": v.Owner.Ephemeral, "opened_via_mcp": false, "client": ""}
+	if v.Owner.Holder != nil && v.Owner.Holder.Kind == "mcp" {
+		o["opened_via_mcp"], o["client"] = true, v.Owner.Holder.Name
 	}
-	tunnelID := ""
-	for _, lease := range leases {
-		if lease.ID == id {
-			tunnelID = lease.TunnelID
-		}
-	}
-	if tunnelID == "" {
-		return map[string]any{"tunnel_state": "unknown", "stopped": false, "reason": "lease already released or expired"}, nil
-	}
-	if err := a.call(ctx, session, "lease.close", api.IDParams{ID: id}, nil); err != nil {
-		// A competing close, TTL cleanup, or a lost successful reply can remove
-		// this already-confirmed owned lease before the close retry arrives.
+	return o
+}
+
+func (a *Adapter) closeTunnel(ctx context.Context, session *mcp.ServerSession, tunnelID string) (map[string]any, error) {
+	if err := a.call(ctx, session, "tunnel.release", api.IDParams{ID: tunnelID}, nil); err != nil {
+		// A competing close can release the tunnel before this retry arrives.
 		var rpc *api.Error
 		if !errors.As(err, &rpc) || rpc.Data.Kind != api.Unknown {
 			return nil, err
 		}
+		return map[string]any{"tunnel_state": "unknown", "stopped": false, "reason": "no MCP-opened tunnel with this id; it may be closed already, or a person opened it"}, nil
 	}
 	var views []api.TunnelView
 	if err := a.call(ctx, session, "tunnel.list", api.Empty{}, &views); err != nil {
@@ -284,13 +267,11 @@ func (a *Adapter) closeLease(ctx context.Context, session *mcp.ServerSession, id
 			continue
 		}
 		state := string(v.Status.State)
-		reason := "last lease released"
+		reason := "closed"
 		if v.Owner.Pinned {
-			reason = "pinned by a person"
-		} else if v.Owner.Leases > 0 {
-			reason = fmt.Sprintf("in use by %d other lease(s)", v.Owner.Leases)
+			reason = "kept running: pinned by a person"
 		}
 		return map[string]any{"tunnel_state": state, "stopped": state == "stopped", "reason": reason}, nil
 	}
-	return map[string]any{"tunnel_state": "stopped", "stopped": true, "reason": "temporary tunnel removed after last lease"}, nil
+	return map[string]any{"tunnel_state": "stopped", "stopped": true, "reason": "temporary tunnel removed"}, nil
 }

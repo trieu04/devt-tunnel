@@ -35,9 +35,9 @@ func TestOpenRequestConcurrentReconnectAndConflicts(t *testing.T) {
 	a := settings.StrictAgent()
 	a.AllowTunnels = []string{"t"}
 	_, socket, _ := policyServer(t, a, nil)
-	first := leasedDial(t, socket, "mcp", "request-agent", "")
-	second := leasedDial(t, socket, "mcp", "request-agent", first.Session())
-	p := api.OpenRequestParams{RequestID: "one", ID: "t", Purpose: "test reuse", TTL: "2m"}
+	first := dialClient(t, socket, "mcp", "request-agent", "")
+	second := dialClient(t, socket, "mcp", "request-agent", first.Session())
+	p := api.OpenRequestParams{RequestID: "one", ID: "t", Purpose: "test reuse"}
 	const n = 20
 	results, errs := make([]api.OpenRequestResult, n), make([]error, n)
 	var wg sync.WaitGroup
@@ -54,21 +54,20 @@ func TestOpenRequestConcurrentReconnectAndConflicts(t *testing.T) {
 	}
 	wg.Wait()
 	for i, result := range results {
-		if errs[i] != nil || result.Lease == nil || result.Lease.ID != results[0].Lease.ID || result.TunnelID != "t" || result.Lease.Session != "" {
+		if errs[i] != nil || result.TunnelID != "t" || result.RequestID != p.RequestID {
 			t.Fatalf("retry %d = %+v, err=%v", i, result, errs[i])
 		}
 	}
-	var leases []api.Lease
-	policyOK(t, first, "lease.list", api.Empty{}, &leases)
-	if len(leases) != 1 {
-		t.Fatalf("duplicate leases: %+v", leases)
+	var views []api.TunnelView
+	policyOK(t, first, "tunnel.list", api.Empty{}, &views)
+	if len(views) != 1 || views[0].Owner.Holder == nil {
+		t.Fatalf("expected one held tunnel: %+v", views)
 	}
 	policyOK(t, first, "tunnel.waitReady", api.IDParams{ID: "t"}, nil)
 	if got := requestWait(t, second, p.RequestID); got.Status != "ready" {
 		t.Fatalf("ready=%+v", got)
 	}
 	for _, change := range []func(*api.OpenRequestParams){
-		func(p *api.OpenRequestParams) { p.TTL = "3m" },
 		func(p *api.OpenRequestParams) { p.Purpose = "changed purpose" },
 		func(p *api.OpenRequestParams) { p.ID = "different" },
 		func(p *api.OpenRequestParams) { p.ID = ""; tunnel := policySSH(""); p.Tunnel = &tunnel },
@@ -79,17 +78,17 @@ func TestOpenRequestConcurrentReconnectAndConflicts(t *testing.T) {
 	}
 	first.Close()
 	second.Close()
-	resumed := leasedDial(t, socket, "mcp", "request-agent", first.Session())
+	resumed := dialClient(t, socket, "mcp", "request-agent", first.Session())
 	got := requestOpen(t, resumed, p)
-	if got.Lease == nil || got.Lease.ID != results[0].Lease.ID {
-		t.Fatalf("reconnect duplicated lease: %+v", got)
+	if got.TunnelID != "t" {
+		t.Fatalf("reconnect changed tunnel: %+v", got)
 	}
-	outsider := leasedDial(t, socket, "mcp", "request-agent", "")
+	outsider := dialClient(t, socket, "mcp", "request-agent", "")
 	policyError(t, policyCall(t, outsider, "tunnel.waitRequest", api.WaitRequestParams{RequestID: p.RequestID}, nil), api.Unknown)
 	// Equal request IDs in distinct sessions are not coupled.
 	other := requestOpen(t, outsider, p)
-	if other.Lease.ID == got.Lease.ID {
-		t.Fatal("request ID leaked across sessions")
+	if other.TunnelID != "t" || other.Status == "failed" {
+		t.Fatalf("request ID collided across sessions: %+v", other)
 	}
 }
 
@@ -97,11 +96,11 @@ func TestOpenRequestApprovalWaitUsesOriginalAndFingerprint(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) {
 		o.Listening = func(string) bool { return false }
 	})
-	mcp := leasedDial(t, socket, "mcp", "pending-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "pending-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	tunnel := policySSH("")
 	tunnel.Forwards = []model.Forward{{Kind: model.ForwardLocal, ListenPort: "auto", Target: "127.0.0.1:5432"}}
-	p := api.OpenRequestParams{RequestID: "original", Tunnel: &tunnel, Purpose: "run migration", TTL: "2m"}
+	p := api.OpenRequestParams{RequestID: "original", Tunnel: &tunnel, Purpose: "run migration"}
 	pending := requestOpen(t, mcp, p)
 	if pending.Status != "pending_approval" || pending.ApprovalID == "" || pending.ExpiresAt == nil || !strings.Contains(pending.Message, "same requestId") {
 		t.Fatalf("approval is not a normal human-needed result: %+v", pending)
@@ -114,14 +113,14 @@ func TestOpenRequestApprovalWaitUsesOriginalAndFingerprint(t *testing.T) {
 	}
 	policyDecide(t, person, pending.ApprovalID, "approve", "once")
 	opened := requestWait(t, mcp, p.RequestID)
-	if opened.Lease == nil || opened.TunnelID != before.TunnelID {
+	if opened.TunnelID != before.TunnelID {
 		t.Fatalf("wait lost prepared args: %+v", opened)
 	}
 	view := policyTunnel(t, person, opened.TunnelID)
 	if view.Tunnel.SSH.Hostname != "bastion.example.invalid" || !strings.Contains(strings.Join(before.Argv, " "), view.Tunnel.Forwards[0].Bind) {
 		t.Fatalf("stored original/allocation drifted: %+v / %+v", before, view)
 	}
-	if again := requestWait(t, mcp, p.RequestID); again.Lease == nil || again.Lease.ID != opened.Lease.ID {
+	if again := requestWait(t, mcp, p.RequestID); again.TunnelID != opened.TunnelID {
 		t.Fatalf("wait duplicated execution: %+v", again)
 	}
 	var check api.CheckRequestResult
@@ -154,23 +153,23 @@ func TestOpenRequestApprovalWaitUsesOriginalAndFingerprint(t *testing.T) {
 
 func TestOpenRequestDeniedTimeoutAndRequestCapacity(t *testing.T) {
 	s, socket, clock := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "terminal-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "terminal-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	p := api.OpenRequestParams{RequestID: "denied", ID: "t", Purpose: "test denial"}
 	pending := requestOpen(t, mcp, p)
 	policyDecide(t, person, pending.ApprovalID, "deny", "once")
-	if got := requestWait(t, mcp, p.RequestID); got.Status != "denied" || got.Lease != nil {
+	if got := requestWait(t, mcp, p.RequestID); got.Status != "denied" || got.TunnelID != "" {
 		t.Fatalf("denial=%+v", got)
 	}
 	p.RequestID = "timeout"
 	requestOpen(t, mcp, p)
 	clock.advance(engine.ApprovalTimeout)
-	if got := requestWait(t, mcp, p.RequestID); got.Status != "timed_out" || got.Lease != nil {
+	if got := requestWait(t, mcp, p.RequestID); got.Status != "timed_out" || got.TunnelID != "" {
 		t.Fatalf("timeout=%+v", got)
 	}
-	policyNoLeases(t, person)
+	policyNoHolders(t, person)
 	// A fresh session cannot grow the cache forever, even with invalid IDs.
-	capped := leasedDial(t, socket, "mcp", "capacity-agent", "")
+	capped := dialClient(t, socket, "mcp", "capacity-agent", "")
 	for i := range engine.MaxOpenRequestsPerSession {
 		p := api.OpenRequestParams{RequestID: fmt.Sprint(i), ID: "absent", Purpose: "test cap"}
 		if err := policyCall(t, capped, "tunnel.openRequest", p, nil); err == nil {
@@ -183,7 +182,7 @@ func TestOpenRequestDeniedTimeoutAndRequestCapacity(t *testing.T) {
 		t.Fatalf("unclear cap error: %v", err)
 	}
 	clock.advance(engine.OpenRequestRetention)
-	if err := s.engine.ExpireLeases(); err != nil {
+	if err := s.engine.Maintain(); err != nil {
 		t.Fatal(err)
 	}
 	policyError(t, policyCall(t, capped, "tunnel.waitRequest", api.WaitRequestParams{RequestID: "0"}, nil), api.Unknown)
@@ -206,8 +205,8 @@ func TestCheckRequestPolicyAliasFactsRedactionAndNoKeychain(t *testing.T) {
 		cfg.Tunnels[0].SSH.PassphraseSecret = "saved-secret-reference"
 		cfg.Tunnels = append(cfg.Tunnels, model.Tunnel{ID: "unsafe", Name: "Private command", Type: model.TypeCommand, Command: &model.Command{Line: "echo DO-NOT-LEAK-SAVED-COMMAND", ReadyLog: "ready"}})
 	})
-	mcp := leasedDial(t, socket, "mcp", "check-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "check-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	policyOK(t, person, "secret.forget", api.Empty{}, nil)
 	reads := store.reads.Load()
 	beforeRuntime, _ := os.ReadFile(runtimePath)
@@ -259,7 +258,7 @@ func TestCheckRequestPolicyAliasFactsRedactionAndNoKeychain(t *testing.T) {
 	if len(approvals) != 0 {
 		t.Fatalf("check enqueued approvals: %+v", approvals)
 	}
-	policyNoLeases(t, mcp)
+	policyNoHolders(t, mcp)
 	if s.engine.Active() {
 		t.Fatal("dry run started a process")
 	}
@@ -274,10 +273,10 @@ func TestPolicyGetNarrowAndDisabledMutationReason(t *testing.T) {
 	a.Enabled = false
 	a.AllowTunnels = []string{"dev-*"}
 	_, socket, _ := policyServer(t, a, func(o *engine.Options, _ *model.Config) { o.PortRange = "31000-31001" })
-	mcp := leasedDial(t, socket, "mcp", "policy-resource", "")
+	mcp := dialClient(t, socket, "mcp", "policy-resource", "")
 	var result map[string]any
 	policyOK(t, mcp, "policy.get", api.Empty{}, &result)
-	keys := map[string]bool{"enabled": true, "public": true, "allowTunnels": true, "allowSSHHosts": true, "portRange": true, "defaultTTL": true, "maxTTL": true}
+	keys := map[string]bool{"enabled": true, "public": true, "allowTunnels": true, "allowSSHHosts": true, "portRange": true}
 	if len(result) != len(keys) {
 		t.Fatalf("policy fields=%+v", result)
 	}
@@ -297,13 +296,13 @@ func TestPolicyGetNarrowAndDisabledMutationReason(t *testing.T) {
 	if len(status.Tunnels) != 0 {
 		t.Fatalf("disabled status leaked tunnel definitions: %+v", status.Tunnels)
 	}
-	person := leasedDial(t, socket, "gui", "person", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	policyOK(t, person, "tunnel.list", api.Empty{}, nil)
 }
 
 func TestOpenRequestStrictDecodeAndUnsafeSmuggling(t *testing.T) {
 	s, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "smuggling-agent", "")
+	mcp := dialClient(t, socket, "mcp", "smuggling-agent", "")
 	for _, params := range []any{
 		map[string]any{"requestId": "unknown", "id": "t", "purpose": "test", "command": "touch nowhere"},
 		map[string]any{"requestId": "nested", "purpose": "test", "tunnel": map[string]any{"type": "ssh", "ssh": map[string]any{"hostname": "example.invalid", "unknownExecutionOption": "bad"}}},
@@ -338,13 +337,13 @@ func TestOpenRequestStrictDecodeAndUnsafeSmuggling(t *testing.T) {
 	if len(approvals) != 0 || s.engine.Active() {
 		t.Fatal("smuggled execution mutated state")
 	}
-	policyNoLeases(t, mcp)
+	policyNoHolders(t, mcp)
 }
 
 func TestDisabledAgentStopsExistingEventSubscription(t *testing.T) {
 	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
-	mcp := leasedDial(t, socket, "mcp", "subscribed-agent", "")
-	person := leasedDial(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "subscribed-agent", "")
+	person := dialClient(t, socket, "gui", "person", "")
 	agentEvents, personEvents := make(chan api.Event, 8), make(chan api.Event, 8)
 	mcp.Events(func(event api.Event) {
 		select {

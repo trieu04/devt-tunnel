@@ -42,7 +42,6 @@ const (
 	Internal           ErrorKind = "internal"
 	Incompatible       ErrorKind = "incompatible"
 	Timeout            ErrorKind = "timeout"
-	LeaseRevoked       ErrorKind = "lease_revoked"
 	PolicyDenied       ErrorKind = "policy_denied"
 	InvalidSpec        ErrorKind = "invalid_spec"
 	PortInUse          ErrorKind = "port_in_use"
@@ -186,7 +185,7 @@ var Methods = []string{
 	DaemonHello, DaemonStatusMethod, DaemonShutdown, EventsSubscribe,
 	"tunnel.openRequest", "tunnel.waitRequest", "tunnel.checkRequest", "policy.get",
 	"approval.list", "approval.get", "approval.decide", "audit.read",
-	"tunnel.promote", "tunnel.runEphemeral", "lease.open", "lease.renew", "lease.close", "lease.list", "lease.revoke",
+	"tunnel.promote", "tunnel.runEphemeral", "tunnel.open", "tunnel.release",
 	"tunnel.list", "tunnel.get", "tunnel.save", "tunnel.delete", "tunnel.start", "tunnel.stop", "tunnel.restart", "tunnel.waitReady", "tunnel.evaluateDraft", "tunnel.import", "tunnel.newDraft", "tunnel.duplicateDraft", "tunnel.setFavorite", "tunnel.findings", "tunnel.recordUsed", "tunnel.startOnLaunch",
 	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate",
 	"group.list", "group.save", "group.delete", "group.duplicate", "group.start", "group.stop",
@@ -194,28 +193,19 @@ var Methods = []string{
 	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.getAgent", "settings.setAgent", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
 }
 
-// TTL is a Go duration string (for example "30m"). Empty uses agent.default_ttl
-// for MCP callers and 30 minutes for person clients.
-type OpenLeaseParams struct {
+type OpenSavedParams struct {
 	Purpose string `json:"purpose,omitempty"`
 	ID      string `json:"id"`
-	TTL     string `json:"ttl,omitempty"`
-}
-type RenewLeaseParams struct {
-	ID  string `json:"id"`
-	TTL string `json:"ttl,omitempty"`
 }
 type RunEphemeralParams struct {
 	Purpose string       `json:"purpose,omitempty"`
 	Tunnel  model.Tunnel `json:"tunnel"`
-	TTL     string       `json:"ttl,omitempty"`
-	// Detached is person-only: retain the lease after disconnect, until TTL or
-	// explicit stop/revoke. An omitted TTL means no expiry for detached leases.
+	// Detached is person-only: keep the tunnel running after the client
+	// disconnects, until an explicit stop.
 	Detached bool `json:"detached,omitempty"`
 }
 type RunEphemeralResult struct {
-	ID    string `json:"id"`
-	Lease Lease  `json:"lease"`
+	ID string `json:"id"`
 }
 type PromoteTunnelParams struct {
 	Purpose string `json:"purpose,omitempty"`
@@ -254,6 +244,7 @@ type AuditReadParams struct {
 	Limit  int       `json:"limit,omitempty"`
 	After  uint64    `json:"after"`
 	Actor  string    `json:"actor,omitempty"`
+	Kind   string    `json:"kind,omitempty"` // gui | cli | mcp | daemon
 	Tunnel string    `json:"tunnel,omitempty"`
 	Since  time.Time `json:"since,omitempty"`
 }

@@ -10,16 +10,20 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 )
 
-// Runtime is separate from shareable tunnel definitions. LeaseStarted survives
-// the originating lease closing before the other holders finish.
+// RuntimeOwner records who keeps a tunnel running. Started marks a tunnel a
+// client started: it stops when the client releases it, unless a person pinned
+// it. Holder, Session and Detached describe that client; a detached holder
+// survives disconnect, a non-detached one is released when its session ends.
 type RuntimeOwner struct {
-	Pinned       bool `json:"pinned,omitempty"`
-	LeaseStarted bool `json:"leaseStarted,omitempty"`
+	Pinned   bool         `json:"pinned,omitempty"`
+	Started  bool         `json:"started,omitempty"`
+	Holder   *model.Actor `json:"holder,omitempty"`
+	Session  string       `json:"session,omitempty"`
+	Detached bool         `json:"detached,omitempty"`
 }
 type Runtime struct {
 	Version   int                     `json:"version"`
 	Ephemeral []model.Tunnel          `json:"ephemeral"`
-	Leases    []model.Lease           `json:"leases"`
 	Owners    map[string]RuntimeOwner `json:"owners"`
 	AutoPorts map[string][]int        `json:"autoPorts,omitempty"`
 	// Promotions is a write-ahead intent, allowing recovery across the two files.
@@ -29,7 +33,7 @@ type Runtime struct {
 type RuntimeStore struct{ Path string }
 
 func (s RuntimeStore) Load() (Runtime, error) {
-	st := Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Leases: []model.Lease{}, Owners: map[string]RuntimeOwner{}, AutoPorts: map[string][]int{}, Promotions: map[string]string{}}
+	st := Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Owners: map[string]RuntimeOwner{}, AutoPorts: map[string][]int{}, Promotions: map[string]string{}}
 	data, err := os.ReadFile(s.Path)
 	if errors.Is(err, os.ErrNotExist) {
 		return st, nil

@@ -240,7 +240,7 @@ func TestAlwaysApprovalEligibility(t *testing.T) {
 func TestActorAndDisabledPolicy(t *testing.T) {
 	cfg := configWithGrants()
 	cfg.Agent.Enabled = false
-	for _, action := range []Action{ActionListTunnels, ActionOpen, ActionOpenSaved, ActionCloseLease} {
+	for _, action := range []Action{ActionListTunnels, ActionOpen, ActionOpenSaved, ActionReleaseTunnel} {
 		wantDecision(t, action, localTunnel(), cfg, Deny)
 	}
 	for _, kind := range []ActorKind{ActorCLI, ActorGUI} {
@@ -269,8 +269,8 @@ func TestActorAndDisabledPolicy(t *testing.T) {
 	}
 }
 
-func TestLeaseActions(t *testing.T) {
-	for _, action := range []Action{ActionListLeases, ActionCloseLease, ActionRenewLease} {
+func TestReleaseTunnelAction(t *testing.T) {
+	for _, action := range []Action{ActionReleaseTunnel} {
 		wantDecision(t, action, model.Tunnel{}, settings.Settings{}, Allow)
 	}
 	wantDecision(t, ActionStop, localTunnel(), configWithGrants(), Deny)
@@ -317,10 +317,9 @@ func TestAllForwardsMustBeSafeForAliasGrant(t *testing.T) {
 
 func TestInvalidSettingsFailClosed(t *testing.T) {
 	for _, alter := range []func(*settings.Agent){
-		func(a *settings.Agent) { a.Public = "allow" },
+		func(a *settings.Agent) { a.Public = "bogus" },
 		func(a *settings.Agent) { a.AllowTunnels = []string{"["} },
 		func(a *settings.Agent) { a.PortRange = "0-1" },
-		func(a *settings.Agent) { a.MaxTTL = "1m" },
 	} {
 		cfg := configWithGrants()
 		alter(cfg.Agent)
@@ -385,4 +384,14 @@ func TestDefaultsAllowSavedTunnelsAndSSHAliases(t *testing.T) {
 	if d, _ := Decide(agent, ActionOpen, localTunnel(), settings.Settings{}); d != Allow {
 		t.Fatalf("alias forward default = %s", d)
 	}
+}
+
+func TestPublicAllowOptIn(t *testing.T) {
+	cfg := configWithGrants()
+	cfg.Agent.Public = "allow"
+	pub := localTunnel()
+	pub.Forwards = []model.Forward{{Kind: model.ForwardRemote, Bind: "0.0.0.0:8080", Target: "127.0.0.1:80"}}
+	wantDecision(t, ActionExpose, pub, cfg, Allow)
+	wantDecision(t, ActionOpen, pub, cfg, Allow)
+	wantDecision(t, ActionSave, pub, cfg, Ask)
 }

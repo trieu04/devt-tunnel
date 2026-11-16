@@ -12,7 +12,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/core/model"
 )
 
-const MaxAgentLeases = 32
+const MaxAgentTunnels = 32
 
 // These are admission checks for NEW agent definitions, not restrictions on
 // existing person-authored definitions. In particular an approval fingerprint
@@ -32,10 +32,10 @@ func (s *Engine) agentBuilt(actor api.Actor, session string, t model.Tunnel) err
 // mutation is performed; configMu must be held for the saved-port snapshot.
 func (s *Engine) agentBuiltReason(t model.Tunnel) string {
 	if t.StartOnLaunch || t.Profile != "" || len(t.Groups) != 0 || t.Favorite {
-		return "agents cannot set startOnLaunch, profile, groups or favorite; saved and ephemeral agent tunnels must remain lease-controlled"
+		return "MCP clients cannot set startOnLaunch, profile, groups or favorite; MCP-opened tunnels must stay under MCP control"
 	}
 	if !utf8.ValidString(t.Name) || utf8.RuneCountInString(t.Name) > 64 || strings.ContainsFunc(t.Name, func(r rune) bool { return !unicode.IsPrint(r) }) {
-		return "agent-provided name must be printable UTF-8, without control characters, and at most 64 characters"
+		return "MCP-client-provided name must be printable UTF-8, without control characters, and at most 64 characters"
 	}
 	for _, f := range checks.AgentSafe(t) {
 		if f.Severity == checks.Error {
@@ -55,7 +55,7 @@ func (s *Engine) agentBuiltReason(t model.Tunnel) string {
 	}
 	for _, f := range t.Forwards {
 		if f.Kind != model.ForwardRemote && bindPort(f.Bind) != 0 && reserved[bindPort(f.Bind)] {
-			return "agent listen port is reserved by a saved tunnel"
+			return "MCP listen port is reserved by a saved tunnel"
 		}
 	}
 	return ""
@@ -75,18 +75,18 @@ func bindPort(bind string) int {
 
 // configMu serializes the capacity check with admission, including concurrent
 // requests on different connections that resume the same session token.
-func (s *Engine) agentLeaseCapacity(actor api.Actor, session string) error {
+func (s *Engine) agentTunnelCapacity(actor api.Actor, session string) error {
 	if actor.Kind != "mcp" {
 		return nil
 	}
 	n := 0
-	for _, l := range s.runtimeSnapshot().Leases {
-		if ownsLease(l, actor, session) && leaseAlive(l, s.clock.Now()) {
+	for _, owner := range s.runtimeSnapshot().Owners {
+		if holds(owner, actor, session) {
 			n++
 		}
 	}
-	if n >= MaxAgentLeases {
-		return s.denySession(actor, session, "", "agent session has reached its limit of 32 live leases/ephemeral tunnels")
+	if n >= MaxAgentTunnels {
+		return s.denySession(actor, session, "", "MCP session has reached its limit of 32 open tunnels")
 	}
 	return nil
 }

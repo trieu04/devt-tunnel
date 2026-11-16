@@ -33,8 +33,13 @@ func Load(path string) (Settings, error) {
 	if err != nil {
 		return Settings{}, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if undecoded := meta.Undecoded(); len(undecoded) > 0 {
-		return Settings{}, fmt.Errorf("parse %s: unknown key %q", path, undecoded[0])
+	for _, key := range meta.Undecoded() {
+		// Agent-held tunnels never expire, so these keys are obsolete but harmless
+		// in settings files written by older versions.
+		if k := key.String(); k == "agent.default_ttl" || k == "agent.max_ttl" {
+			continue
+		}
+		return Settings{}, fmt.Errorf("parse %s: unknown key %q", path, key)
 	}
 	if err := s.Agent.Validate(); err != nil {
 		return Settings{}, fmt.Errorf("parse %s: agent: %w", path, err)

@@ -18,7 +18,7 @@ import (
 func TestDaemonRestartFinishesPersistedLastClose(t *testing.T) {
 	stops := 0
 	e, _, _ := ownedEngine(t, func(o *Options) {
-		st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Leases: []model.Lease{}, Owners: map[string]corestate.RuntimeOwner{"service": {LeaseStarted: true}}}
+		st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{}, Owners: map[string]corestate.RuntimeOwner{"service": {Started: true}}}
 		if err := (corestate.RuntimeStore{Path: filepath.Join(o.StateDir, "runtime.json")}).Save(st); err != nil {
 			t.Fatal(err)
 		}
@@ -39,8 +39,8 @@ func TestDaemonRestartRepairsPromotionIntent(t *testing.T) {
 	e, r, _ := ownedEngine(t, func(o *Options) {
 		tunnel := commandTunnel()
 		tunnel.ID = "tmp-old"
-		now := o.Clock.Now()
-		st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{tunnel}, Leases: []model.Lease{{ID: "ls_old", TunnelID: tunnel.ID, Holder: api.Actor{Kind: "cli", Name: "adapter"}, Session: "token", ExpiresAt: now.Add(time.Hour), CreatedAt: now, StartedIt: true}}, Owners: map[string]corestate.RuntimeOwner{tunnel.ID: {LeaseStarted: true}}, Promotions: map[string]string{tunnel.ID: "promoted"}}
+		holder := api.Actor{Kind: "cli", Name: "adapter"}
+		st := corestate.Runtime{Version: 1, Ephemeral: []model.Tunnel{tunnel}, Owners: map[string]corestate.RuntimeOwner{tunnel.ID: {Started: true, Holder: &holder, Session: "token", Detached: true}}, Promotions: map[string]string{tunnel.ID: "promoted"}}
 		if err := (corestate.RuntimeStore{Path: filepath.Join(o.StateDir, "runtime.json")}).Save(st); err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +51,7 @@ func TestDaemonRestartRepairsPromotionIntent(t *testing.T) {
 		o.StopProcess = func(int, string, time.Duration) error { return nil }
 	}, cfg)
 	st, err := e.runtimeStore.Load()
-	if err != nil || len(st.Ephemeral) != 0 || len(st.Promotions) != 0 || st.Leases[0].TunnelID != "promoted" {
+	if err != nil || len(st.Ephemeral) != 0 || len(st.Promotions) != 0 || st.Owners["promoted"].Holder == nil {
 		t.Fatalf("recovery=%+v %v", st, err)
 	}
 	if !e.hasOrphan("promoted") || e.hasOrphan("tmp-old") {
@@ -104,12 +104,12 @@ func TestEphemeralNamespaceAndMergedValidation(t *testing.T) {
 	}
 }
 
-func TestActiveIncludesLeasesAndDeferredEphemeralWithoutProcesses(t *testing.T) {
+func TestActiveIncludesHeldAndDeferredEphemeralWithoutProcesses(t *testing.T) {
 	for _, ephemeral := range []bool{false, true} {
-		t.Run(map[bool]string{false: "saved lease", true: "ephemeral lease"}[ephemeral], func(t *testing.T) {
+		t.Run(map[bool]string{false: "saved tunnel", true: "ephemeral tunnel"}[ephemeral], func(t *testing.T) {
 			cfg := savedCommand()
 			cfg.Tunnels[0].Command.SecretEnvs = map[string]string{"TOKEN": "missing"}
-			e, r, c := ownedEngine(t, nil, cfg)
+			e, r, _ := ownedEngine(t, nil, cfg)
 			a, s := session(t, e, "agent")
 			id := "service"
 			if ephemeral {
@@ -121,60 +121,38 @@ func TestActiveIncludesLeasesAndDeferredEphemeralWithoutProcesses(t *testing.T) 
 				}
 				id = result.ID
 			} else {
-				openTestLease(t, e, a, s)
+				openTestTunnel(t, e, a, s)
 			}
-			if err := e.ExpireLeases(); err != nil {
+			if err := e.Maintain(); err != nil {
 				t.Fatal(err)
 			}
 			if e.manager.Active() || !e.Active() || !e.known(id) {
-				t.Fatalf("lease did not protect idle/deferred start: active=%v statuses=%+v", e.Active(), e.Statuses())
+				t.Fatalf("holder did not protect idle/deferred start: active=%v statuses=%+v", e.Active(), e.Statuses())
 			}
 			select {
 			case <-r.started:
 				t.Fatal("missing-secret tunnel spawned")
 			default:
 			}
-			c.Advance(DefaultLeaseTTL)
-			if err := e.ExpireLeases(); err != nil {
+			if err := e.ReleaseTunnel(a, s, id); err != nil {
 				t.Fatal(err)
 			}
 			if e.Active() {
-				t.Fatal("expired deferred lease prevented idle exit")
+				t.Fatal("released deferred tunnel prevented idle exit")
 			}
 			if ephemeral && e.known(id) {
-				t.Fatal("expired ephemeral definition retained")
+				t.Fatal("released ephemeral definition retained")
 			}
 		})
 	}
 }
 
-func TestReconnectAfterGraceCannotResurrectLease(t *testing.T) {
-	e, _, c := ownedEngine(t, nil, savedCommand())
-	a, s := session(t, e, "adapter")
-	l := openTestLease(t, e, a, s)
-	readyOwned(t, e, "service")
-	if err := e.DisconnectSession(a, s); err != nil {
-		t.Fatal(err)
-	}
-	c.Advance(DisconnectGrace)
-	if _, err := e.ConnectSession(a, s); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.RenewLease(a, s, api.RenewLeaseParams{ID: l.ID}); err == nil {
-		t.Fatal("late reconnect renewed expired grace")
-	}
-	if err := e.ExpireLeases(); err != nil {
-		t.Fatal(err)
-	}
-	requireRunning(t, e, "service", false)
-}
-
-func TestCanceledConnectionCannotStartQueuedLease(t *testing.T) {
+func TestCanceledConnectionCannotStartQueuedOpen(t *testing.T) {
 	e, r, _ := ownedEngine(t, nil, savedCommand())
 	a, s := session(t, e, "adapter")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := e.OpenLeaseContext(ctx, a, s, api.OpenLeaseParams{ID: "service"}); !errors.Is(err, context.Canceled) {
+	if _, err := e.OpenSavedContext(ctx, a, s, api.OpenSavedParams{ID: "service"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("open canceled=%v", err)
 	}
 	if _, err := e.RunEphemeralContext(ctx, a, s, api.RunEphemeralParams{Tunnel: commandTunnel()}); !errors.Is(err, context.Canceled) {

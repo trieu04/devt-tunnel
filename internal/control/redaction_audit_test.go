@@ -27,9 +27,9 @@ func (r outputRunner) Start(req supervisor.SpawnRequest) (supervisor.Process, er
 	return &leaseProcess{done: make(chan struct{})}, nil
 }
 
-func logTestServer(t *testing.T) (*Server, string, *leaseClock, <-chan io.Writer) {
+func logTestServer(t *testing.T) (*Server, string, *testClock, <-chan io.Writer) {
 	t.Helper()
-	clock := &leaseClock{now: time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)}
+	clock := &testClock{now: time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)}
 	output := make(chan io.Writer, 1)
 	s, socket := testServerWithOptions(t, func(opts *engine.Options) {
 		opts.Clock = clock
@@ -52,8 +52,8 @@ func logTestServer(t *testing.T) (*Server, string, *leaseClock, <-chan io.Writer
 
 func TestMCPLogsRedactionRawGUIAndEmittedCursor(t *testing.T) {
 	_, socket, clock, outputs := logTestServer(t)
-	person := leasedDial(t, socket, "gui", "person", "")
-	mcp := leasedDial(t, socket, "mcp", "adapter", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "adapter", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := person.Call(ctx, "tunnel.start", api.IDParams{ID: "t"}, nil); err != nil {
@@ -127,12 +127,12 @@ func TestMCPLogsRedactionRawGUIAndEmittedCursor(t *testing.T) {
 
 func TestDaemonAuditApprovalOpenCloseContainsNoSensitivePayload(t *testing.T) {
 	_, socket, _, outputs := logTestServer(t)
-	person := leasedDial(t, socket, "cli", "person", "")
-	mcp := leasedDial(t, socket, "mcp", "adapter", "")
+	person := dialClient(t, socket, "cli", "person", "")
+	mcp := dialClient(t, socket, "mcp", "adapter", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p := api.OpenLeaseParams{ID: "t", Purpose: "private-secret-value purpose-not-in-audit"}
-	err := mcp.Call(ctx, "lease.open", p, nil)
+	p := api.OpenSavedParams{ID: "t", Purpose: "private-secret-value purpose-not-in-audit"}
+	err := mcp.Call(ctx, "tunnel.open", p, nil)
 	var rpc *api.Error
 	if !errors.As(err, &rpc) || rpc.Data.Kind != api.PendingApproval || rpc.Data.ApprovalID == "" {
 		t.Fatalf("ask=%v", err)
@@ -144,8 +144,8 @@ func TestDaemonAuditApprovalOpenCloseContainsNoSensitivePayload(t *testing.T) {
 	if err := person.Call(ctx, "approval.decide", api.DecideApprovalParams{ID: approval.ID, Decision: "approve", Scope: "once", Code: approval.Code}, nil); err != nil {
 		t.Fatal(err)
 	}
-	var lease api.Lease
-	if err := mcp.Call(ctx, "lease.open", p, &lease); err != nil {
+	var opened string
+	if err := mcp.Call(ctx, "tunnel.open", p, &opened); err != nil {
 		t.Fatal(err)
 	}
 	var output io.Writer
@@ -155,14 +155,14 @@ func TestDaemonAuditApprovalOpenCloseContainsNoSensitivePayload(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	_, _ = io.WriteString(output, "private-secret-value log-text-sentinel\n")
-	if err := mcp.Call(ctx, "lease.close", api.IDParams{ID: lease.ID}, nil); err != nil {
+	if err := mcp.Call(ctx, "tunnel.release", api.IDParams{ID: opened}, nil); err != nil {
 		t.Fatal(err)
 	}
 	var batch api.AuditReadResult
 	if err := person.Call(ctx, "audit.read", api.AuditReadParams{}, &batch); err != nil {
 		t.Fatal(err)
 	}
-	want := []audit.Action{audit.ApprovalRequest, audit.ApprovalDecide, audit.LeaseOpen, audit.LeaseClose}
+	want := []audit.Action{audit.ApprovalRequest, audit.ApprovalDecide, audit.TunnelOpen, audit.TunnelRelease}
 	if len(batch.Events) != len(want) {
 		t.Fatalf("events=%+v", batch.Events)
 	}
@@ -181,7 +181,7 @@ func TestDaemonAuditApprovalOpenCloseContainsNoSensitivePayload(t *testing.T) {
 	if err := person.Call(ctx, "audit.read", api.AuditReadParams{After: page.Next, Limit: 2}, &page); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Events) != 2 || page.Events[0].Action != audit.LeaseOpen || page.Next != batch.Next {
+	if len(page.Events) != 2 || page.Events[0].Action != audit.TunnelOpen || page.Next != batch.Next {
 		t.Fatalf("audit next page skipped events: %+v", page)
 	}
 	encoded, _ := json.Marshal(batch)
@@ -211,8 +211,8 @@ func TestDaemonAuditApprovalOpenCloseContainsNoSensitivePayload(t *testing.T) {
 
 func TestMCPRedactionSurvivesDefinitionChangesRotationAndReconnect(t *testing.T) {
 	_, socket, _, outputs := logTestServer(t)
-	person := leasedDial(t, socket, "gui", "person", "")
-	first := leasedDial(t, socket, "mcp", "adapter", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	first := dialClient(t, socket, "mcp", "adapter", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	policyOK(t, person, "tunnel.start", api.IDParams{ID: "t"}, nil)
@@ -254,7 +254,7 @@ func TestMCPRedactionSurvivesDefinitionChangesRotationAndReconnect(t *testing.T)
 	policyOK(t, person, "secret.delete", api.SecretNameParams{Name: "token"}, nil)
 	_, _ = io.WriteString(output, "private-secret-value\n")
 	check(first, []string{"[secret:token]"})
-	second := leasedDial(t, socket, "mcp", "new-adapter", "")
+	second := dialClient(t, socket, "mcp", "new-adapter", "")
 	check(second, []string{"[secret:token]"})
 	policyOK(t, person, "secret.set", api.SetSecretParams{Name: "replacement", Value: "replacement-secret-value", Kind: secret.KindEnv}, nil)
 	view.Tunnel.Command.SecretEnvs = map[string]string{"TOKEN": "replacement"}
@@ -264,7 +264,7 @@ func TestMCPRedactionSurvivesDefinitionChangesRotationAndReconnect(t *testing.T)
 	policyOK(t, person, "secret.set", api.SetSecretParams{Name: "replacement", Value: "new-rotated-value", Kind: secret.KindEnv}, nil)
 	_, _ = io.WriteString(output, "replacement-secret-value new-rotated-value\n")
 	check(first, []string{"[secret:token]", "[secret:replacement]"})
-	third := leasedDial(t, socket, "mcp", "reconnected-adapter", "")
+	third := dialClient(t, socket, "mcp", "reconnected-adapter", "")
 	check(third, []string{"[secret:token]", "[secret:replacement]"})
 	// A current named secret that cannot be fetched never causes a raw fallback.
 	policyOK(t, person, "secret.delete", api.SecretNameParams{Name: "replacement"}, nil)
@@ -276,8 +276,8 @@ func TestMCPRedactionSurvivesDefinitionChangesRotationAndReconnect(t *testing.T)
 
 func TestMCPRedactionNewRingWithReusedTunnelID(t *testing.T) {
 	_, socket, _, outputs := logTestServer(t)
-	person := leasedDial(t, socket, "gui", "person", "")
-	mcp := leasedDial(t, socket, "mcp", "adapter", "")
+	person := dialClient(t, socket, "gui", "person", "")
+	mcp := dialClient(t, socket, "mcp", "adapter", "")
 	policyOK(t, person, "tunnel.start", api.IDParams{ID: "t"}, nil)
 	policyOK(t, person, "tunnel.waitReady", api.IDParams{ID: "t"}, nil)
 	first := <-outputs
@@ -314,12 +314,12 @@ func TestMCPRedactionNewRingWithReusedTunnelID(t *testing.T) {
 }
 
 func TestAuditFailureRefusesNewSpawnsButNeverPreventsCleanup(t *testing.T) {
-	for _, operation := range []string{"close", "expire", "person stop"} {
+	for _, operation := range []string{"close", "person stop"} {
 		t.Run(operation, func(t *testing.T) {
 			agent := settings.StrictAgent()
 			agent.AllowTunnels = []string{"t"}
 			var trail *audit.Writer
-			s, socket, clock := policyServer(t, agent, func(o *engine.Options, _ *model.Config) {
+			_, socket, _ := policyServer(t, agent, func(o *engine.Options, _ *model.Config) {
 				var err error
 				trail, err = audit.Open(o.StateDir, audit.Options{})
 				if err != nil {
@@ -328,10 +328,10 @@ func TestAuditFailureRefusesNewSpawnsButNeverPreventsCleanup(t *testing.T) {
 				o.Audit = trail
 				t.Cleanup(func() { trail.Close() })
 			})
-			mcp := leasedDial(t, socket, "mcp", "adapter", "")
-			person := leasedDial(t, socket, "gui", "person", "")
-			var lease api.Lease
-			policyOK(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t", TTL: "1m"}, &lease)
+			mcp := dialClient(t, socket, "mcp", "adapter", "")
+			person := dialClient(t, socket, "gui", "person", "")
+			var opened string
+			policyOK(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"}, &opened)
 			policyOK(t, mcp, "tunnel.waitReady", api.IDParams{ID: "t"}, nil)
 			if err := trail.Close(); err != nil {
 				t.Fatal(err)
@@ -339,10 +339,7 @@ func TestAuditFailureRefusesNewSpawnsButNeverPreventsCleanup(t *testing.T) {
 			var err error
 			switch operation {
 			case "close":
-				err = policyCall(t, mcp, "lease.close", api.IDParams{ID: lease.ID}, nil)
-			case "expire":
-				clock.advance(time.Minute)
-				err = s.engine.ExpireLeases()
+				err = policyCall(t, mcp, "tunnel.release", api.IDParams{ID: opened}, nil)
 			case "person stop":
 				err = policyCall(t, person, "tunnel.stop", api.IDParams{ID: "t"}, nil)
 			}
@@ -351,7 +348,7 @@ func TestAuditFailureRefusesNewSpawnsButNeverPreventsCleanup(t *testing.T) {
 			}
 			policyStopped(t, person, "t")
 			// A subsequent allowed policy decision still cannot spawn without audit.
-			if err := policyCall(t, mcp, "lease.open", api.OpenLeaseParams{ID: "t"}, nil); err == nil {
+			if err := policyCall(t, mcp, "tunnel.open", api.OpenSavedParams{ID: "t"}, nil); err == nil {
 				t.Fatal("spawn admitted with closed audit writer")
 			}
 			policyStopped(t, person, "t")

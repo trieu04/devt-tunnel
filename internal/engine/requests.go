@@ -118,14 +118,14 @@ func (s *Engine) requestSession(ctx context.Context, actor api.Actor, session st
 
 func (s *Engine) executeOpenRequestLocked(ctx context.Context, actor api.Actor, session string, r *openRequest) (api.OpenRequestResult, error) {
 	ctx = context.WithValue(ctx, openRequestContextKey{}, r.args.RequestID)
-	var lease api.Lease
+	var tunnelID string
 	var err error
 	if r.args.Tunnel != nil {
 		var result api.RunEphemeralResult
-		result, err = s.RunEphemeralContext(ctx, actor, session, api.RunEphemeralParams{Tunnel: *r.args.Tunnel, Purpose: r.args.Purpose, TTL: r.args.TTL})
-		lease = result.Lease
+		result, err = s.RunEphemeralContext(ctx, actor, session, api.RunEphemeralParams{Tunnel: *r.args.Tunnel, Purpose: r.args.Purpose})
+		tunnelID = result.ID
 	} else {
-		lease, err = s.OpenLeaseContext(ctx, actor, session, api.OpenLeaseParams{ID: r.args.ID, Purpose: r.args.Purpose, TTL: r.args.TTL})
+		tunnelID, err = s.OpenSavedContext(ctx, actor, session, api.OpenSavedParams{ID: r.args.ID, Purpose: r.args.Purpose})
 	}
 	if err != nil {
 		var rpc *api.Error
@@ -141,11 +141,10 @@ func (s *Engine) executeOpenRequestLocked(ctx context.Context, actor api.Actor, 
 		r.terminalAt = s.clock.Now()
 		return api.OpenRequestResult{}, err
 	}
-	r.result.Lease = &lease
-	r.result.TunnelID = lease.TunnelID
+	r.result.TunnelID = tunnelID
 	r.result.Summary, r.result.Message = "", ""
 	r.result.Status = "starting"
-	r.result.ExpiresAt = &lease.ExpiresAt
+	r.result.ExpiresAt = nil
 	s.snapshotOpenRequestLocked(actor, session, r)
 	return cloneOpenRequestResult(r.result), nil
 }
@@ -194,28 +193,12 @@ func (s *Engine) snapshotOpenRequestLocked(actor api.Actor, session string, r *o
 		}
 		return false
 	}
-	if r.result.Lease == nil {
+	if r.result.TunnelID == "" {
 		return false
 	}
-	found := false
-	for _, lease := range s.ListLeases(actor, session, true) {
-		if lease.ID != r.result.Lease.ID {
-			continue
-		}
-		found = true
-		l := lease
-		r.result.Lease, r.result.TunnelID, r.result.ExpiresAt = &l, l.TunnelID, &l.ExpiresAt
-		if l.Revoked {
-			terminal("failed", "Lease was revoked by a person; do not reopen without their consent.")
-		} else if !leaseAlive(l, s.clock.Now()) {
-			terminal("expired", "Lease expired.")
-		}
-		break
-	}
-	if !found {
-		terminal("expired", "Lease ended.")
-	}
-	if !r.terminalAt.IsZero() {
+	r.result.ExpiresAt = nil
+	if !s.known(r.result.TunnelID) {
+		terminal("expired", "Tunnel ended.")
 		return false
 	}
 	r.result.Status, r.result.Message, r.result.PromptKind = "starting", "", ""
@@ -230,6 +213,8 @@ func (s *Engine) snapshotOpenRequestLocked(actor api.Actor, session string, r *o
 		case "starting", "reconnecting":
 		case "needs_token", "keyring_unavailable":
 			r.result.Status, r.result.Message = "needs_user", "A person must provide the required secret or unlock the keychain in devt-tunnel."
+		case "stopped":
+			terminal("failed", "The tunnel was stopped; do not reopen without a person's consent.")
 		default:
 			terminal("failed", "Tunnel did not become ready; inspect redacted logs.")
 		}
@@ -241,7 +226,7 @@ func (s *Engine) snapshotOpenRequestLocked(actor api.Actor, session string, r *o
 		if prompt.view.Prompt.TunnelID == r.result.TunnelID {
 			r.result.Status = "needs_user"
 			r.result.PromptKind = string(prompt.view.Prompt.Kind)
-			r.result.Message = "SSH is waiting for a person to answer a prompt in devt-tunnel or devt-tunnel prompts. Agents cannot answer it."
+			r.result.Message = "SSH is waiting for a person to answer a prompt in devt-tunnel or devt-tunnel prompts. You cannot answer it."
 			break
 		}
 	}
@@ -251,16 +236,6 @@ func (s *Engine) snapshotOpenRequestLocked(actor api.Actor, session string, r *o
 
 func cloneOpenRequestResult(r api.OpenRequestResult) api.OpenRequestResult {
 	r.Endpoints = append([]api.Endpoint{}, r.Endpoints...)
-	if r.Lease != nil {
-		l := *r.Lease
-		// Sessions are reconnect credentials, not needed in tool results.
-		l.Session = ""
-		if l.GraceUntil != nil {
-			deadline := *l.GraceUntil
-			l.GraceUntil = &deadline
-		}
-		r.Lease = &l
-	}
 	if r.ExpiresAt != nil {
 		expiry := *r.ExpiresAt
 		r.ExpiresAt = &expiry
@@ -272,18 +247,9 @@ func (s *Engine) pruneOpenRequestsLocked() {
 	for key, r := range s.openRequests {
 		s.snapshotOpenRequestLocked(key.actor, key.session, r)
 		if !r.terminalAt.IsZero() && !s.clock.Now().Before(r.terminalAt.Add(OpenRequestRetention)) {
-			// Even a failed tunnel can retain a live claim. Do not forget its
-			// request ID and accidentally open a second lease on retry.
-			live := false
-			if r.result.Lease != nil {
-				for _, lease := range s.ListLeases(key.actor, key.session, true) {
-					if lease.ID == r.result.Lease.ID && leaseAlive(lease, s.clock.Now()) {
-						live = true
-						break
-					}
-				}
-			}
-			if !live {
+			// Even a failed tunnel can stay held. Do not forget its request ID
+			// and accidentally open a second tunnel on retry.
+			if r.result.TunnelID == "" || !s.holdsTunnel(key.actor, key.session, r.result.TunnelID) {
 				delete(s.openRequests, key)
 			}
 		}

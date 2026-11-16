@@ -183,7 +183,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		if code, out, diagnostics := invoke("", "profile", "add", "forward-fixture", "--ssh-config", sshConfig); code != 0 {
 			t.Fatalf("profile add: code=%d stdout=%s stderr=%s", code, out, diagnostics)
 		}
-		code, out, diagnostics := invoke("", "forward", "forward-fixture", "auto:"+env.echoAddr, "--profile", "forward-fixture", "--ttl", "5m", "--json")
+		code, out, diagnostics := invoke("", "forward", "forward-fixture", "auto:"+env.echoAddr, "--profile", "forward-fixture", "--json")
 		var result struct {
 			APIVersion int `json:"apiVersion"`
 			Tunnels    []struct {
@@ -198,7 +198,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 		if !strings.HasPrefix(id, "tmp-") {
 			t.Fatalf("ephemeral ID=%q", id)
 		}
-		// The launching CLI has exited: a detached lease still owns the forward.
+		// The launching CLI has exited: a detached holder still owns the forward.
 		if got, err := echoThrough(address); err != nil || got != "ping" {
 			t.Fatalf("ephemeral connection=%q error=%v", got, err)
 		}

@@ -8,14 +8,13 @@ import (
 )
 
 // OpenRequestParams chooses exactly one daemon-loaded saved ID or inline draft.
-// RequestID is scoped to the connected actor/session. TTL is a Go duration.
+// RequestID is scoped to the connected actor/session.
 // CheckRequest accepts this shape too, but does not require RequestID.
 type OpenRequestParams struct {
 	RequestID string        `json:"requestId,omitempty"`
 	ID        string        `json:"id,omitempty"`
 	Tunnel    *model.Tunnel `json:"tunnel,omitempty"`
 	Purpose   string        `json:"purpose"`
-	TTL       string        `json:"ttl,omitempty"`
 }
 
 type WaitRequestParams struct {
@@ -29,7 +28,6 @@ type OpenRequestResult struct {
 	RequestID  string     `json:"requestId"`
 	Status     string     `json:"status"` // pending_approval | starting | ready | needs_user | denied | timed_out | expired | failed
 	ApprovalID string     `json:"approvalId,omitempty"`
-	Lease      *Lease     `json:"lease,omitempty"`
 	TunnelID   string     `json:"tunnelId,omitempty"`
 	Message    string     `json:"message,omitempty"`
 	PromptKind string     `json:"promptKind,omitempty"`
@@ -54,6 +52,4 @@ type AgentPolicyResult struct {
 	AllowTunnels  []string `json:"allowTunnels"`
 	AllowSSHHosts []string `json:"allowSSHHosts"`
 	PortRange     string   `json:"portRange"`
-	DefaultTTL    string   `json:"defaultTTL"`
-	MaxTTL        string   `json:"maxTTL"`
 }
