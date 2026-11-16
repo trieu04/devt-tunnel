@@ -13,7 +13,7 @@ import (
 	"github.com/trieu04/devt-tunnel/internal/platform"
 )
 
-var version = "1.0.0"
+var version = "1.1.0"
 
 //go:embed all:frontend/dist
 var assets embed.FS
