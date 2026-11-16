@@ -164,7 +164,7 @@ func TestPolicyIntegrationSavedAndUnsafeRows(t *testing.T) {
 		}, true, api.PendingApproval, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			agent := settings.DefaultAgent()
+			agent := settings.StrictAgent()
 			if tc.allowed {
 				agent.AllowTunnels = []string{"ro*"}
 			}
@@ -225,7 +225,7 @@ func TestPolicyIntegrationEphemeralExecutionExtensionsDenied(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			agent := settings.DefaultAgent()
+			agent := settings.StrictAgent()
 			agent.AllowTunnels = []string{"*"}
 			agent.AllowSSHHosts = []string{"bastion"}
 			_, socket, _ := policyServer(t, agent, nil)
@@ -254,7 +254,7 @@ func TestPolicyIntegrationPublicExposureOverridesAllowLists(t *testing.T) {
 					mode = "saved"
 				}
 				t.Run(public+"/"+kind+"/"+mode, func(t *testing.T) {
-					agent := settings.DefaultAgent()
+					agent := settings.StrictAgent()
 					agent.Public = public
 					agent.AllowTunnels = []string{"*"}
 					agent.AllowSSHHosts = []string{"bastion"}
@@ -299,7 +299,7 @@ func TestPolicyIntegrationPublicExposureOverridesAllowLists(t *testing.T) {
 }
 
 func TestPolicyIntegrationApprovalOnceAndPrivateViews(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "agent", "")
 	person := leasedDial(t, socket, "gui", "reviewer", "")
 	params := api.OpenLeaseParams{ID: "t", Purpose: "inspect the database"}
@@ -361,7 +361,7 @@ func TestPolicyIntegrationApprovalOnceAndPrivateViews(t *testing.T) {
 }
 
 func TestPolicyIntegrationSavedFingerprintChangesRequireNewApproval(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "agent", "")
 	person := leasedDial(t, socket, "gui", "editor", "")
 	params := api.OpenLeaseParams{ID: "t"}
@@ -386,7 +386,7 @@ func TestPolicyIntegrationSavedFingerprintChangesRequireNewApproval(t *testing.T
 func TestPolicyIntegrationDeniedAndTimedOutApprovalsCannotRun(t *testing.T) {
 	for _, outcome := range []string{"deny", "timeout"} {
 		t.Run(outcome, func(t *testing.T) {
-			s, socket, clock := policyServer(t, settings.DefaultAgent(), nil)
+			s, socket, clock := policyServer(t, settings.StrictAgent(), nil)
 			mcp := leasedDial(t, socket, "mcp", "agent", "")
 			person := leasedDial(t, socket, "cli", "reviewer", "")
 			params := api.OpenLeaseParams{ID: "t"}
@@ -428,7 +428,7 @@ func TestPolicyIntegrationDeniedAndTimedOutApprovalsCannotRun(t *testing.T) {
 }
 
 func TestPolicyIntegrationSessionGrantAndApprovalIsolation(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	first := leasedDial(t, socket, "mcp", "same-name", "")
 	person := leasedDial(t, socket, "gui", "reviewer", "")
 	params := api.OpenLeaseParams{ID: "t"}
@@ -481,7 +481,7 @@ func TestPolicyIntegrationAliasMustExistAndNewSecretsAsk(t *testing.T) {
 		{"new secret reference on allowed alias", true, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			agent := settings.DefaultAgent()
+			agent := settings.StrictAgent()
 			agent.AllowSSHHosts = []string{"bastion"}
 			_, socket, _ := policyServer(t, agent, func(opts *engine.Options, cfg *model.Config) {
 				path := filepath.Join(filepath.Dir(opts.ConfigPath), ".ssh", "config")
@@ -530,7 +530,7 @@ func TestPolicyIntegrationAliasMustExistAndNewSecretsAsk(t *testing.T) {
 }
 
 func TestPolicyIntegrationSaveNeedsSeparateApprovalAndCannotEditOrStart(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "save-agent", "")
 	person := leasedDial(t, socket, "gui", "person", "")
 	draft := policySSH("")
@@ -573,7 +573,7 @@ func TestPolicyIntegrationSaveNeedsSeparateApprovalAndCannotEditOrStart(t *testi
 }
 
 func TestPolicyIntegrationPromoteNeedsOwnLeaseAndSeparateApproval(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "promote-agent", "")
 	other := leasedDial(t, socket, "mcp", "promote-agent", "")
 	person := leasedDial(t, socket, "gui", "person", "")
@@ -613,7 +613,7 @@ func TestPolicyIntegrationPromoteNeedsOwnLeaseAndSeparateApproval(t *testing.T) 
 }
 
 func TestPolicyIntegrationDisabledDeniesAllAgentMethods(t *testing.T) {
-	agent := settings.DefaultAgent()
+	agent := settings.StrictAgent()
 	agent.Enabled = false
 	agent.AllowTunnels = []string{"*"}
 	agent.AllowSSHHosts = []string{"bastion"}
@@ -671,7 +671,7 @@ func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 		"tunnel.runEphemeral": true, "approval.list": true, "approval.get": true,
 		"logs.read": true, "logs.since": true, "tunnel.promote": true, "tunnel.save": true,
 	}
-	s, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	s, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	// Model a future method registered as read-only: neither registration nor
 	// that classification may implicitly grant MCP access.
 	future := "future.readSensitiveState"
@@ -703,7 +703,7 @@ func TestPolicyIntegrationConstantMethodAllowList(t *testing.T) {
 }
 
 func TestHelloRejectsUnknownClientKinds(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	for _, kind := range []string{"MCP", "Mcp", "agent", "gui "} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		c, err := client.Dial(ctx, socket, api.ClientInfo{Kind: kind, Name: "x"})

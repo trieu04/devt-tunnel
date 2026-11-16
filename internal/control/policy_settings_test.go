@@ -15,7 +15,7 @@ import (
 )
 
 func TestPolicySettingsTTLsPortRangeAndStableAutoApproval(t *testing.T) {
-	a := settings.DefaultAgent()
+	a := settings.StrictAgent()
 	a.DefaultTTL = "75s"
 	a.MaxTTL = "2m"
 	a.PortRange = "31234-31236"
@@ -56,7 +56,7 @@ func TestPolicySettingsTTLsPortRangeAndStableAutoApproval(t *testing.T) {
 
 func TestPolicyAlwaysSavedLiteralAndFingerprintFence(t *testing.T) {
 	var path string
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, cfg *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, cfg *model.Config) {
 		path = o.SettingsPath
 		cfg.Tunnels = append(cfg.Tunnels, policySSH("literal*"), policySSH("literal-other"))
 	})
@@ -91,7 +91,7 @@ func TestPolicyAlwaysSavedLiteralAndFingerprintFence(t *testing.T) {
 
 func TestPolicyAlwaysAliasAndPurposeBound(t *testing.T) {
 	var path string
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, cfg *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, cfg *model.Config) {
 		path = o.SettingsPath
 		sshPath := filepath.Join(filepath.Dir(o.ConfigPath), ".ssh", "config")
 		if err := os.MkdirAll(filepath.Dir(sshPath), 0700); err != nil {
@@ -130,7 +130,7 @@ func TestPolicyAlwaysAliasAndPurposeBound(t *testing.T) {
 }
 
 func TestApprovalOnceConcurrentRetryCannotDoubleSpend(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	first := leasedDial(t, socket, "mcp", "adapter", "")
 	second := leasedDial(t, socket, "mcp", "adapter", first.Session())
 	person := leasedDial(t, socket, "gui", "person", "")
@@ -163,7 +163,7 @@ func TestApprovalOnceConcurrentRetryCannotDoubleSpend(t *testing.T) {
 
 func TestAgentSettingsPersonOnlyAndValidated(t *testing.T) {
 	var path string
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, _ *model.Config) { path = o.SettingsPath })
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) { path = o.SettingsPath })
 	person := leasedDial(t, socket, "gui", "person", "")
 	mcp := leasedDial(t, socket, "mcp", "settings-agent", "")
 	var initial settings.Agent

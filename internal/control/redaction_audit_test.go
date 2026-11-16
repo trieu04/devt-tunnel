@@ -316,7 +316,7 @@ func TestMCPRedactionNewRingWithReusedTunnelID(t *testing.T) {
 func TestAuditFailureRefusesNewSpawnsButNeverPreventsCleanup(t *testing.T) {
 	for _, operation := range []string{"close", "expire", "person stop"} {
 		t.Run(operation, func(t *testing.T) {
-			agent := settings.DefaultAgent()
+			agent := settings.StrictAgent()
 			agent.AllowTunnels = []string{"t"}
 			var trail *audit.Writer
 			s, socket, clock := policyServer(t, agent, func(o *engine.Options, _ *model.Config) {

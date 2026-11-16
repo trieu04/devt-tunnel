@@ -16,7 +16,7 @@ func localTunnel() model.Tunnel {
 }
 
 func configWithGrants() settings.Settings {
-	a := settings.DefaultAgent()
+	a := settings.StrictAgent()
 	a.AllowTunnels, a.AllowSSHHosts = []string{"dev-*"}, []string{"staging"}
 	return settings.Settings{Agent: &a}
 }
@@ -42,7 +42,7 @@ func TestPolicyTable(t *testing.T) {
 	t.Run("row_2_open_saved", func(t *testing.T) {
 		for _, action := range []Action{ActionOpenSaved, ActionStartSaved} {
 			t.Run(string(action), func(t *testing.T) {
-				wantDecision(t, action, localTunnel(), settings.Settings{}, Ask)
+				wantDecision(t, action, localTunnel(), strictCfg(), Ask)
 				wantDecision(t, action, localTunnel(), configWithGrants(), Allow)
 				tunnel := localTunnel()
 				tunnel.ID = "prod-db"
@@ -59,7 +59,7 @@ func TestPolicyTable(t *testing.T) {
 				tunnel := localTunnel()
 				tunnel.Forwards[0].Kind = kind
 				for _, action := range []Action{ActionOpen, ActionCreate} {
-					wantDecision(t, action, tunnel, settings.Settings{}, Ask)
+					wantDecision(t, action, tunnel, strictCfg(), Ask)
 					wantDecision(t, action, tunnel, configWithGrants(), Allow)
 				}
 			})
@@ -227,7 +227,7 @@ func TestAlwaysApprovalEligibility(t *testing.T) {
 		{"Unix_socket", ActionOpen, withForward(model.ForwardLocal, "/tmp/forward.sock"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := CanAlwaysAllow(agent, tc.action, tc.tunnel, settings.Settings{}); got != tc.want {
+			if got := CanAlwaysAllow(agent, tc.action, tc.tunnel, strictCfg()); got != tc.want {
 				t.Fatalf("got %v want %v", got, tc.want)
 			}
 		})
@@ -369,5 +369,20 @@ func TestPublicExposureRequiresUnambiguousUnixSocket(t *testing.T) {
 				t.Fatalf("PublicExposure=%v, want %v", got, tc.public)
 			}
 		})
+	}
+}
+
+func strictCfg() settings.Settings {
+	a := settings.StrictAgent()
+	return settings.Settings{Agent: &a}
+}
+
+func TestDefaultsAllowSavedTunnelsAndSSHAliases(t *testing.T) {
+	agent := Actor{Kind: ActorMCP}
+	if d, _ := Decide(agent, ActionOpenSaved, localTunnel(), settings.Settings{}); d != Allow {
+		t.Fatalf("saved tunnel default = %s", d)
+	}
+	if d, _ := Decide(agent, ActionOpen, localTunnel(), settings.Settings{}); d != Allow {
+		t.Fatalf("alias forward default = %s", d)
 	}
 }

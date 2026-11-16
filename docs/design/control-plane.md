@@ -144,17 +144,17 @@ enabled = true
 port_range = "20000-20999"
 default_ttl = "30m"
 max_ttl = "8h"
-# Both allow-lists default to empty.
+# Both allow-lists default to ["*"]; set [] to ask for everything.
 allow_tunnels = ["dev-*"]          # saved tunnels usable without approval
-allow_ssh_hosts = ["staging"]      # aliases usable for new local forwards without approval
+allow_ssh_hosts = ["staging"]      # aliases usable for new local forwards without approval ("*" = any config alias)
 public = "ask"                     # ask | deny
 ```
 
 | Agent action | Default | Can allow-list? |
 |---|---|---|
 | List tunnels and SSH aliases, read redacted logs, dry-run checks | Allow | |
-| Open a saved tunnel | Ask | `allow_tunnels` |
-| New `-L` or `-D` on `127.0.0.1` through a config alias | Ask | `allow_ssh_hosts` |
+| Open a saved tunnel | Allow (`allow_tunnels = ["*"]`) | `allow_tunnels` |
+| New `-L` or `-D` on `127.0.0.1` through a config alias | Allow (`allow_ssh_hosts = ["*"]`) | `allow_ssh_hosts` |
 | SSH by manual hostname rather than an alias | Ask | No |
 | Public exposure: ngrok, cloudflared, any `-R`, any non-loopback bind | Ask, or deny by setting | **No** |
 | Save a tunnel to `tunnels.toml` | Ask | No |

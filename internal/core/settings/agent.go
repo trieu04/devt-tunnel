@@ -21,13 +21,23 @@ type Agent struct {
 	Public        string   `toml:"public" json:"public"` // ask | deny; public exposure cannot be allow-listed
 }
 
-// DefaultAgent returns fresh allow-lists. The lists shown in the design are
-// examples, not shipping grants: a new installation asks for every tunnel.
+// DefaultAgent returns fresh allow-lists. A new installation trusts what the
+// person already set up: every saved tunnel and every SSH config alias. Public
+// exposure, unsafe saved tunnels, manual hosts, secrets and saves still ask.
+// Set the lists to [] to ask for everything.
 func DefaultAgent() Agent {
 	return Agent{
 		Enabled: true, PortRange: "20000-20999", DefaultTTL: "30m", MaxTTL: "8h",
-		AllowTunnels: []string{}, AllowSSHHosts: []string{}, Public: "ask",
+		AllowTunnels: []string{"*"}, AllowSSHHosts: []string{"*"}, Public: "ask",
 	}
+}
+
+// StrictAgent is DefaultAgent with empty allow-lists: every agent request that
+// is not read-only asks a person.
+func StrictAgent() Agent {
+	a := DefaultAgent()
+	a.AllowTunnels, a.AllowSSHHosts = []string{}, []string{}
+	return a
 }
 
 // AgentPolicy also makes an in-memory zero Settings safe to use without Load.
@@ -76,6 +86,9 @@ func (a Agent) Validate() error {
 		}
 	}
 	for _, alias := range a.AllowSSHHosts {
+		if alias == "*" {
+			continue
+		}
 		if alias == "" || strings.HasPrefix(alias, "-") || strings.ContainsAny(alias, " \t\r\n\x00") {
 			return fmt.Errorf("allow_ssh_hosts must contain literal SSH aliases")
 		}

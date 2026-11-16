@@ -9,7 +9,7 @@ import (
 )
 
 func TestAgentDefaults(t *testing.T) {
-	want := Agent{Enabled: true, PortRange: "20000-20999", DefaultTTL: "30m", MaxTTL: "8h", AllowTunnels: []string{}, AllowSSHHosts: []string{}, Public: "ask"}
+	want := Agent{Enabled: true, PortRange: "20000-20999", DefaultTTL: "30m", MaxTTL: "8h", AllowTunnels: []string{"*"}, AllowSSHHosts: []string{"*"}, Public: "ask"}
 	for _, input := range []string{"", "shortcut = 'Ctrl+K'\n", "[agent]\n", "[agent]\npublic = 'ask'\n"} {
 		t.Run(input, func(t *testing.T) {
 			p := filepath.Join(t.TempDir(), "settings.toml")

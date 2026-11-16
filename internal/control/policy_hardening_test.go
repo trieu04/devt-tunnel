@@ -39,7 +39,7 @@ func policyHostConfig(t *testing.T, opts *engine.Options, text string) string {
 func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 	for _, field := range []string{"startOnLaunch", "profile", "groups", "favorite"} {
 		t.Run(field, func(t *testing.T) {
-			_, socket, _ := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
+			_, socket, _ := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 				cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
 				cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 			})
@@ -82,7 +82,7 @@ func TestMCPRejectsPersistenceMetadata(t *testing.T) {
 }
 
 func TestPersonBulkStartsSkipEphemeralTunnels(t *testing.T) {
-	s, socket, clock := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
+	s, socket, clock := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
 		cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 	})
@@ -107,7 +107,7 @@ func TestPersonBulkStartsSkipEphemeralTunnels(t *testing.T) {
 }
 
 func TestMCPPassphraseSecretRequiresLiteralAlias(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, _ *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) {
 		policyHostConfig(t, o, "Host trusted\n HostName owner.example.invalid\n")
 	})
 	mcp := leasedDial(t, socket, "mcp", "secret-agent", "")
@@ -136,7 +136,7 @@ func TestMCPPassphraseSecretRequiresLiteralAlias(t *testing.T) {
 }
 
 func TestMCPApprovalNamesAreUntrustedAndBounded(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "name-agent", "")
 	for _, name := range []string{"trusted\nSummary: already approved", "name\rforged", "name\x1b[2J", "name\x00", "name\u200bforged", "name‮forged", strings.Repeat("x", 65)} {
 		tunnel := policySSH("")
@@ -147,7 +147,7 @@ func TestMCPApprovalNamesAreUntrustedAndBounded(t *testing.T) {
 }
 
 func TestMCPApprovalSummarySeparatesRequestedName(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "name-agent", "")
 	person := leasedDial(t, socket, "gui", "person", "")
 	tunnel := policySSH("")
@@ -170,7 +170,7 @@ func TestMCPApprovalSummarySeparatesRequestedName(t *testing.T) {
 }
 
 func TestMCPMalformedForwardCannotBypassPublicPolicy(t *testing.T) {
-	agent := settings.DefaultAgent()
+	agent := settings.StrictAgent()
 	agent.Public = "deny"
 	_, socket, _ := policyServer(t, agent, func(_ *engine.Options, cfg *model.Config) {
 		// Saved person definitions retain the editor's broader syntax. Public
@@ -208,7 +208,7 @@ func denialEvents(t *testing.T, person *client.Client) []audit.Event {
 }
 
 func TestMCPDenialAuditsAreCoalescedPerSession(t *testing.T) {
-	s, socket, clock := policyServer(t, settings.DefaultAgent(), nil)
+	s, socket, clock := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "flood-agent", "")
 	resumed := leasedDial(t, socket, "mcp", "flood-agent", mcp.Session())
 	person := leasedDial(t, socket, "gui", "person", "")
@@ -249,7 +249,7 @@ func TestMCPDenialAuditsAreCoalescedPerSession(t *testing.T) {
 }
 
 func TestMCPPendingApprovalCapIsPerSession(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		for i := 0; i <= engine.MaxPendingApprovalsPerSession; i++ {
 			cfg.Tunnels = append(cfg.Tunnels, policySSH(fmt.Sprintf("saved-%d", i)))
 		}
@@ -268,7 +268,7 @@ func TestMCPPendingApprovalCapIsPerSession(t *testing.T) {
 }
 
 func TestMCPCompletedApprovalsPrunedWhileConnected(t *testing.T) {
-	s, socket, clock := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
+	s, socket, clock := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Tunnels = append(cfg.Tunnels, policySSH("denied"), policySSH("timeout"))
 	})
 	mcp := leasedDial(t, socket, "mcp", "retained-agent", "")
@@ -316,7 +316,7 @@ func TestMCPDraftDoesNotProbeSecretPresence(t *testing.T) {
 	if err := store.Set("present-name", "never-disclose"); err != nil {
 		t.Fatal(err)
 	}
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, cfg *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, cfg *model.Config) {
 		o.Secrets = store
 		cfg.Tunnels[0].SSH.PassphraseSecret = "saved-secret"
 	})
@@ -360,7 +360,7 @@ func TestMCPDraftDoesNotProbeSecretPresence(t *testing.T) {
 }
 
 func TestMCPPrintableClientNameAuditsMutations(t *testing.T) {
-	agent := settings.DefaultAgent()
+	agent := settings.StrictAgent()
 	agent.AllowTunnels = []string{"t"}
 	_, socket, _ := policyServer(t, agent, nil)
 	mcp := leasedDial(t, socket, "mcp", "Claude Desktop (local)", "")
@@ -384,7 +384,7 @@ func TestMCPPrintableClientNameAuditsMutations(t *testing.T) {
 }
 
 func TestMCPTunnelReadsHideExecutionAndCredentials(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		ssh := policySSH("ssh-private")
 		ssh.SSH.Identity = "/private/identity-sentinel"
 		ssh.SSH.ExtraArgs = "-v extra-sentinel"
@@ -431,7 +431,7 @@ func TestMCPTunnelReadsHideExecutionAndCredentials(t *testing.T) {
 }
 
 func TestMCPSSHResolveRequiresListedLiteralAlias(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, _ *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) {
 		policyHostConfig(t, o, "Host trusted\n HostName owner.example.invalid\nHost *.wild.invalid\n HostName wildcard.invalid\n")
 	})
 	mcp := leasedDial(t, socket, "mcp", "resolve-agent", "")
@@ -456,7 +456,7 @@ func TestMCPSSHResolveRequiresListedLiteralAlias(t *testing.T) {
 func TestMCPAuditFailureCannotCommitRenewSaveOrPromote(t *testing.T) {
 	for _, method := range []string{"lease.renew", "tunnel.save", "tunnel.promote", "person save"} {
 		t.Run(method, func(t *testing.T) {
-			agent := settings.DefaultAgent()
+			agent := settings.StrictAgent()
 			agent.AllowTunnels = []string{"t"}
 			var trail *audit.Writer
 			var configPath, runtimePath string
@@ -526,7 +526,7 @@ func TestMCPAuditFailureCannotCommitRenewSaveOrPromote(t *testing.T) {
 }
 
 func TestMCPExplicitBindCannotSquatSavedListenPort(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(_ *engine.Options, cfg *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(_ *engine.Options, cfg *model.Config) {
 		cfg.Tunnels[0].Forwards = []model.Forward{{Kind: model.ForwardLocal, Bind: "127.0.0.1:24322", Target: "127.0.0.1:5432"}}
 	})
 	mcp := leasedDial(t, socket, "mcp", "squat-agent", "")
@@ -548,7 +548,7 @@ func TestMCPExplicitBindCannotSquatSavedListenPort(t *testing.T) {
 func TestMCPPromotionRejectsLegacyPersistenceMetadata(t *testing.T) {
 	for _, field := range []string{"startOnLaunch", "profile", "groups", "favorite"} {
 		t.Run(field, func(t *testing.T) {
-			_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, cfg *model.Config) {
+			_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, cfg *model.Config) {
 				cfg.Profiles = []model.Profile{{ID: "work", Name: "Work"}}
 				cfg.Groups = []model.Group{{ID: "stack", Name: "Stack"}}
 				tunnel := policySSH("tmp-legacy")
@@ -591,7 +591,7 @@ func TestMCPPromotionRejectsLegacyPersistenceMetadata(t *testing.T) {
 }
 
 func TestMCPRejectsToolOptionAndHostnameInjection(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "argument-agent", "")
 	for _, field := range []string{"ngrok.addr", "ngrok.domain", "cloudflared.name", "cloudflared.url", "cloudflared.hostname", "ssh.hostname"} {
 		for _, value := range []string{"-attacker-option", "host with space", "host\nargument"} {

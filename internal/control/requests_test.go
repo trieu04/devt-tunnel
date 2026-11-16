@@ -32,7 +32,7 @@ func requestWait(t *testing.T, c *client.Client, id string) api.OpenRequestResul
 }
 
 func TestOpenRequestConcurrentReconnectAndConflicts(t *testing.T) {
-	a := settings.DefaultAgent()
+	a := settings.StrictAgent()
 	a.AllowTunnels = []string{"t"}
 	_, socket, _ := policyServer(t, a, nil)
 	first := leasedDial(t, socket, "mcp", "request-agent", "")
@@ -94,7 +94,7 @@ func TestOpenRequestConcurrentReconnectAndConflicts(t *testing.T) {
 }
 
 func TestOpenRequestApprovalWaitUsesOriginalAndFingerprint(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), func(o *engine.Options, _ *model.Config) {
+	_, socket, _ := policyServer(t, settings.StrictAgent(), func(o *engine.Options, _ *model.Config) {
 		o.Listening = func(string) bool { return false }
 	})
 	mcp := leasedDial(t, socket, "mcp", "pending-agent", "")
@@ -153,7 +153,7 @@ func TestOpenRequestApprovalWaitUsesOriginalAndFingerprint(t *testing.T) {
 }
 
 func TestOpenRequestDeniedTimeoutAndRequestCapacity(t *testing.T) {
-	s, socket, clock := policyServer(t, settings.DefaultAgent(), nil)
+	s, socket, clock := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "terminal-agent", "")
 	person := leasedDial(t, socket, "gui", "person", "")
 	p := api.OpenRequestParams{RequestID: "denied", ID: "t", Purpose: "test denial"}
@@ -194,7 +194,7 @@ func TestOpenRequestDeniedTimeoutAndRequestCapacity(t *testing.T) {
 
 func TestCheckRequestPolicyAliasFactsRedactionAndNoKeychain(t *testing.T) {
 	store := &policyCountingStore{}
-	agent := settings.DefaultAgent()
+	agent := settings.StrictAgent()
 	agent.AllowSSHHosts = []string{"trusted", "fake-alias"}
 	agent.AllowTunnels = []string{"t", "unsafe"}
 	var runtimePath string
@@ -270,7 +270,7 @@ func TestCheckRequestPolicyAliasFactsRedactionAndNoKeychain(t *testing.T) {
 }
 
 func TestPolicyGetNarrowAndDisabledMutationReason(t *testing.T) {
-	a := settings.DefaultAgent()
+	a := settings.StrictAgent()
 	a.Enabled = false
 	a.AllowTunnels = []string{"dev-*"}
 	_, socket, _ := policyServer(t, a, func(o *engine.Options, _ *model.Config) { o.PortRange = "31000-31001" })
@@ -302,7 +302,7 @@ func TestPolicyGetNarrowAndDisabledMutationReason(t *testing.T) {
 }
 
 func TestOpenRequestStrictDecodeAndUnsafeSmuggling(t *testing.T) {
-	s, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	s, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "smuggling-agent", "")
 	for _, params := range []any{
 		map[string]any{"requestId": "unknown", "id": "t", "purpose": "test", "command": "touch nowhere"},
@@ -342,7 +342,7 @@ func TestOpenRequestStrictDecodeAndUnsafeSmuggling(t *testing.T) {
 }
 
 func TestDisabledAgentStopsExistingEventSubscription(t *testing.T) {
-	_, socket, _ := policyServer(t, settings.DefaultAgent(), nil)
+	_, socket, _ := policyServer(t, settings.StrictAgent(), nil)
 	mcp := leasedDial(t, socket, "mcp", "subscribed-agent", "")
 	person := leasedDial(t, socket, "gui", "person", "")
 	agentEvents, personEvents := make(chan api.Event, 8), make(chan api.Event, 8)
@@ -360,7 +360,7 @@ func TestDisabledAgentStopsExistingEventSubscription(t *testing.T) {
 	})
 	policyOK(t, mcp, api.EventsSubscribe, api.Empty{}, nil)
 	policyOK(t, person, api.EventsSubscribe, api.Empty{}, nil)
-	policy := settings.DefaultAgent()
+	policy := settings.StrictAgent()
 	policy.Enabled = false
 	policyOK(t, person, "settings.setAgent", api.AgentSettingsParams{Agent: policy}, nil)
 	policyOK(t, person, "tunnel.setFavorite", api.FavoriteParams{ID: "t", Favorite: true}, nil)

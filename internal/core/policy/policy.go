@@ -141,7 +141,7 @@ func Decide(actor Actor, action Action, t model.Tunnel, cfg settings.Settings) (
 	}
 	if localAliasForward(t) {
 		for _, alias := range a.AllowSSHHosts {
-			if alias == t.SSH.Host {
+			if alias == "*" || alias == t.SSH.Host {
 				return Allow, "local forward alias is in allow_ssh_hosts"
 			}
 		}
