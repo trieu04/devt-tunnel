@@ -37,7 +37,7 @@ export function SaveTunnelDialog({
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="save-tunnel-title" onSubmit={save}>
         <h1 id="save-tunnel-title">Save ephemeral tunnel</h1>
         <p className="muted">
-          Keep this definition in tunnels.toml without restarting the tunnel. Its current leases still expire normally.
+          Keep this definition in tunnels.toml without restarting the tunnel. It stays under the same holder.
         </p>
         <label htmlFor="saved-tunnel-name">Name</label>
         <input

@@ -44,12 +44,12 @@ describe("approval dialog", () => {
     expect(html).toContain("Public exposure: ngrok");
     expect(html).toContain("Approve for this session");
     expect(html).not.toContain("Approve always");
-    expect(html).not.toContain("machine&#x27;s agent allow-list");
+    expect(html).not.toContain("machine&#x27;s MCP allow-list");
   });
   it("shows actor, code, expiry and exact argument boundaries, treating purpose as text", () => {
     const html = render(request());
     expect(html).toContain("test-agent");
-    expect(html).toContain("Requested name · agent-provided text");
+    expect(html).toContain("Requested name · client-provided text");
     expect(html).toContain("Agent name &lt;script&gt;untrusted&lt;/script&gt;");
     expect(html).toContain("A1B2C3D4");
     expect(html).toContain("left");

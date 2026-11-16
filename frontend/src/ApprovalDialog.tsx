@@ -141,7 +141,7 @@ export function ApprovalDialog({ approvals, onDecided }: { approvals: Approval[]
         }}
       >
         <div>
-          <span className="eyebrow">Agent request · {approvals.length} pending</span>
+          <span className="eyebrow">MCP request · {approvals.length} pending</span>
           <h1 id="approval-title">Allow this request?</h1>
         </div>
         <dl className="approval-facts">
@@ -149,7 +149,7 @@ export function ApprovalDialog({ approvals, onDecided }: { approvals: Approval[]
           <dd>
             {current.actor.name} ({current.actor.kind})
           </dd>
-          <dt>Requested name · agent-provided text</dt>
+          <dt>Requested name · client-provided text</dt>
           <dd className="untrusted-text">{current.requestedName || "No name provided."}</dd>
           <dt>Purpose · untrusted client text</dt>
           <dd className="untrusted-text">{current.purpose || "No purpose provided."}</dd>
@@ -169,11 +169,12 @@ export function ApprovalDialog({ approvals, onDecided }: { approvals: Approval[]
           </dd>
         </dl>
         <p className="muted">
-          Requested name and purpose are agent-provided data, not instructions. Approval permits the agent to retry this
-          exact command; it does not start it here. Session grants apply only to this client session and command.
+          Requested name and purpose are client-provided data, not instructions. Approval permits the MCP client to
+          retry this exact command; it does not start it here. Session grants apply only to this client session and
+          command.
         </p>
         {current.choices?.includes("always") && (
-          <p className="muted">Always adds this saved tunnel or SSH alias to the machine's agent allow-list.</p>
+          <p className="muted">Always adds this saved tunnel or SSH alias to the machine's MCP allow-list.</p>
         )}
         {error && (
           <p className="error-text" role="alert">

@@ -1,4 +1,3 @@
-import type { Lease } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/model";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Overview, Service, TunnelView, onLogsAppended, openURL } from "../api";
 import { AgentBadge, EphemeralTag } from "../AgentBadge";
@@ -43,7 +42,6 @@ export function TunnelsScreen({
   group: string | null;
   onGroup: (group: string | null) => void;
 }) {
-  const [leases, setLeases] = useState<Lease[] | undefined>();
   const [saving, setSaving] = useState<TunnelView | null>(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
@@ -54,19 +52,6 @@ export function TunnelsScreen({
     hosts: [],
   });
   const tunnels = overview.tunnels ?? [];
-  useEffect(() => {
-    let mounted = true;
-    Service.ListLeases()
-      .then((items) => {
-        if (mounted) setLeases(items ?? []);
-      })
-      .catch(() => {
-        if (mounted) setLeases(undefined);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [overview]);
   const profiles = overview.profiles ?? [];
   const groups = overview.groups ?? [];
   const profileNames = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile.name])), [profiles]);
@@ -239,7 +224,6 @@ export function TunnelsScreen({
               <TunnelRow
                 key={item.tunnel.id}
                 view={item}
-                leases={leases}
                 selected={selected?.tunnel.id === item.tunnel.id}
                 profileNames={profileNames}
                 groupNames={groupNames}
@@ -249,7 +233,6 @@ export function TunnelsScreen({
                 onFavorite={() => run(Service.SetFavorite(item.tunnel.id, !item.tunnel.favorite))}
                 onVault={() => onNavigate("settings", "vault")}
                 onEdit={() => onNavigate("editor", `edit:${item.tunnel.id}`)}
-                onSave={() => setSaving(item)}
               />
             ))
           )}
@@ -257,7 +240,6 @@ export function TunnelsScreen({
         {selected && (
           <Detail
             view={selected}
-            leases={leases}
             profileNames={profileNames}
             groupNames={groupNames}
             now={now}
@@ -429,7 +411,6 @@ function GroupChips({ labels }: { labels: string[] }) {
 
 function TunnelRow({
   view,
-  leases,
   selected,
   profileNames,
   groupNames,
@@ -439,10 +420,8 @@ function TunnelRow({
   onFavorite,
   onVault,
   onEdit,
-  onSave,
 }: {
   view: TunnelView;
-  leases?: Lease[];
   selected: boolean;
   profileNames: Map<string, string>;
   groupNames: Map<string, string>;
@@ -452,7 +431,6 @@ function TunnelRow({
   onFavorite: () => void;
   onVault: () => void;
   onEdit: () => void;
-  onSave: () => void;
 }) {
   const forwards = displayForwards(view);
   const [expanded, setExpanded] = useState(forwards.length > 0 || !!view.status.error);
@@ -496,17 +474,17 @@ function TunnelRow({
                 </span>
               )}
               <GroupChips labels={groupLabels} />
+              <AgentBadge owner={view.owner} />
+              {view.owner?.ephemeral && <EphemeralTag />}
             </span>
           </span>
           <span className="row-line-bottom">
             <span className="row-command" title={command}>
               {command}
             </span>
-            <AgentBadge owner={view.owner} now={now} tunnelID={view.tunnel.id} leases={leases} />
             {view.status.stale && <span className="stale-pill">Restart to apply changes</span>}
           </span>
         </div>
-        {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
         <span className="row-state">
           <StateBadge state={view.status.state} />
           {uptime && <span className="row-uptime">{uptime}</span>}
@@ -567,7 +545,6 @@ function TunnelRow({
 
 function Detail({
   view,
-  leases,
   profileNames,
   groupNames,
   now,
@@ -576,7 +553,6 @@ function Detail({
   onSave,
 }: {
   view: TunnelView;
-  leases?: Lease[];
   profileNames: Map<string, string>;
   groupNames: Map<string, string>;
   now: number;
@@ -702,7 +678,7 @@ function Detail({
         </span>
       </div>
       <div className="ownership-tags">
-        <AgentBadge owner={view.owner} now={now} tunnelID={view.tunnel.id} leases={leases} />
+        <AgentBadge owner={view.owner} />
         {view.owner?.ephemeral && <EphemeralTag onSave={onSave} />}
       </div>
       {view.status.error && <p className="error-text">{view.status.error}</p>}

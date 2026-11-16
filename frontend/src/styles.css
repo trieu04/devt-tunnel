@@ -628,8 +628,8 @@ dd { margin: 0; }
 }
 
 /* Ownership and person-only agent controls. */
-.agent-badge, .ephemeral-tag { display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; overflow-wrap: anywhere; padding: var(--space-1) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--selected); color: var(--text); font-size: var(--text-sm); }
-.ephemeral-tag { background: var(--surface); color: var(--muted); white-space: nowrap; }
+.agent-badge, .ephemeral-tag { display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; overflow-wrap: anywhere; padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius); background: var(--selected); color: var(--text); font-size: var(--text-sm); }
+.ephemeral-tag { border: 0; background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted); white-space: nowrap; }
 .ownership-tags { display: flex; flex-wrap: wrap; gap: var(--space-4); }
 .approval-overlay { z-index: 40; }
 .approval-dialog { width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; }
@@ -639,9 +639,11 @@ dd { margin: 0; }
 .approval-facts .command { max-height: 240px; margin: 0; overflow: auto; white-space: pre-wrap; }
 .approval-dialog .dialog-actions { flex-wrap: wrap; }
 .approval-dialog p { margin: 0; }
-.agents-settings, .agent-policy, .agent-policy-fields { display: flex; flex-direction: column; gap: var(--space-7); }
-.agent-policy-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
-.agent-policy h2, .agent-leases h2 { margin: 0; }
-.agent-policy p, .agent-leases p { margin: 0; }
-.agent-policy textarea { resize: vertical; }
-.agent-leases { display: flex; flex-direction: column; gap: var(--space-6); }
+.mcp-settings, .mcp-policy, .mcp-policy-fields, .mcp-history { display: flex; flex-direction: column; gap: var(--space-7); }
+.mcp-policy-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.mcp-policy h2, .mcp-history h2 { margin: 0; }
+.mcp-policy p, .mcp-history p { margin: 0; }
+.mcp-policy textarea { resize: vertical; }
+
+.mcp-history { gap: var(--space-6); }
+.mcp-result-denied, .mcp-result-failed { color: var(--danger-text); }

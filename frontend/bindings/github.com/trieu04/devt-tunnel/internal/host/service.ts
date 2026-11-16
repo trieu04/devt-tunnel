@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -35,9 +35,7 @@ import * as supervisor$0 from "../core/supervisor/models.js";
 import * as $models from "./models.js";
 
 export function AgentSettings(): $CancellablePromise<settings$0.Agent> {
-    return $Call.ByID(1688787100).then(($result: any) => {
-        return $$createType0($result);
-    });
+    return $Call.ByID(1688787100);
 }
 
 export function AnswerPrompt(id: string, value: string, cancelled: boolean): $CancellablePromise<void> {
@@ -49,21 +47,15 @@ export function AppVersion(): $CancellablePromise<string> {
 }
 
 export function CLIStatus(): $CancellablePromise<$models.CLIStatus> {
-    return $Call.ByID(2126226956).then(($result: any) => {
-        return $$createType1($result);
-    });
+    return $Call.ByID(2126226956);
 }
 
 export function CheckForUpdate(force: boolean): $CancellablePromise<$models.UpdateInfo> {
-    return $Call.ByID(1607546054, force).then(($result: any) => {
-        return $$createType2($result);
-    });
+    return $Call.ByID(1607546054, force);
 }
 
 export function DecideApproval(params: api$0.DecideApprovalParams): $CancellablePromise<api$0.Approval> {
-    return $Call.ByID(3956075075, params).then(($result: any) => {
-        return $$createType3($result);
-    });
+    return $Call.ByID(3956075075, params);
 }
 
 export function DeleteGroup(id: string): $CancellablePromise<void> {
@@ -83,9 +75,7 @@ export function DeleteTunnel(id: string): $CancellablePromise<void> {
 }
 
 export function DuplicateDraft(id: string): $CancellablePromise<model$0.Tunnel> {
-    return $Call.ByID(3961818488, id).then(($result: any) => {
-        return $$createType4($result);
-    });
+    return $Call.ByID(3961818488, id);
 }
 
 export function DuplicateGroup(id: string): $CancellablePromise<string> {
@@ -97,15 +87,11 @@ export function DuplicateProfile(id: string): $CancellablePromise<string> {
 }
 
 export function EvaluateDraft(t: model$0.Tunnel): $CancellablePromise<api$0.DraftResult> {
-    return $Call.ByID(4144135326, t).then(($result: any) => {
-        return $$createType5($result);
-    });
+    return $Call.ByID(4144135326, t);
 }
 
-export function Findings(id: string): $CancellablePromise<checks$0.Finding[]> {
-    return $Call.ByID(3869701306, id).then(($result: any) => {
-        return $$createType7($result);
-    });
+export function Findings(id: string): $CancellablePromise<checks$0.Finding[] | null> {
+    return $Call.ByID(3869701306, id);
 }
 
 export function HideQuickLaunch(): $CancellablePromise<void> {
@@ -113,9 +99,7 @@ export function HideQuickLaunch(): $CancellablePromise<void> {
 }
 
 export function ImportCommand(line: string): $CancellablePromise<importer$0.Result> {
-    return $Call.ByID(2915497514, line).then(($result: any) => {
-        return $$createType8($result);
-    });
+    return $Call.ByID(2915497514, line);
 }
 
 /**
@@ -123,39 +107,31 @@ export function ImportCommand(line: string): $CancellablePromise<importer$0.Resu
  * and returns the link path. It never overwrites a file it did not create.
  */
 export function InstallCLI(): $CancellablePromise<$models.CLIStatus> {
-    return $Call.ByID(3605337799).then(($result: any) => {
-        return $$createType1($result);
-    });
+    return $Call.ByID(3605337799);
 }
 
-export function ListApprovals(): $CancellablePromise<api$0.Approval[]> {
-    return $Call.ByID(1156993896).then(($result: any) => {
-        return $$createType9($result);
-    });
+export function ListApprovals(): $CancellablePromise<api$0.Approval[] | null> {
+    return $Call.ByID(1156993896);
 }
 
-export function ListLeases(): $CancellablePromise<api$0.Lease[]> {
-    return $Call.ByID(117251279).then(($result: any) => {
-        return $$createType11($result);
-    });
+export function ListSecrets(): $CancellablePromise<api$0.SecretView[] | null> {
+    return $Call.ByID(4286835157);
 }
 
-export function ListSecrets(): $CancellablePromise<api$0.SecretView[]> {
-    return $Call.ByID(4286835157).then(($result: any) => {
-        return $$createType13($result);
-    });
+export function Logs(id: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(999700435, id);
 }
 
-export function Logs(id: string): $CancellablePromise<string[]> {
-    return $Call.ByID(999700435, id).then(($result: any) => {
-        return $$createType14($result);
-    });
+/**
+ * MCPHistory returns every retained MCP call, newest first. The audit files are
+ * size-bounded by rotation, so the list is bounded too; the UI paginates it.
+ */
+export function MCPHistory(): $CancellablePromise<$models.MCPCall[] | null> {
+    return $Call.ByID(871388244);
 }
 
 export function NewDraft(kind: model$0.TunnelType): $CancellablePromise<model$0.Tunnel> {
-    return $Call.ByID(2040666205, kind).then(($result: any) => {
-        return $$createType4($result);
-    });
+    return $Call.ByID(2040666205, kind);
 }
 
 export function OpenIn(screen: string, param: string): $CancellablePromise<void> {
@@ -163,9 +139,7 @@ export function OpenIn(screen: string, param: string): $CancellablePromise<void>
 }
 
 export function Overview(): $CancellablePromise<api$0.Overview> {
-    return $Call.ByID(886523795).then(($result: any) => {
-        return $$createType15($result);
-    });
+    return $Call.ByID(886523795);
 }
 
 export function PromoteTunnel(id: string, name: string): $CancellablePromise<string> {
@@ -189,9 +163,7 @@ export function RenameSecret($from: string, to: string): $CancellablePromise<voi
 }
 
 export function ResolveSSHHost(alias: string, profileID: string): $CancellablePromise<sshconfig$0.Resolved> {
-    return $Call.ByID(147114640, alias, profileID).then(($result: any) => {
-        return $$createType16($result);
-    });
+    return $Call.ByID(147114640, alias, profileID);
 }
 
 export function Restart(id: string): $CancellablePromise<void> {
@@ -206,21 +178,15 @@ export function RevealSecret(name: string): $CancellablePromise<string> {
     return $Call.ByID(3165671985, name);
 }
 
-export function RevokeLease(id: string): $CancellablePromise<void> {
-    return $Call.ByID(1212115140, id);
-}
-
 export function SSHHosts(profileID: string): $CancellablePromise<api$0.SSHHostList> {
-    return $Call.ByID(2010502573, profileID).then(($result: any) => {
-        return $$createType17($result);
-    });
+    return $Call.ByID(2010502573, profileID);
 }
 
-export function SaveGroup(group: model$0.Group, members: string[]): $CancellablePromise<string> {
+export function SaveGroup(group: model$0.Group, members: string[] | null): $CancellablePromise<string> {
     return $Call.ByID(433535540, group, members);
 }
 
-export function SaveProfile(profile: model$0.Profile, members: string[]): $CancellablePromise<string> {
+export function SaveProfile(profile: model$0.Profile, members: string[] | null): $CancellablePromise<string> {
     return $Call.ByID(4056232342, profile, members);
 }
 
@@ -244,10 +210,8 @@ export function SetShortcut(accel: string): $CancellablePromise<void> {
     return $Call.ByID(1801315298, accel);
 }
 
-export function SetToolPath(tool: string, path: string): $CancellablePromise<api$0.ToolInfo[]> {
-    return $Call.ByID(341103145, tool, path).then(($result: any) => {
-        return $$createType19($result);
-    });
+export function SetToolPath(tool: string, path: string): $CancellablePromise<api$0.ToolInfo[] | null> {
+    return $Call.ByID(341103145, tool, path);
 }
 
 export function SetUpdateChecks(enabled: boolean): $CancellablePromise<void> {
@@ -302,10 +266,8 @@ export function Toggle(id: string): $CancellablePromise<void> {
     return $Call.ByID(437651580, id);
 }
 
-export function Tools(): $CancellablePromise<api$0.ToolInfo[]> {
-    return $Call.ByID(654813659).then(($result: any) => {
-        return $$createType19($result);
-    });
+export function Tools(): $CancellablePromise<api$0.ToolInfo[] | null> {
+    return $Call.ByID(654813659);
 }
 
 export function UpdateChecksEnabled(): $CancellablePromise<boolean> {
@@ -316,32 +278,6 @@ export function UserAuthAvailable(): $CancellablePromise<boolean> {
     return $Call.ByID(2589080160);
 }
 
-export function WatchLogs(id: string): $CancellablePromise<supervisor$0.LogLine[]> {
-    return $Call.ByID(250669704, id).then(($result: any) => {
-        return $$createType21($result);
-    });
+export function WatchLogs(id: string): $CancellablePromise<supervisor$0.LogLine[] | null> {
+    return $Call.ByID(250669704, id);
 }
-
-// Private type creation functions
-const $$createType0 = settings$0.Agent.createFrom;
-const $$createType1 = $models.CLIStatus.createFrom;
-const $$createType2 = $models.UpdateInfo.createFrom;
-const $$createType3 = api$0.Approval.createFrom;
-const $$createType4 = model$0.Tunnel.createFrom;
-const $$createType5 = api$0.DraftResult.createFrom;
-const $$createType6 = checks$0.Finding.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = importer$0.Result.createFrom;
-const $$createType9 = $Create.Array($$createType3);
-const $$createType10 = model$0.Lease.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = api$0.SecretView.createFrom;
-const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = $Create.Array($Create.Any);
-const $$createType15 = api$0.Overview.createFrom;
-const $$createType16 = sshconfig$0.Resolved.createFrom;
-const $$createType17 = api$0.SSHHostList.createFrom;
-const $$createType18 = api$0.ToolInfo.createFrom;
-const $$createType19 = $Create.Array($$createType18);
-const $$createType20 = supervisor$0.LogLine.createFrom;
-const $$createType21 = $Create.Array($$createType20);

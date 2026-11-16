@@ -3,68 +3,21 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Create as $Create } from "@wailsio/runtime";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as model$0 from "../model/models.js";
 
-export class LogLine {
+export interface LogLine {
     "seq": number;
     "line": string;
-
-    /** Creates a new LogLine instance. */
-    constructor($$source: Partial<LogLine> = {}) {
-        if (!("seq" in $$source)) {
-            this["seq"] = 0;
-        }
-        if (!("line" in $$source)) {
-            this["line"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new LogLine instance from a string or object.
-     */
-    static createFrom($$source: any = {}): LogLine {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new LogLine($$parsedSource as Partial<LogLine>);
-    }
 }
 
 /**
  * Record identifies a started process so that it can be found again after an app crash.
  * Identity is the process's OS start time, which protects against PID reuse.
  */
-export class Record {
+export interface Record {
     "tunnelId": string;
     "pid": number;
     "identity": string;
-
-    /** Creates a new Record instance. */
-    constructor($$source: Partial<Record> = {}) {
-        if (!("tunnelId" in $$source)) {
-            this["tunnelId"] = "";
-        }
-        if (!("pid" in $$source)) {
-            this["pid"] = 0;
-        }
-        if (!("identity" in $$source)) {
-            this["identity"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Record instance from a string or object.
-     */
-    static createFrom($$source: any = {}): Record {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new Record($$parsedSource as Partial<Record>);
-    }
 }
 
 export enum State {
@@ -85,7 +38,7 @@ export enum State {
 /**
  * Status is a tunnel's current runtime state.
  */
-export class Status {
+export interface Status {
     "id": string;
     "state": State;
     "pid"?: number;
@@ -95,34 +48,4 @@ export class Status {
     "attempt"?: number;
     "stale"?: boolean;
     "owner": model$0.TunnelOwner;
-
-    /** Creates a new Status instance. */
-    constructor($$source: Partial<Status> = {}) {
-        if (!("id" in $$source)) {
-            this["id"] = "";
-        }
-        if (!("state" in $$source)) {
-            this["state"] = State.$zero;
-        }
-        if (!("owner" in $$source)) {
-            this["owner"] = (new model$0.TunnelOwner());
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Status instance from a string or object.
-     */
-    static createFrom($$source: any = {}): Status {
-        const $$createField8_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("owner" in $$parsedSource) {
-            $$parsedSource["owner"] = $$createField8_0($$parsedSource["owner"]);
-        }
-        return new Status($$parsedSource as Partial<Status>);
-    }
 }
-
-// Private type creation functions
-const $$createType0 = model$0.TunnelOwner.createFrom;

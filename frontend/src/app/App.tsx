@@ -80,7 +80,7 @@ export function App() {
       )}
       {approvalQueue.error && (
         <div className="banner banner-error" role="alert">
-          Cannot load agent approvals: {approvalQueue.error} <button onClick={approvalQueue.refresh}>Retry</button>
+          Cannot load MCP approvals: {approvalQueue.error} <button onClick={approvalQueue.refresh}>Retry</button>
         </div>
       )}
       {nav.screen === "tunnels" && (

@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import type { Kind } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/secret/models";
 import { onSettingsChanged, Overview, Service } from "../api";
 import { SHORTCUTS } from "../app/shortcuts";
-import { AgentsSettings } from "./AgentsSettings";
+import { McpSettings } from "./McpSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { BackGlyph } from "../parts";
 import { GroupsScreen } from "./GroupsScreen";
 import { ProfilesScreen } from "./ProfilesScreen";
 
-type Page = "agents" | "general" | "vault" | "profiles" | "groups" | "ssh" | "binaries" | "shortcuts";
+type Page = "mcp" | "general" | "vault" | "profiles" | "groups" | "ssh" | "binaries" | "shortcuts";
 
 const PAGES: [Page, string][] = [
   ["general", "General"],
-  ["agents", "Agents"],
+  ["mcp", "MCP"],
   ["vault", "Vault"],
   ["profiles", "Profiles"],
   ["groups", "Groups"],
@@ -67,7 +67,7 @@ export function SettingsScreen({
         </nav>
         <section className={`settings-page ${organizing ? "settings-page-organize" : ""}`}>
           {page === "general" && <General overview={overview} />}
-          {page === "agents" && <AgentsSettings />}
+          {page === "mcp" && <McpSettings />}
           {page === "vault" && <Vault overview={overview} />}
           {page === "profiles" && (
             <ProfilesScreen overview={overview} initial={organizeItem} refresh={refresh} leaveGuard={leaveGuard} />

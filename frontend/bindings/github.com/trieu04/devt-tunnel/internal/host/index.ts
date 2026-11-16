@@ -6,7 +6,8 @@ export {
     Service
 };
 
-export {
+export type {
     CLIStatus,
+    MCPCall,
     UpdateInfo
 } from "./models.js";
