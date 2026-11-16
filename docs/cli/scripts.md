@@ -4,14 +4,14 @@ Open a tunnel for one job, and clean up even if the job fails:
 
 ```bash
 #!/bin/sh
-devt-tunnel forward staging auto:5432 --ttl 15m --json > tunnel.json || exit
+devt-tunnel forward staging auto:5432 --json > tunnel.json || exit
 id=$(jq -r '.tunnels[0].id' tunnel.json)
 port=$(devt-tunnel addr "$id" --port)
 trap 'devt-tunnel stop "$id"' EXIT
 pg_dump -h 127.0.0.1 -p "$port" app > app.sql
 ```
 
-The JSON result contains `tunnels[0].id` and the allocated endpoints. Its detached lease survives CLI exit; `--ttl 15m` is a safety limit if cleanup cannot run. Without `--ttl`, a background tunnel stays up until explicitly stopped or revoked. `--dry-run` prints an evaluated command and findings without starting anything; because auto allocation only happens at start, use a concrete listen port for a dry-run preview.
+The JSON result contains `tunnels[0].id` and the allocated endpoints. A background tunnel survives CLI exit and stays up until explicitly stopped, so keep the `trap` above. `--dry-run` prints an evaluated command and findings without starting anything; because auto allocation only happens at start, use a concrete listen port for a dry-run preview.
 
 Start a saved tunnel only if needed. `start` is idempotent and returns 0 if it is already running:
 

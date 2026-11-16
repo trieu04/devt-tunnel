@@ -23,7 +23,7 @@ Order is macOS, Windows, Linux.
 
 ## Acceptance still open
 
-- **Real MCP client:** record client versions and results in the [agent guide](cli/agents.md#client-compatibility-and-acceptance). The client opens a forward to an allow-listed alias, connects through it and closes it, leaving no process. Killing the client ends the lease after the grace period. A public tunnel is held until a person approves in the GUI.
+- **Real MCP client:** record client versions and results in the [agent guide](cli/agents.md#client-compatibility-and-acceptance). The client opens a forward to an allow-listed alias, connects through it and closes it, leaving no process. Killing the client leaves the tunnel running until it is closed or a person stops it. A public tunnel is held until a person approves in the GUI.
 - **Detached Keychain reads** from terminal and Finder, in an isolated macOS account or VM. `go-keyring` cannot select a disposable keychain.
 - **Signed launch:** GUI-to-daemon start under hardened runtime and notarization; the keychain does not prompt on every call from the signed daemon.
 - **Port warning** in the editor's native window.

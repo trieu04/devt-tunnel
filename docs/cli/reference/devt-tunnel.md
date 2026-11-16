@@ -34,14 +34,14 @@ devt-tunnel [flags]
 
 * [devt-tunnel add](devt-tunnel_add.md)	 - Define and save a supervised tunnel
 * [devt-tunnel addr](devt-tunnel_addr.md)	 - Print a tunnel's address
-* [devt-tunnel approvals](devt-tunnel_approvals.md)	 - List pending agent requests for a person
-* [devt-tunnel approve](devt-tunnel_approve.md)	 - Approve a pending agent request
+* [devt-tunnel approvals](devt-tunnel_approvals.md)	 - List pending MCP requests for a person
+* [devt-tunnel approve](devt-tunnel_approve.md)	 - Approve a pending MCP request
 * [devt-tunnel audit](devt-tunnel_audit.md)	 - Read or follow the daemon's audit history
 * [devt-tunnel check](devt-tunnel_check.md)	 - Run editor checks for a saved tunnel
 * [devt-tunnel completion](devt-tunnel_completion.md)	 - Generate a shell completion script
 * [devt-tunnel config](devt-tunnel_config.md)	 - Locate, reload or edit tunnel configuration
 * [devt-tunnel daemon](devt-tunnel_daemon.md)	 - Control the per-user daemon
-* [devt-tunnel deny](devt-tunnel_deny.md)	 - Deny a pending agent request
+* [devt-tunnel deny](devt-tunnel_deny.md)	 - Deny a pending MCP request
 * [devt-tunnel docs](devt-tunnel_docs.md)	 - Read embedded offline guides
 * [devt-tunnel doctor](devt-tunnel_doctor.md)	 - Check tools, keychain and daemon health
 * [devt-tunnel dup](devt-tunnel_dup.md)	 - Save a copy of a tunnel
@@ -51,11 +51,10 @@ devt-tunnel [flags]
 * [devt-tunnel group](devt-tunnel_group.md)	 - Operate on sets of tunnels together
 * [devt-tunnel hosts](devt-tunnel_hosts.md)	 - List SSH config aliases or resolve one
 * [devt-tunnel import](devt-tunnel_import.md)	 - Save a traditional command as a tunnel
-* [devt-tunnel leases](devt-tunnel_leases.md)	 - List clients holding tunnels and their expiries
 * [devt-tunnel logs](devt-tunnel_logs.md)	 - Read or follow retained tunnel output
 * [devt-tunnel ls](devt-tunnel_ls.md)	 - List tunnels and their endpoints
 * [devt-tunnel man](devt-tunnel_man.md)	 - Write man pages for every command
-* [devt-tunnel mcp](devt-tunnel_mcp.md)	 - Connect agents through the policy-controlled MCP adapter
+* [devt-tunnel mcp](devt-tunnel_mcp.md)	 - Connect MCP clients through the policy-controlled adapter
 * [devt-tunnel orphans](devt-tunnel_orphans.md)	 - List tunnel processes left after a crash
 * [devt-tunnel profile](devt-tunnel_profile.md)	 - Manage configuration shared by tunnels
 * [devt-tunnel prompts](devt-tunnel_prompts.md)	 - List SSH questions waiting for an answer

@@ -4,7 +4,7 @@ List tunnels and their endpoints
 
 ### Synopsis
 
-List saved and ephemeral tunnels, their states, endpoints and ownership. Replaces ps aux | grep ssh and lsof -i :PORT. JSON includes pinned, ephemeral and lease ownership fields.
+List saved and ephemeral tunnels, their states, endpoints and ownership. Replaces ps aux | grep ssh and lsof -i :PORT. JSON includes pinned, ephemeral and holder ownership fields.
 
 ```
 devt-tunnel ls [flags]

@@ -110,7 +110,7 @@ Daemon-client checks, in a native window on Windows and Linux: first launch star
 - Checks 4–5 passed with real `ssh` and process trees. After `kill -9`, an orphan's output pipe is gone, so it can be half broken.
 - Check 6 passed for host-key and passphrase prompts; OTP not run.
 - The GUI-as-daemon-client native checklist passed on 2026-11-05, including Vault reveal after correcting the device-owner authentication policy.
-- Agent approval passed in the native window on 2026-11-05: a public `-R` request waited with no process started and offered no "always"; badge, ephemeral Save, lease revoke and disconnect grace behaved as designed.
+- Agent approval passed in the native window on 2026-11-05: a public `-R` request waited with no process started and offered no "always"; badge, ephemeral Save, person stop and disconnect behaved as designed.
 - Native sleep and wake recovery passed.
 - Binary is 9.4 MB plus a 4.6 MB helper; idle memory and installer size not recorded.
 

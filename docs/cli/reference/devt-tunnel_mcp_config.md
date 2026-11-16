@@ -36,5 +36,5 @@ devt-tunnel mcp config [flags]
 
 ### SEE ALSO
 
-* [devt-tunnel mcp](devt-tunnel_mcp.md)	 - Connect agents through the policy-controlled MCP adapter
+* [devt-tunnel mcp](devt-tunnel_mcp.md)	 - Connect MCP clients through the policy-controlled adapter
 

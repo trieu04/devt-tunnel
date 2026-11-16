@@ -1,10 +1,10 @@
 ## devt-tunnel approvals approve
 
-Approve a pending agent request
+Approve a pending MCP request
 
 ### Synopsis
 
-Approve a pending fingerprint-bound agent request. Requires a TTY, even with --json, and asks you to type the code displayed in devt-tunnel approvals. Codes are read from the terminal, never flags or piped stdin; --no-input exits 4. --scope must be one of the request's allowed scopes. The agent must retry after approval; no command is run by this decision. Also available as devt-tunnel approve.
+Approve a pending fingerprint-bound MCP request. Requires a TTY, even with --json, and asks you to type the code displayed in devt-tunnel approvals. Codes are read from the terminal, never flags or piped stdin; --no-input exits 4. --scope must be one of the request's allowed scopes. The agent must retry after approval; no command is run by this decision. Also available as devt-tunnel approve.
 
 ```
 devt-tunnel approvals approve <id> [flags]
@@ -37,5 +37,5 @@ devt-tunnel approvals approve <id> [flags]
 
 ### SEE ALSO
 
-* [devt-tunnel approvals](devt-tunnel_approvals.md)	 - List pending agent requests for a person
+* [devt-tunnel approvals](devt-tunnel_approvals.md)	 - List pending MCP requests for a person
 

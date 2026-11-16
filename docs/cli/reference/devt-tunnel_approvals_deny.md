@@ -1,10 +1,10 @@
 ## devt-tunnel approvals deny
 
-Deny a pending agent request
+Deny a pending MCP request
 
 ### Synopsis
 
-Deny an agent request without granting permission. No terminal or confirmation code input is needed to deny. The request is fingerprint-bound, and deciding it never starts a tunnel. This command is also available as devt-tunnel deny.
+Deny an MCP request without granting permission. No terminal or confirmation code input is needed to deny. The request is fingerprint-bound, and deciding it never starts a tunnel. This command is also available as devt-tunnel deny.
 
 ```
 devt-tunnel approvals deny <id> [flags]
@@ -36,5 +36,5 @@ devt-tunnel approvals deny <id> [flags]
 
 ### SEE ALSO
 
-* [devt-tunnel approvals](devt-tunnel_approvals.md)	 - List pending agent requests for a person
+* [devt-tunnel approvals](devt-tunnel_approvals.md)	 - List pending MCP requests for a person
 

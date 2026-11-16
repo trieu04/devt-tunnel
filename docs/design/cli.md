@@ -23,7 +23,7 @@ Port maps use the form `listen:target`:
 
 `devt-tunnel expose` requires `--via`: `internal/core/settings` does not yet implement `default_expose`. The two services differ in cost and in who can reach the URL. It always prints a stderr line saying the service will be public, including with `--quiet` or `--dry-run`. `--secret` names an existing keychain secret. For cloudflared, `--secret` selects a token-based named tunnel; `--domain` then describes an already-routed hostname and does not configure routing. Quick Cloudflare tunnels cannot choose a domain.
 
-`--detach` and background forms return once the tunnel is ready, or exit with an error. They retain a detached person lease, not a pin, so CLI exit does not apply connection grace. Without `--ttl`, detached leases have no expiry: stop with `devt-tunnel stop` or `devt-tunnel leases revoke`. An explicit `--ttl` is positive and at most 8h, and stops the tunnel after that time. Foreground leases default to 30m; Ctrl-C closes the lease and stops the tunnel. Promoting with `--save` or `devt-tunnel save` preserves the process and lease, including its expiry.
+`--detach` and background forms return once the tunnel is ready, or exit with an error. They are detached, not pinned, so CLI exit does not stop them: stop with `devt-tunnel stop`. Foreground tunnels stop when the CLI exits or on Ctrl-C. Promoting with `--save` or `devt-tunnel save` preserves the process and its holder.
 
 `--dry-run` uses `tunnel.evaluateDraft` to print the exact command and findings without starting. Auto ports are allocated only by `tunnel.runEphemeral`, so a dry run with `auto` exits 2 with a concrete-port hint rather than inventing an address.
 
@@ -47,7 +47,7 @@ Values are read from a hidden prompt or from stdin, never from a flag, so they s
 - `--json` is the stable interface. Result objects carry `apiVersion` (`api.Version`). New fields may appear, and removing or renaming a field raises the version.
 - Deliberate exceptions: `devt-tunnel mcp config --json` and `devt-tunnel mcp tools --json` have no envelope, and `devt-tunnel mcp serve` writes only JSON-RPC to stdout.
 - Colors, spinners and tables appear only on a TTY.
-- `ls --json` and `show --json` include `owner` with `pinned`, `ephemeral` and `leases`; active claims also include a holder and expiry.
+- `ls --json` and `show --json` include `owner` with `pinned` and `ephemeral`; a tunnel a client opened also includes its `holder`.
 - `logs --json -f` emits one object per batch. Log lines have sequence numbers but no timestamps, so a positive `--since` exits 2.
 
 With `--json`, errors are written to stderr as a single object:
@@ -63,7 +63,7 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed, including a person revoking a lease (`lease_revoked`), a policy refusal (`policy_denied`) or disabled agent access (`agent_disabled`). See the message and `devt-tunnel logs db` |
+| 1 | `failed` | The tunnel or operation failed, including a person stopping an MCP-opened tunnel (`tunnel_stopped`), a policy refusal (`policy_denied`) or disabled MCP access (`agent_disabled`). See the message and `devt-tunnel logs db` |
 | 2 | `usage` | Bad arguments or an invalid tunnel specification (`invalid_spec`), or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`). Includes `pending_approval`; poll the approval and retry after a person decides. |
@@ -83,7 +83,7 @@ On a TTY, `devt-tunnel start`, `run` and `forward` show SSH questions for their 
 | Source | Used for |
 |---|---|
 | `tunnels.toml` | Saved tunnels, profiles and groups |
-| `settings.toml` | Per-machine tool paths and the `[agent]` policy (`default_expose` is not implemented) |
+| `settings.toml` | Per-machine tool paths and the `[agent]` policy (`default_expose` is not implemented). A downloaded tool is selected by writing its path here, like any other ([binaries](binaries.md)) |
 | `DTT_SOCKET` | Use a different daemon socket. For tests |
 | `NO_COLOR` | Turn off color |
 

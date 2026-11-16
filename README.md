@@ -28,7 +28,7 @@ devt-tunnel is a desktop app to define, find and run tunnels. It drives the bina
 > | Area | State |
 > | --- | --- |
 > | Desktop app, daemon and tunnel engine | Native macOS acceptance passed |
-> | `devt-tunnel` CLI, leases, policy and approvals | Implemented; native macOS approval passed |
+> | `devt-tunnel` CLI, policy and approvals | Implemented; native macOS approval passed |
 > | MCP server | Implemented with automated checks; real-client check pending |
 > | Windows and Linux | Compile in CI; not yet run on a real desktop |
 > | Installers | Unsigned builds automated; signing needs owner infrastructure |
@@ -47,7 +47,7 @@ devt-tunnel is a desktop app to define, find and run tunnels. It drives the bina
 - **SSH prompts handled**: Passphrase, host-key and OTP prompts come to you through the app or the terminal.
 - **Tray**: Running tunnels and favorites in the menu bar or notification area, where the desktop has one.
 - **`devt-tunnel` CLI**: Shares one registry with the app through a per-user daemon, with `--json` output and stable exit codes for scripts.
-- **Agent access under policy**: Leases, allow-lists, approvals and an audit trail for tunnels opened by agents.
+- **Agent access under policy**: Allow-lists, approvals and an audit trail for tunnels opened by agents.
 
 ## Installation
 
@@ -122,7 +122,7 @@ flowchart LR
 - **One daemon**: A per-user daemon starts on demand and owns the registry, supervisor and prompts. The app, `devt-tunnel` and MCP are clients of the same local API, so they always show the same state.
 - **Process supervision**: Tunnels run as process groups (Job Objects on Windows), so a stop leaves nothing behind. Orphans are detected after a crash.
 - **Ownership**: Saved tunnels are shareable definitions. Ephemeral tunnels from `devt-tunnel` or an agent are not written to `tunnels.toml`, are removed when they stop, and can be saved.
-- **Leases**: A client's claim on a tunnel until a set time. A person's stop always wins.
+- **Holders**: The client that opened a tunnel releases it, or a person stops it. A person's stop always wins.
 
 Details are in [architecture.md](docs/architecture.md) and the [control plane design](docs/design/control-plane.md).
 
@@ -133,7 +133,7 @@ Use `devt-tunnel` in place of the commands you already know:
 ```bash
 devt-tunnel run -- ssh -N -L 5433:127.0.0.1:5432 server1   # Run a familiar command under supervision
 devt-tunnel forward server1 5433:5432                      # Short form, stays in the background
-devt-tunnel expose 3000 --via cloudflared --ttl 15m        # Expose a local service publicly
+devt-tunnel expose 3000 --via cloudflared                 # Expose a local service publicly
 devt-tunnel ls                                             # All tunnels and their owners
 ```
 
@@ -147,7 +147,7 @@ Print the configuration for your MCP client and register it:
 devt-tunnel mcp config
 ```
 
-The agent asks for a tunnel and the daemon decides whether it is allowed, needs a person, or is denied. Public tunnels always need a person unless policy denies them outright. Remote SSH forwarding and destinations that are not allow-listed may also need approval. Policy is edited in **Settings → Agents**, where active leases can also be revoked.
+The agent asks for a tunnel and the daemon decides whether it is allowed, needs a person, or is denied. Public tunnels always need a person unless policy denies them outright. Remote SSH forwarding and destinations that are not allow-listed may also need approval. Policy and a history of MCP calls are in **Settings → MCP**. Tunnels opened through MCP carry an MCP badge on the Tunnels screen, where you can stop them.
 
 See the [agent guide](docs/cli/agents.md).
 
@@ -194,7 +194,7 @@ With a tray, closing the window only hides it and tunnels keep running. Without 
 <details>
   <summary><strong>Can an agent open a public tunnel without me?</strong></summary>
 
-No. A public tunnel waits for a person, or is refused if policy denies it. Agent access can be turned off completely in Settings.
+No. A public tunnel waits for a person, or is refused if policy denies it. MCP changes can be turned off completely in Settings → MCP.
 </details>
 
 <details>

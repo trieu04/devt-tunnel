@@ -4,7 +4,7 @@ Promote an ephemeral tunnel to a saved definition
 
 ### Synopsis
 
-Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process or losing its leases. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile puts it in an existing profile after promotion; saving does not pin it or remove its lease expiry.
+Turn a running ephemeral tmp- tunnel into a saved tunnel, without restarting its process. Replaces copying a one-off ssh/ngrok/cloudflared command into configuration. Optional --profile puts it in an existing profile after promotion; saving does not pin it.
 
 ```
 devt-tunnel save <tmp-id> --name N [flags]

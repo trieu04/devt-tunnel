@@ -1,10 +1,10 @@
 ## devt-tunnel approvals
 
-List pending agent requests for a person
+List pending MCP requests for a person
 
 ### Synopsis
 
-Show pending fingerprint-bound agent requests with their summary, exact argv, actor, purpose, allowed scopes, expiry and confirmation code. Codes are intentionally visible to person clients, never to agents. Approval does not run anything: the requesting agent must retry. Use approvals approve/deny, or their top-level approve/deny aliases.
+Show pending fingerprint-bound MCP requests with their summary, exact argv, actor, purpose, allowed scopes, expiry and confirmation code. Codes are intentionally visible to person clients, never to agents. Approval does not run anything: the requesting agent must retry. Use approvals approve/deny, or their top-level approve/deny aliases.
 
 ```
 devt-tunnel approvals [flags]
@@ -38,6 +38,6 @@ devt-tunnel approvals [flags]
 ### SEE ALSO
 
 * [devt-tunnel](devt-tunnel.md)	 - Supervise and inspect development tunnels
-* [devt-tunnel approvals approve](devt-tunnel_approvals_approve.md)	 - Approve a pending agent request
-* [devt-tunnel approvals deny](devt-tunnel_approvals_deny.md)	 - Deny a pending agent request
+* [devt-tunnel approvals approve](devt-tunnel_approvals_approve.md)	 - Approve a pending MCP request
+* [devt-tunnel approvals deny](devt-tunnel_approvals_deny.md)	 - Deny a pending MCP request
 

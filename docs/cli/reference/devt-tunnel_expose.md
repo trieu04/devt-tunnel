@@ -4,7 +4,7 @@ Expose a local service publicly through ngrok or cloudflared
 
 ### Synopsis
 
-Replace ngrok http 3000 or cloudflared tunnel --url http://localhost:3000. Always warns on stderr that the service will be public. --via is required: settings.toml currently has no default_expose setting. --secret is a keychain secret NAME, never a token. ngrok accepts --domain; cloudflared uses a quick tunnel unless --secret selects a token-based named tunnel, where --domain describes an already-configured public hostname (it does not create routing). --save promotes after readiness. Background tunnels use a detached, revocable person lease, not a pin. They survive CLI exit until devt-tunnel stop or lease revocation; --ttl adds an expiry (maximum 8h). Foreground leases default to 30m and Ctrl-C closes the lease.
+Replace ngrok http 3000 or cloudflared tunnel --url http://localhost:3000. Always warns on stderr that the service will be public. --via is required: settings.toml currently has no default_expose setting. --secret is a keychain secret NAME, never a token. ngrok accepts --domain; cloudflared uses a quick tunnel unless --secret selects a token-based named tunnel, where --domain describes an already-configured public hostname (it does not create routing). --save promotes after readiness. Background tunnels are detached, not pinned. They survive CLI exit until devt-tunnel stop. Foreground tunnels stop when the CLI exits or on Ctrl-C.
 
 ```
 devt-tunnel expose <port|url> [flags]
@@ -23,11 +23,10 @@ devt-tunnel expose <port|url> [flags]
 ```
       --domain string   ngrok domain, or already-routed hostname for a token-based named Cloudflare tunnel
       --dry-run         Print the evaluated command and findings without starting (auto ports need a concrete port for preview)
-      --foreground      Hold the CLI open; Ctrl-C closes its lease
+      --foreground      Hold the CLI open; Ctrl-C stops the tunnel
   -h, --help            help for expose
       --save string     Promote to a saved tunnel with this name after readiness
       --secret string   Existing keychain secret NAME, never a token value
-      --ttl string      Stop after a positive duration, at most 8h (background default: no expiry; foreground: 30m)
       --via string      Public service: ngrok or cloudflared (required)
 ```
 

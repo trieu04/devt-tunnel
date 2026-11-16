@@ -1,6 +1,6 @@
 # Replacing traditional commands
 
-Use familiar SSH and public-tunnel commands through the daemon, with supervised readiness, logs and ownership. Background forms keep a detached person lease until you stop/revoke it, or until an explicit `--ttl` expires.
+Use familiar SSH and public-tunnel commands through the daemon, with supervised readiness, logs and ownership. Background forms keep running after the CLI exits, until you stop them.
 
 | You used to run | Now run | What you gain |
 |---|---|---|

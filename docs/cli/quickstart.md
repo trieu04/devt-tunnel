@@ -37,7 +37,7 @@ Use the command you already know. `devt-tunnel` runs it under supervision and st
 devt-tunnel run -- ssh -N -L 5433:127.0.0.1:5432 server1
 ```
 
-Or use the short form, which stays in the background until `devt-tunnel stop`, or until an explicit `--ttl` (maximum 8h) expires:
+Or use the short form, which stays in the background until `devt-tunnel stop`:
 
 ```bash
 devt-tunnel forward server1 5433:5432
@@ -56,13 +56,12 @@ psql "host=127.0.0.1 port=$(devt-tunnel addr staging-db --port) dbname=app"
 Expose a local service publicly. `expose` always warns on stderr that the service will be public:
 
 ```bash
-devt-tunnel expose 3000 --via cloudflared --ttl 15m
+devt-tunnel expose 3000 --via cloudflared
 ```
 
-See who holds what, and review agent requests:
+Review agent requests and the audit trail:
 
 ```bash
-devt-tunnel leases
 devt-tunnel approvals
 devt-tunnel audit --since 1h
 ```

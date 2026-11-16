@@ -4,7 +4,7 @@ Supervise a traditional tunnel command in the foreground
 
 ### Synopsis
 
-Import ssh -N -L ..., ngrok http ... or cloudflared tunnel ... using the same importer as devt-tunnel import, then start an ephemeral tunnel and print its address when ready. SSH questions appear inline on a TTY. Inline credentials are rejected. --detach returns once ready. Background tunnels use a detached, revocable person lease, not a pin. They survive CLI exit until devt-tunnel stop or lease revocation; --ttl adds an expiry (maximum 8h). Foreground leases default to 30m and Ctrl-C closes the lease.
+Import ssh -N -L ..., ngrok http ... or cloudflared tunnel ... using the same importer as devt-tunnel import, then start an ephemeral tunnel and print its address when ready. SSH questions appear inline on a TTY. Inline credentials are rejected. --detach returns once ready. Background tunnels are detached, not pinned. They survive CLI exit until devt-tunnel stop. Foreground tunnels stop when the CLI exits or on Ctrl-C.
 
 ```
 devt-tunnel run -- <cmd> [args...] [flags]
@@ -14,18 +14,17 @@ devt-tunnel run -- <cmd> [args...] [flags]
 
 ```
   devt-tunnel run -- ssh -N -L 5433:127.0.0.1:5432 server1
-  devt-tunnel run --detach --ttl 15m -- ngrok http 3000
+  devt-tunnel run --detach -- ngrok http 3000
   devt-tunnel run --dry-run -- cloudflared tunnel --url http://localhost:3000
 ```
 
 ### Options
 
 ```
-      --detach        Return once ready, retaining a detached lease until --ttl, stop or revoke
+      --detach        Return once ready; the tunnel keeps running until devt-tunnel stop
       --dry-run       Print the evaluated command and findings without starting (auto ports need a concrete port for preview)
   -h, --help          help for run
       --name string   Display name (default: TYPE tunnel)
-      --ttl string    Stop after a positive duration, at most 8h (background default: no expiry; foreground: 30m)
 ```
 
 ### Options inherited from parent commands

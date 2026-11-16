@@ -1,10 +1,10 @@
 ## devt-tunnel mcp
 
-Connect agents through the policy-controlled MCP adapter
+Connect MCP clients through the policy-controlled adapter
 
 ### Synopsis
 
-Serve MCP over stdio, print paste-ready client configuration, or review tool descriptions and schemas offline. The adapter uses the daemon's agent policy, approvals and leases; it does not grant agents person-client privileges.
+Serve MCP over stdio, print paste-ready client configuration, or review tool descriptions and schemas offline. The adapter uses the daemon's MCP policy, approvals and ownership; it does not grant MCP clients person-client privileges.
 
 ```
 devt-tunnel mcp [flags]

@@ -9,7 +9,7 @@ Tunnels live in terminals, in the desktop app and in background processes starte
 Goals:
 
 - One registry and one supervisor per user per machine, shared by the app, the CLI and agents.
-- Every agent-opened tunnel has an owner and an expiry, and is cleaned up without human help.
+- Every agent-opened tunnel has a visible holder, and the agent or a person can always stop it.
 - Agents without a shell get an MCP channel with limits they cannot change through MCP.
 
 Non-goals: team management or accounts; isolating a hostile agent running as the same OS user (see [Threat model](#threat-model)); replacing `ssh`, `ngrok` or `cloudflared`; interactive shells.
@@ -27,7 +27,7 @@ Non-goals: team management or accounts; isolating a hostile agent running as the
                            ▼
  ┌─ devt-tunnel daemon (no Wails, no GUI libraries) ─────────────────────────┐
  │  internal/control  API server, client identity, event stream     │
- │  internal/engine   registry · leases · policy · approvals · audit │
+ │  internal/engine   registry · ownership · policy · approvals · audit │
  │  internal/core     model · config · command · checks · supervisor │
  │  internal/askpass  prompt broker                                  │
  │  internal/platform processes · keychain · paths                   │
@@ -49,13 +49,13 @@ The CLI and agents need one registry shared with the GUI. Hosting the API in the
 - **Start:** any client starts it on demand, detached from the caller. `--no-daemon-start` turns this off.
 - **Single instance:** an advisory lock on `daemon.lock` decides ownership, since a stale socket file can survive a crash.
 - **Logs:** its own `daemon.log`.
-- **Idle exit:** after 5 minutes with no active tunnel, lease, pending prompt or connected client.
+- **Idle exit:** after 5 minutes with no active tunnel, held tunnel, pending prompt or connected client.
 - **Upgrade:** a matching API and build is reused. A different build with the same API stays while active and is replaced when idle. A different API is replaced only when idle; otherwise the error names `devt-tunnel daemon restart`, which stops all tunnels.
-- **Crash:** on Unix, `processes.json` and `FindOrphans` find surviving children. On Windows, `KILL_ON_JOB_CLOSE` ends them with the daemon, and leases are restored as stopped.
+- **Crash:** on Unix, `processes.json` and `FindOrphans` find surviving children. On Windows, `KILL_ON_JOB_CLOSE` ends them with the daemon, and holders are restored as stopped.
 
 ### Behavior across clients
 
-- ⌘Q calls `daemon.shutdown` after a dialog naming any agent leases. Closing the window with a tray only hides it.
+- ⌘Q calls `daemon.shutdown` after a dialog naming any agent-held tunnels. Closing the window with a tray only hides it.
 - The daemon starts nothing by itself. The GUI requests `StartOnLaunch` starts once at launch.
 - The daemon monitors clock jumps; the GUI forwards OS wake events with `system.wake` and calls `secrets.forget` on focus.
 - Reveal stays in the GUI: authenticate, then read the keychain directly. The API has no method that returns a value.
@@ -68,28 +68,27 @@ The CLI and agents need one registry shared with the GUI. Hosting the API in the
 |---|---|---|
 | Saved tunnel | Shareable definition | `tunnels.toml` |
 | Ephemeral tunnel | Created by `devt-tunnel run`, `forward`, `expose` or an agent. Id starts with `tmp-`. Removed when it stops. `devt-tunnel save` or `tunnel_save` promotes it in place, keeping the process | `runtime.json` |
-| Lease | A claim by one client on one tunnel until a set time | `runtime.json` |
+| Holder | The one client that opened a tunnel. A CLI foreground holder lasts until the client disconnects; detached CLI and agent holders last until released or a person stops the tunnel. It is the marker that a client opened the tunnel | `runtime.json` |
 
-`runtime.json` is written atomically with mode `0600` before any spawn. Person-revoked leases stay as tombstones until their original expiry, so the next renew or close returns `lease_revoked`.
+`runtime.json` is written atomically with mode `0600` before any spawn. A tunnel a person stopped has no holder, so a later `tunnel_close` finds nothing to release.
 
 ### Rules
 
-1. **A person starting a tunnel pins it.** No lease expiry stops a pinned tunnel.
-2. **Opening adds a lease and starts the tunnel if needed.** Clients can share a running tunnel, each with its own lease.
-3. **Closing or expiring removes a lease.** The tunnel stops when no leases remain, it is not pinned, and a lease started it.
-4. **A person always wins.** `devt-tunnel stop` and the GUI stop the tunnel at once and revoke its leases. An agent can only release its own lease.
-5. **Disconnect:** when a lease holder's last connection drops, its leases end after the grace period. Reconnecting needs the same `client.session` token and client kind and name. A daemon restart starts this grace for valid leases.
+1. **A person starting a tunnel pins it.** Releasing a tunnel never stops a pinned one.
+2. **Opening starts the tunnel if needed and makes the client its holder.** A client that opens an already running tunnel reuses it without holding it, so it cannot stop it.
+3. **Releasing drops the holder.** The tunnel stops unless a person pinned it or it was already running when the client opened it.
+4. **A person always wins.** `devt-tunnel stop` and the GUI stop the tunnel at once and clear its holder. An agent can close only tunnels that agents hold, never a person's pin.
+5. **Disconnect:** when a foreground CLI client's last connection drops, its tunnels stop at once. Detached CLI and agent holders are not affected: nothing cleans up an agent tunnel except `tunnel_close` or a person. A daemon restart releases non-detached holders.
 6. **Bulk starts** (GUI launch, `StartGroup`) skip every `tmp-` tunnel. Agents cannot request launch, profile or favorite metadata.
-7. **Crash safety:** after a daemon restart, expired leases and ephemerals are stopped and removed; the rest continue if the process survived. Surviving Unix children stay in the orphan list and are not respawned.
+7. **Crash safety:** after a daemon restart, released and ephemeral tunnels are stopped and removed; the rest continue if the process survived. Surviving Unix children stay in the orphan list and are not respawned.
 
 ### Limits
 
 | Limit | Value |
 |---|---|
-| Lease TTL | Default 30 minutes, maximum 8 hours, renewable up to the maximum per renewal |
-| Disconnect grace, SSH prompt timeout | 2 minutes |
+| SSH prompt timeout | 2 minutes |
 | Approval timeout | 5 minutes |
-| Per MCP session | 32 live leases, 16 pending approvals, 64 open-request records |
+| Per MCP session | 32 held tunnels, 16 pending approvals, 64 open-request records |
 | Global | 1024 approvals, 1024 open-request records |
 | Retention of finished approvals and requests | 1 minute |
 | Audit | 1 MiB per file, four archives; 16 `policy.deny` records per session per minute, the rest counted in a summary |
@@ -113,7 +112,7 @@ JSON-RPC 2.0, one message per line, over a Unix socket. `internal/api` holds the
 | Group | Methods |
 |---|---|
 | `tunnel.*` | `list` `get` `save` `delete` `start` `stop` `restart` `evaluateDraft` `import` `newDraft` `duplicateDraft` `setFavorite` `promote` `runEphemeral` `waitReady` `findings` |
-| `lease.*` | `open` `renew` `close` `list` `revoke` (person only) |
+| `tunnel.open`, `tunnel.release` | Open a saved tunnel as its holder; give up a held tunnel |
 | `logs.*` | `read` `since` |
 | `profile.*`, `group.*` | CRUD; `group.start` `group.stop` |
 | `secret.*` | `list` `set` `delete` `rename` `forget` |
@@ -121,7 +120,7 @@ JSON-RPC 2.0, one message per line, over a Unix socket. `internal/api` holds the
 | `approval.*` | `list` `get` `decide` (person only) |
 | `audit.*` | `read` (person only) |
 | `ssh.*`, `tool.*`, `settings.*`, `orphan.*`, `config.*` | The rest of `host.Service` |
-| `events.subscribe` | `tunnels.changed`, `prompt.added`, `approval.added`, `lease.expiring`. Clients resync from `config.overview` after reconnect |
+| `events.subscribe` | `tunnels.changed`, `prompt.added`, `approval.added`. Clients resync from `config.overview` after reconnect |
 | `daemon.*`, `system.*` | `hello` `status` `shutdown`; `wake` `focus` |
 
 **Endpoints** are always an array, of kind `local`, `remote`, `socks` or `public`. `public` endpoints have an empty `listen` until the address is known. The `public` field describes the bind; agent policy still requires approval for every remote forward.
@@ -136,18 +135,16 @@ Stored passphrases are answered automatically only for the OpenSSH form `Enter p
 
 ## Policy
 
-Policy is per-machine, in `settings.toml`, edited in Settings → **Agents** or through `settings.setAgent` by person clients. MCP has only the read-only `policy.get`, limited to non-sensitive fields. Invalid values leave the policy unchanged. Disabling agent access does not revoke existing leases.
+Policy is per-machine, in `settings.toml`, edited in Settings → **MCP** or through `settings.setAgent` by person clients. MCP has only the read-only `policy.get`, limited to non-sensitive fields. Invalid values leave the policy unchanged. Disabling MCP changes does not stop tunnels agents already opened.
 
 ```toml
 [agent]
 enabled = true
 port_range = "20000-20999"
-default_ttl = "30m"
-max_ttl = "8h"
 # Both allow-lists default to ["*"]; set [] to ask for everything.
 allow_tunnels = ["dev-*"]          # saved tunnels usable without approval
 allow_ssh_hosts = ["staging"]      # aliases usable for new local forwards without approval ("*" = any config alias)
-public = "ask"                     # ask | deny
+public = "ask"                     # ask | deny | allow
 ```
 
 | Agent action | Default | Can allow-list? |
@@ -160,16 +157,16 @@ public = "ask"                     # ask | deny
 | Save a tunnel to `tunnels.toml` | Ask | No |
 | Use an existing secret by name for a new tunnel | Ask | No |
 | Create or edit `command` tunnels, `flags`, `options`, `extra_args`, `identity` | **Deny**; not in the schema | No |
-| Read, set, rename or delete secret values; answer prompts; edit policy; edit or delete saved tunnels; stop tunnels without a lease | **Deny**; no tool exists | No |
+| Read, set, rename or delete secret values; answer prompts; edit policy; edit or delete saved tunnels; stop tunnels the agent does not hold | **Deny**; no tool exists | No |
 
 **MCP allow-list.** The daemon permits a `kind: "mcp"` connection only these methods; anything else, including new methods, returns `policy_denied`:
 
 - `daemon.hello`, `daemon.status`, `events.subscribe`, `policy.get`
 - `tunnel.list` `get` `waitReady` `findings` `evaluateDraft` `runEphemeral` `openRequest` `waitRequest` `checkRequest`
 - `ssh.hosts`, `ssh.resolve` (literal aliases only), `tool.list`, `prompt.list`, `logs.read`, `logs.since`
-- `lease.open` `renew` `close` `list`, restricted to the caller's actor and session
+- `tunnel.open` `release`, restricted to the caller's actor and session
 - `approval.list`, `approval.get`
-- `tunnel.save` (new definitions only) and `tunnel.promote` (needs the caller's live lease), both behind approval
+- `tunnel.save` (new definitions only) and `tunnel.promote` (needs the caller to hold the tunnel), both behind approval
 
 With `enabled = false`, every MCP method returns `agent_disabled` except `daemon.hello`, `daemon.status` and `policy.get`, and event delivery stops.
 
@@ -211,6 +208,7 @@ The terminal code only slows an agent with shell access; see below.
 | Approval display spoofing | Bounded names, daemon-only summary, labelled agent text, exact argv | A person can still believe misleading text |
 | Malformed forwards or argument injection | Strict parsing and conservative public classification | Owner-written saved extensions still need deliberate approval |
 | Port squatting or queue flooding | Saved-port reservation, per-session caps, pruning, denial coalescing | Many distinct sessions can bypass per-session caps |
+| A client makes the daemon run a different binary | `tool.setPath`, `tool.download` and `tool.removeDownloaded` are not on the MCP allow-list; downloads take no URL or hash and are checked against a SHA-256 compiled into devt-tunnel; changes are audited ([binaries](binaries.md)) | A "cli" client can still point `tool.setPath` at any executable |
 
 **This is not a security boundary against an agent with a shell.** It runs as the same user, so it can call `devt-tunnel` as a "cli" client, edit `settings.toml`, or run `ssh -R` directly. The policy protects the MCP route, and gives shell-capable agents a tracked option that is easier than a stray `ssh`. Documentation must say this plainly.
 
@@ -218,8 +216,8 @@ The terminal code only slows an agent with shell access; see below.
 
 `audit.jsonl` in the state directory is synced on append. Events hold time, actor, action, ids, fingerprint, decision, scope and result; never argv, purpose, summary, log content or secret values.
 
-- Lease, ephemeral, renewal, save and promotion admission is audited first, and an audit failure refuses the operation. These records are write-ahead, so a later storage failure can leave one without a matching change.
-- Audit errors never block lease release, expiry or a person's stop.
+- Open, ephemeral, save and promotion admission is audited first, and an audit failure refuses the operation. These records are write-ahead, so a later storage failure can leave one without a matching change.
+- Audit errors never block releasing a tunnel or a person's stop.
 - `audit.read` is person-only and used by `devt-tunnel audit`. The trail is an owner-readable record, not tamper-proof.
 
 For MCP `logs.*`, the daemon fetches only the secrets that tunnel references, and a keychain failure fails the read. Redaction catches byte-exact known values, including values split across records. Values shorter than four bytes, transformed values, and matches spanning an idle flush are not protected. Person clients keep raw logs. Status errors, which can contain process output, are replaced with a generic message for MCP.
@@ -228,8 +226,9 @@ For MCP `logs.*`, the daemon fetches only the secrets that tunnel references, an
 
 - Tunnel rows and detail: an agent badge with holder and time left, and an `ephemeral` tag with **Save**.
 - Approval dialog: actor, labelled agent-provided name and purpose, daemon summary, exact argv, code and countdown. A button click sends the code; only allowed scopes are offered.
-- Settings → **Agents**: policy and active leases with **Revoke**. On macOS, **Install command-line tool** links `devt-tunnel` onto `PATH`.
+- Settings → **MCP**: policy and a history of MCP calls from the audit trail (state changes, approvals and refusals; read-only calls are not recorded). Tunnels agents opened carry an MCP badge on the Tunnels screen. On macOS, **Install command-line tool** links `devt-tunnel` onto `PATH`.
 - A banner and retry when the daemon cannot be reached.
+- Settings → **Binaries**: every install found per tool, Auto or a pick, and Download for `cloudflared` with progress from `tool.download` events ([binaries](binaries.md)).
 
 ## Risks
 

@@ -1,18 +1,24 @@
-# MCP server for agents
+# MCP server
 
-Status: implemented with automated checks; real-client acceptance is on the [roadmap](../roadmap.md). Ownership, leases, policy and the threat model are in [control-plane.md](control-plane.md). Setup and usage are in the [agent guide](../cli/agents.md).
+Status: implemented with automated checks; real-client acceptance is on the [roadmap](../roadmap.md). Ownership, policy and the threat model are in [control-plane.md](control-plane.md). Setup and usage are in the [agent guide](../cli/agents.md).
+
+## Terminology
+
+- **MCP** is the feature: the adapter, the policy in Settings → MCP, and what it allows. Person-facing text says "MCP policy", "MCP access" and "MCP-opened tunnel".
+- **MCP client** is the program that connects, such as a coding assistant. Person-facing text and logs name it that way; its label comes from `--name` or MCP initialize.
+- **Agent** appears only where text speaks to the AI itself ("you" in tool descriptions and the agent guide) and in stable identifiers: the `[agent]` settings section, `settings.getAgent`/`settings.setAgent`, the `agent_disabled` error code and the `devt-tunnel://docs/agent-guide` URI.
 
 ## Overview
 
 `devt-tunnel mcp serve` is a thin adapter: MCP over stdio on one side, the daemon's local API on the other. It holds no tunnel state, makes no policy decisions, and starts the daemon if needed. Each agent client spawns its own copy.
 
 ```text
-Agent client ── stdio ── devt-tunnel mcp serve ── local socket ── devt-tunnel daemon ── ssh · ngrok · cloudflared
+MCP client ── stdio ── devt-tunnel mcp serve ── local socket ── devt-tunnel daemon ── ssh · ngrok · cloudflared
 ```
 
 - **Protocol:** the official Go SDK, with its default protocol revisions. Those are negotiation capabilities, not real-client compatibility claims.
 - **Transport:** stdio only. Streamable HTTP would add a network listener and token handling for a case that is out of scope.
-- **State:** `lease_id` and `request_id` are explicit in calls, so the contract does not depend on an MCP session. The adapter connects with `kind: "mcp"` and a printable name of at most 64 characters, from MCP initialize or `--name`, and resends its session token on reconnect.
+- **State:** `tunnel_id` and `request_id` are explicit in calls, so the contract does not depend on an MCP session. The adapter connects with `kind: "mcp"` and a printable name of at most 64 characters, from MCP initialize or `--name`, and resends its session token on reconnect.
 
 ## Tools
 
@@ -23,14 +29,13 @@ All tools return `structuredContent` matching a declared `outputSchema`, plus a 
 | Tool | Input | Output |
 |---|---|---|
 | `tunnel_list` | `state?`, `type?` | `{ tunnels: Tunnel[] }` |
-| `tunnel_get` | `tunnel_id` | `Tunnel`, `preview`, `findings`, `your_leases` |
+| `tunnel_get` | `tunnel_id` | `Tunnel`, `preview`, `findings` |
 | `tunnel_logs` | `tunnel_id`, `lines?` (default 50, max 500), `after_seq?` | `{ untrusted, note, lines: [{seq, text}], next_seq }` |
 | `ssh_host_list` | `profile?` | `{ hosts: [{alias, has_tunnel, allowed}] }` |
 | `tunnel_check` | Same as `tunnel_open`; `request_id` and `purpose` optional | `{ decision, reason, preview, findings }` |
 | `tunnel_open` | See below | `OpenResult` |
 | `tunnel_wait` | `request_id`, `wait_seconds?` (0 to 30, default 20) | `OpenResult` |
-| `tunnel_renew` | `lease_id`, `ttl_seconds?` | `{ lease_id, expires_at }` |
-| `tunnel_close` | `lease_id` | `{ tunnel_state, stopped, reason }` |
+| `tunnel_close` | `tunnel_id` | `{ tunnel_state, stopped, reason }` |
 | `tunnel_save` | `tunnel_id`, `name` | `OpenResult`-style, with `approval_id` or `saved_id` |
 
 Contract notes:
@@ -39,12 +44,13 @@ Contract notes:
 - MCP views are redacted by the daemon: `tunnel_get` returns an empty `preview` and `missing_secrets`, and there is no profile filter. `ssh_host_list` returns aliases only.
 - `usable_without_approval` is false for temporary ids. Reuse a temporary tunnel by retrying its original `request_id`.
 - Pass `next_seq` unchanged as `after_seq`.
-- `tunnel_close` is idempotent. With no owned lease left it returns `tunnel_state: "unknown", stopped: false`. `reason` says why a tunnel kept running, under the [lease rules](control-plane.md#rules).
+- Tunnels opened through MCP have no expiry, no renewal and no cleanup on disconnect. They run until `tunnel_close` or a person stops them, and `owner.opened_via_mcp` and `owner.client` (the client's name) mark them for people and other MCP clients.
+- `tunnel_close` takes a `tunnel_id`, releases an MCP-held tunnel, and is idempotent. If no MCP client holds it, including a tunnel that was already running when the client opened it, it returns `tunnel_state: "unknown", stopped: false`. `reason` says why a tunnel kept running, for example pinned by a person.
 - `tunnel_save` has no `request_id` and takes no profile, launch or favorite metadata. It always needs approval; retry the identical call afterwards, not `tunnel_wait`.
 
 ### `tunnel_open` input
 
-Exactly one of `tunnel_id` and `spec`. `request_id` and `purpose` are required. `ttl_seconds` defaults and is capped by policy; `wait_seconds` is 0 to 30.
+Exactly one of `tunnel_id` and `spec`. `request_id` and `purpose` are required. `wait_seconds` is 0 to 30.
 
 `spec` is one of the following. **There is deliberately no way to pass flags, `-o` options, extra arguments, an identity path or a command.**
 
@@ -69,8 +75,7 @@ Local listeners always bind `127.0.0.1`. An SSH `spec` always runs with `-N` and
 `status` is `ready`, `starting`, `pending_approval`, `needs_user`, `denied`, `expired` or `failed`, and every result echoes `request_id`.
 
 ```jsonc
-{ "status": "ready", "request_id": "6f1c...", "lease_id": "ls_9a2", "tunnel_id": "tmp-staging-1",
-  "expires_at": "2026-11-04T11:30:00Z",
+{ "status": "ready", "request_id": "6f1c...", "tunnel_id": "tmp-staging-1",
   "endpoints": [{ "kind": "local", "listen": "127.0.0.1:20437", "target": "127.0.0.1:5432", "public": false }] }
 
 { "status": "pending_approval", "request_id": "6f1c...", "approval_id": "ap_123", "expires_at": "2026-11-04T11:05:00Z",
@@ -91,7 +96,7 @@ The engine owns open-request state through `tunnel.openRequest` and `tunnel.wait
 { "id": "dev-db", "name": "Dev DB", "type": "ssh", "state": "running",
   "error": "",
   "endpoints": [{ "kind": "local", "listen": "127.0.0.1:15432", "target": "127.0.0.1:5432", "public": false }],
-  "owner": { "pinned": true, "ephemeral": false, "leases": 1 },
+  "owner": { "pinned": true, "ephemeral": false, "opened_via_mcp": false, "client": "" },
   "usable_without_approval": true,
   "missing_secrets": [] }
 ```
@@ -106,14 +111,14 @@ Business outcomes such as `denied` or an asynchronous start failure are normal r
 { "code": "port_in_use", "message": "127.0.0.1:5433 is in use by tunnel \"db\"", "hint": "Use listen_port \"auto\", or use tunnel \"db\" if it fits.", "retryable": false }
 ```
 
-| Code | What the agent should do |
+| Code | What the MCP client should do |
 |---|---|
 | `unknown_tunnel` | Call `tunnel_list` |
 | `invalid_spec` | Fix the input |
 | `port_in_use` | Use `auto` |
 | `policy_denied`, `agent_disabled`, `keyring_unavailable`, `tool_not_found` | Tell the person. Do not work around it |
 | `needs_secret` | Tell the person the secret's name |
-| `lease_expired`, `lease_revoked` | Open again only if the person still wants it |
+| `tunnel_stopped` | A person stopped it, or it ended. Open again only if the person still wants it |
 | `daemon_unavailable` | Retry once, then tell the person |
 
 ## Resources and guidance
@@ -121,7 +126,7 @@ Business outcomes such as `denied` or an asynchronous start failure are normal r
 | URI | Content |
 |---|---|
 | `devt-tunnel://docs/agent-guide` | Same text as `docs/cli/agents.md` |
-| `devt-tunnel://policy` | Effective policy from `policy.get`, read-only and available while agents are disabled |
+| `devt-tunnel://policy` | Effective policy from `policy.get`, read-only and available while MCP access is disabled |
 
 No MCP prompts in v1. Status changes go through `tunnel_wait`, because not all clients pass notifications to the model. The server's `instructions` text is `Instructions` in `internal/mcpserver/server.go`; for an agent with shell access nothing enforces it, as the [threat model](control-plane.md#threat-model) explains.
 
@@ -131,5 +136,5 @@ No MCP prompts in v1. Status changes go through `tunnel_wait`, because not all c
 - **Schema:** a test fails if any tool input gains a property named like `flags`, `options`, `extra_args`, `identity`, `command` or `line`.
 - **Policy table:** one test per row, through MCP and directly to the socket with `kind: "mcp"`.
 - **Stdout purity:** stdout must decode as JSON-RPC only, with and without `--json`.
-- **Lifecycle** with the private `sshd` in `internal/e2e`: open, connect, close, expiry, adapter kill, pinned survival, shared leases and `request_id` retry.
+- **Lifecycle** with the private `sshd` in `internal/e2e`: open, connect, close, no expiry, adapter kill, pinned survival, reuse of a running tunnel and `request_id` retry.
 - **Real client:** one scripted run before each release that changes the SDK or a tool.

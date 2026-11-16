@@ -13,7 +13,7 @@ The desktop app is the main product. Two other ways in feed the same registry:
 - **`devt-tunnel`** complements the app: people and agents use it to create managed tunnels in place of plain `ssh`, `ngrok` or `cloudflared` commands.
 - **MCP** is a secondary channel for agents to create tunnels. Policy decides what needs a person, who accepts it in the app.
 
-Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions. Managing tunnels on other machines is a [later stage](roadmap.md#later-headless-servers).
+Out of scope: bundling ssh/ngrok/cloudflared in installers, interactive shell sessions. Instead, the app helps set up a missing tool where it is first needed: it lists installs it finds, and can download a pinned, checksum-verified `cloudflared` when a person asks ([binaries design](design/binaries.md)). Managing tunnels on other machines is a [later stage](roadmap.md#later-headless-servers).
 
 ## Concepts
 
@@ -25,7 +25,7 @@ Out of scope: bundling ssh/ngrok/cloudflared, interactive shell sessions. Managi
 | Group | Named set of tunnels started and stopped together (e.g. Backend stack). A tunnel can be in many groups, whatever its profile. |
 | Secret | API key, tunnel token, SSH key passphrase or env value, kept in the OS keychain and referenced by name. |
 | Ephemeral tunnel | A temporary tunnel from `devt-tunnel` or an agent. Not in `tunnels.toml`; removed when it stops; can be saved. |
-| Lease | A client's claim to use a tunnel until a set time. A person's stop always wins. |
+| Holder | The client that opened a tunnel. It has no deadline and marks the tunnel as agent-opened or CLI-opened. A person's stop always wins. |
 
 ## Tunnel types
 
@@ -48,7 +48,9 @@ Forwards are always displayed as `listen → target` for every kind; the `-L/-R/
 
 **Create / edit:** New (⌘N), Edit (⌘E) or Duplicate → choose source (SSH config host, pasted command, manual) → configure forwards, flags, profile, groups → review live command preview and checks → Save or Save & start.
 
-Editor checks: resolved binary; host alias in the scanned SSH config; local listen ports (`-L`, `-D`) not used by another tunnel or process; shared ngrok/cloudflared targets reported separately; unsafe SSH flags; missing `-N` and keepalive warnings; required secret present.
+**Set up a tool:** the editor reports a missing binary → **Download** (cloudflared) or the install hint, in place → the check turns green → Save & start. Settings → Binaries lists every install found; one click switches between them or back to Auto.
+
+Editor checks: resolved binary (with Download or an install hint when missing); host alias in the scanned SSH config; local listen ports (`-L`, `-D`) not used by another tunnel or process; shared ngrok/cloudflared targets reported separately; unsafe SSH flags; missing `-N` and keepalive warnings; required secret present.
 
 ## Screens
 
