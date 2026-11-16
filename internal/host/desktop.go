@@ -212,7 +212,50 @@ func (d *desktop) createTray() {
 		d.tray.SetIcon(trayLightIcon)
 	}
 	d.tray.SetTooltip(mainTitle)
+	if runtime.GOOS == "linux" {
+		// Wails positions the popup at the click point, which StatusNotifier hosts often
+		// report as (0,0), leaving it centred. Anchor it to the panel edge instead.
+		d.tray.OnClick(d.toggleLinuxPopup)
+		return
+	}
 	d.tray.AttachWindow(d.popup).WindowOffset(4)
+}
+
+// toggleLinuxPopup shows the tray popup in the screen corner next to the panel.
+func (d *desktop) toggleLinuxPopup() {
+	if d.popup.IsVisible() {
+		d.popup.Hide()
+		return
+	}
+	if screen := d.app.Screen.GetPrimary(); screen != nil {
+		x, y := trayPopupPosition(screen.Bounds, screen.WorkArea, trayWidth, trayHeight, 4)
+		d.popup.SetPosition(x, y)
+	}
+	d.popup.Show().Focus()
+}
+
+// trayPopupPosition finds the panel edge from the difference between the screen bounds
+// and the work area, then places the popup against it, on the right (where trays live).
+func trayPopupPosition(bounds, work application.Rect, w, h, gap int) (int, int) {
+	x := work.X + work.Width - w - gap
+	y := work.Y + gap
+	switch {
+	case work.Y+work.Height < bounds.Y+bounds.Height: // panel at the bottom
+		y = work.Y + work.Height - h - gap
+	case work.X > bounds.X && work.X+work.Width >= bounds.X+bounds.Width: // panel on the left
+		x = work.X + gap
+		y = work.Y + work.Height - h - gap
+	case work.X+work.Width < bounds.X+bounds.Width: // panel on the right
+		x = work.X + work.Width - w - gap
+		y = work.Y + work.Height - h - gap
+	}
+	if x < work.X {
+		x = work.X
+	}
+	if y < work.Y {
+		y = work.Y
+	}
+	return x, y
 }
 
 // createMenu installs the macOS menu bar with an app-menu "Settings…" entry (Cmd+,).
