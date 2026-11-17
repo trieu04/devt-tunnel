@@ -183,8 +183,8 @@ export function McpSettings() {
                   <option value="allow">Allow without asking</option>
                 </select>
                 <small>
-                  Includes ngrok, cloudflared, remote forwards and non-loopback listeners. "Allow" lets MCP clients publish
-                  without approval; use with care.
+                  Includes ngrok, cloudflared, remote forwards and non-loopback listeners. "Allow" lets MCP clients
+                  publish without approval; use with care.
                 </small>
               </label>
               <p className="muted">
