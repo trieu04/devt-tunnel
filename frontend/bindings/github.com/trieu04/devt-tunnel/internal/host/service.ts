@@ -50,6 +50,10 @@ export function CLIStatus(): $CancellablePromise<$models.CLIStatus> {
     return $Call.ByID(2126226956);
 }
 
+export function CancelToolDownload(tool: string): $CancellablePromise<void> {
+    return $Call.ByID(715309260, tool);
+}
+
 export function CheckForUpdate(force: boolean): $CancellablePromise<$models.UpdateInfo> {
     return $Call.ByID(1607546054, force);
 }
@@ -72,6 +76,15 @@ export function DeleteSecret(name: string): $CancellablePromise<void> {
 
 export function DeleteTunnel(id: string): $CancellablePromise<void> {
     return $Call.ByID(3493382845, id);
+}
+
+/**
+ * DownloadTool downloads the pinned release of tool and, when use is true,
+ * selects it. It returns when the download finishes; progress arrives as
+ * "tool:download" events carrying api.ToolDownloadProgress.
+ */
+export function DownloadTool(tool: string, use: boolean): $CancellablePromise<api$0.ToolInfo[] | null> {
+    return $Call.ByID(112598042, tool, use);
 }
 
 export function DuplicateDraft(id: string): $CancellablePromise<model$0.Tunnel> {
@@ -142,6 +155,14 @@ export function Overview(): $CancellablePromise<api$0.Overview> {
     return $Call.ByID(886523795);
 }
 
+/**
+ * PickExecutable shows a native open-file dialog and returns the chosen path,
+ * or "" when the person cancels.
+ */
+export function PickExecutable(tool: string): $CancellablePromise<string> {
+    return $Call.ByID(2578466401, tool);
+}
+
 export function PromoteTunnel(id: string, name: string): $CancellablePromise<string> {
     return $Call.ByID(1772156158, id, name);
 }
@@ -158,6 +179,10 @@ export function ReloadSSHHosts(): $CancellablePromise<void> {
     return $Call.ByID(3023534104);
 }
 
+export function RemoveDownloadedTool(tool: string, version: string): $CancellablePromise<api$0.ToolInfo[] | null> {
+    return $Call.ByID(274624315, tool, version);
+}
+
 export function RenameSecret($from: string, to: string): $CancellablePromise<void> {
     return $Call.ByID(69995074, $from, to);
 }
@@ -172,6 +197,14 @@ export function Restart(id: string): $CancellablePromise<void> {
 
 export function RevealConfig(): $CancellablePromise<void> {
     return $Call.ByID(2050183143);
+}
+
+/**
+ * RevealPath shows path in Finder or Explorer. Only paths inside devt-tunnel's
+ * managed tools directory are allowed.
+ */
+export function RevealPath(path: string): $CancellablePromise<void> {
+    return $Call.ByID(2606758742, path);
 }
 
 export function RevealSecret(name: string): $CancellablePromise<string> {
@@ -264,6 +297,10 @@ export function StopOrphan(pid: number): $CancellablePromise<void> {
 
 export function Toggle(id: string): $CancellablePromise<void> {
     return $Call.ByID(437651580, id);
+}
+
+export function ToolCandidates(tool: string): $CancellablePromise<api$0.ToolCandidate[] | null> {
+    return $Call.ByID(3100784712, tool);
 }
 
 export function Tools(): $CancellablePromise<api$0.ToolInfo[] | null> {

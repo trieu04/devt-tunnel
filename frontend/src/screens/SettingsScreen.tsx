@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Kind } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/secret/models";
 import { onSettingsChanged, Overview, Service } from "../api";
 import { SHORTCUTS } from "../app/shortcuts";
+import { Binaries } from "./BinariesSettings";
 import { McpSettings } from "./McpSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { BackGlyph } from "../parts";
@@ -76,7 +77,7 @@ export function SettingsScreen({
             <GroupsScreen overview={overview} initial={organizeItem} refresh={refresh} leaveGuard={leaveGuard} />
           )}
           {page === "ssh" && <SSHConfig overview={overview} />}
-          {page === "binaries" && <Binaries />}
+          {page === "binaries" && <Binaries overview={overview} focus={organizeItem} />}
           {page === "shortcuts" && <Shortcuts overview={overview} />}
         </section>
       </div>
@@ -158,7 +159,9 @@ function General({ overview }: { overview: Overview }) {
         Check for releases automatically
       </label>
       {error && <p className="error-text">{error}</p>}
-      <p className="muted">The optional GitHub release check is devt-tunnel's only network request of its own.</p>
+      <p className="muted">
+        devt-tunnel only connects to the network for the optional release check and for binaries you choose to download.
+      </p>
     </div>
   );
 }
@@ -377,52 +380,6 @@ function SSHConfig({ overview }: { overview: Overview }) {
         <p className="warning" key={warning}>
           {warning}
         </p>
-      ))}
-    </div>
-  );
-}
-
-function Binaries() {
-  const [tools, setTools] = useState<{ name: string; path: string; version: string; source: string; error: string }[]>(
-    [],
-  );
-  const [paths, setPaths] = useState<Record<string, string>>({});
-  const [error, setError] = useState("");
-  const load = () =>
-    Service.Tools().then((items) => {
-      setTools(items ?? []);
-      setPaths(Object.fromEntries((items ?? []).map((item) => [item.name, item.path])));
-    });
-  useEffect(() => {
-    void load();
-  }, []);
-  return (
-    <div>
-      <h1>Binaries</h1>
-      {error && <p className="error-text">{error}</p>}
-      {tools.map((tool) => (
-        <article className="card" key={tool.name}>
-          <h2>{tool.name}</h2>
-          <p>{tool.error || `${tool.version} · ${tool.source}`}</p>
-          <div className="address">
-            <input
-              className="mono"
-              value={paths[tool.name] ?? ""}
-              placeholder="Absolute executable path"
-              onChange={(event) => setPaths({ ...paths, [tool.name]: event.target.value })}
-            />
-            <button
-              onClick={() =>
-                Service.SetToolPath(tool.name, paths[tool.name] ?? "")
-                  .then((items) => setTools(items ?? []))
-                  .catch((reason) => setError(String(reason)))
-              }
-            >
-              Save
-            </button>
-            <button onClick={() => Service.SetToolPath(tool.name, "").then(() => load())}>Clear</button>
-          </div>
-        </article>
       ))}
     </div>
   );

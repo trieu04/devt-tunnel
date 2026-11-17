@@ -3,6 +3,7 @@ import { Overview, Service, TunnelView, onLogsAppended, openURL } from "../api";
 import { AgentBadge, EphemeralTag } from "../AgentBadge";
 import { AnsiText } from "../AnsiText";
 import { SaveTunnelDialog } from "../SaveTunnelDialog";
+import { binariesParam } from "../lib/binaries";
 import { applyLogUpdate } from "../lib/logs";
 import { commandSummary, fitCount } from "../lib/summary";
 import { ViewFilter, filterTunnels, inGroup, isActive } from "../lib/filter";
@@ -643,7 +644,14 @@ function Detail({
       key: "Uptime",
       value: runningTime(view, now) || "—",
     },
-    { key: "Tool", value: view.toolPath || "Not found" },
+    {
+      key: "Tool",
+      value: view.toolPath || (
+        <button className="link-button" onClick={() => onNavigate("settings", binariesParam(view.tunnel.type))}>
+          Not found
+        </button>
+      ),
+    },
   ];
   const sidebarWidth = logSidebarWidths[view.tunnel.id];
   const logText = logs.map((line) => line.line).join("\n");

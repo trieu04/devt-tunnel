@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useState } from "react";
 import { Service, onNavigation, onSettingsChanged } from "../api";
+import { parseSettingsParam } from "../lib/binaries";
 import { isActive } from "../lib/filter";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ApprovalDialog, useApprovals } from "../ApprovalDialog";
@@ -99,6 +100,7 @@ export function App() {
           source={nav.param}
           profiles={overview.profiles ?? []}
           groups={overview.groups ?? []}
+          onNavigate={open}
           onDone={(id) => {
             if (id) setSelected(id);
             refresh();
@@ -110,8 +112,8 @@ export function App() {
         <SettingsScreen
           key={`${nav.screen}:${nav.param ?? ""}`}
           overview={overview}
-          initial={nav.screen === "settings" ? nav.param : nav.screen}
-          item={nav.screen === "settings" ? undefined : nav.param}
+          initial={nav.screen === "settings" ? parseSettingsParam(nav.param).page : nav.screen}
+          item={nav.screen === "settings" ? parseSettingsParam(nav.param).item : nav.param}
           onBack={() => open("tunnels")}
           refresh={refresh}
         />

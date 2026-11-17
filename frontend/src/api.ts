@@ -1,6 +1,7 @@
 // The only module that talks to the Go side. Types come from generated bindings.
 import { Browser, Events } from "@wailsio/runtime";
 import * as Service from "../bindings/github.com/trieu04/devt-tunnel/internal/host/service";
+import type { ToolDownloadEvent } from "./lib/binaries";
 import type { Overview, TunnelView } from "../bindings/github.com/trieu04/devt-tunnel/internal/api";
 
 export type { Overview, TunnelView };
@@ -36,4 +37,8 @@ export function onLogsAppended(
 
 export function onNavigation(callback: (event: { data: { screen: string; param: string } }) => void): () => void {
   return Events.On("nav:open", callback);
+}
+
+export function onToolDownload(callback: (event: ToolDownloadEvent) => void): () => void {
+  return Events.On("tool:download", (event: { data: ToolDownloadEvent }) => callback(event.data));
 }

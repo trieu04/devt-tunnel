@@ -115,12 +115,63 @@ export interface SecretView {
     "lastUsed": string;
 }
 
+/**
+ * ToolCandidate is one executable that could serve a tool.
+ */
+export interface ToolCandidate {
+    /**
+     * absolute, as it will be stored
+     */
+    "path": string;
+
+    /**
+     * after EvalSymlinks; used to merge duplicates
+     */
+    "resolved": string;
+
+    /**
+     * first line of the version command; empty on error
+     */
+    "version": string;
+
+    /**
+     * path | homebrew | scoop | winget | system | downloaded | custom
+     */
+    "origin": string;
+
+    /**
+     * what Auto would pick right now
+     */
+    "auto": boolean;
+
+    /**
+     * equals the settings override
+     */
+    "selected": boolean;
+    "error"?: string;
+}
+
+/**
+ * ToolDownloadOffer describes the compiled-in release a person may download.
+ */
+export interface ToolDownloadOffer {
+    "version": string;
+    "size": number;
+}
+
 export interface ToolInfo {
     "name": string;
     "path": string;
     "version": string;
     "source": string;
+    "origin": string;
     "error": string;
+
+    /**
+     * Download is set when devt-tunnel can download a pinned release of this
+     * tool for this platform and the selected binary is not that version.
+     */
+    "download"?: ToolDownloadOffer | null;
 }
 
 export type TunnelOwner = model$0.TunnelOwner;

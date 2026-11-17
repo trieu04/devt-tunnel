@@ -48,4 +48,10 @@ export interface Status {
     "attempt"?: number;
     "stale"?: boolean;
     "owner": model$0.TunnelOwner;
+
+    /**
+     * ToolPath is the executable this run was started with, so the UI can tell
+     * when a newer binary selection has not reached a running tunnel.
+     */
+    "toolPath"?: string;
 }

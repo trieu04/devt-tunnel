@@ -11,6 +11,8 @@ export type {
     PendingPrompt,
     SSHHostList,
     SecretView,
+    ToolCandidate,
+    ToolDownloadOffer,
     ToolInfo,
     TunnelOwner,
     TunnelView

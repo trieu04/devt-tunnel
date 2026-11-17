@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { TunnelType } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/model/models";
 import type { Tunnel } from "../../bindings/github.com/trieu04/devt-tunnel/internal/core/model/models";
 import { Service } from "../api";
+import type { ToolDownloadOffer } from "../../bindings/github.com/trieu04/devt-tunnel/internal/api";
+import { DownloadControl } from "../DownloadControl";
+import { onToolDownloaded } from "../downloads";
+import { binariesParam, missingToolFromFinding } from "../lib/binaries";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { CloudflaredFields } from "./editor/CloudflaredFields";
 import { SecretOption, Field, Toggle } from "./editor/controls";
@@ -9,9 +13,16 @@ import { NgrokFields } from "./editor/NgrokFields";
 import { SSHFields, SSHHost } from "./editor/SSHFields";
 
 type Named = { id: string; name: string };
-type Props = { source?: string; onDone: (id?: string) => void; profiles: Named[]; groups: Named[] };
+type Props = {
+  source?: string;
+  onDone: (id?: string) => void;
+  onNavigate?: (screen: string, param?: string) => void;
+  profiles: Named[];
+  groups: Named[];
+};
 
-export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
+export function EditorScreen({ source = "", onDone, onNavigate, profiles, groups }: Props) {
+  const [recheck, setRecheck] = useState(0);
   const [draft, setDraft] = useState<Tunnel | null>(null);
   const [original, setOriginal] = useState("");
   const [paste, setPaste] = useState(source === "paste" ? "" : "");
@@ -76,7 +87,9 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
       150,
     );
     return () => clearTimeout(timer);
-  }, [draft]);
+  }, [draft, recheck]);
+  // A download finished (here or elsewhere): evaluate again so the check turns green.
+  useEffect(() => onToolDownloaded(() => setRecheck((count) => count + 1)), []);
 
   useEffect(() => {
     const id = ++importRequest.current;
@@ -409,6 +422,9 @@ export function EditorScreen({ source = "", onDone, profiles, groups }: Props) {
                   key={`${finding.field}:${finding.message}`}
                 >
                   {finding.message}
+                  {missingToolFromFinding(finding) && (
+                    <MissingToolFix tool={missingToolFromFinding(finding)!} onNavigate={onNavigate} />
+                  )}
                 </li>
               ))}
             </ul>
@@ -510,4 +526,28 @@ function mergeImportedDraft(current: Tunnel | null, imported: Tunnel): Tunnel {
     reconnect: current?.reconnect,
     startOnLaunch: current?.startOnLaunch,
   };
+}
+
+/** Inline setup under a "tool not found" check: Download when an artifact exists, and a link to Settings. */
+function MissingToolFix({ tool, onNavigate }: { tool: string; onNavigate?: (screen: string, param?: string) => void }) {
+  const [offer, setOffer] = useState<ToolDownloadOffer | null>(null);
+  useEffect(() => {
+    let current = true;
+    Service.Tools()
+      .then((items) => current && setOffer(items?.find((item) => item.name === tool)?.download ?? null))
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [tool]);
+  return (
+    <div className="finding-fix">
+      <DownloadControl tool={tool} offer={offer} primary />
+      {onNavigate && (
+        <button className="link-button" onClick={() => onNavigate("settings", binariesParam(tool))}>
+          Settings → Binaries
+        </button>
+      )}
+    </div>
+  );
 }
