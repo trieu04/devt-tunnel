@@ -16,6 +16,7 @@ devt-tunnel tools [flags]
   devt-tunnel tools
   devt-tunnel tools --json
   devt-tunnel tools set ssh /usr/bin/ssh
+  devt-tunnel tools download cloudflared
 ```
 
 ### Options
@@ -38,5 +39,8 @@ devt-tunnel tools [flags]
 ### SEE ALSO
 
 * [devt-tunnel](devt-tunnel.md)	 - Supervise and inspect development tunnels
+* [devt-tunnel tools candidates](devt-tunnel_tools_candidates.md)	 - List every installed copy of a tool
+* [devt-tunnel tools download](devt-tunnel_tools_download.md)	 - Download a pinned cloudflared release
+* [devt-tunnel tools remove](devt-tunnel_tools_remove.md)	 - Delete a downloaded tool version
 * [devt-tunnel tools set](devt-tunnel_tools_set.md)	 - Set or clear a per-machine tool path
 

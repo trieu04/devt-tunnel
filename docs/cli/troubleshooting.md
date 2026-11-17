@@ -9,6 +9,9 @@
 | `tunnels.toml changed on disk` | Edited by hand | `devt-tunnel config reload`, then repeat the change |
 | `daemon version 2 is newer than this CLI` | Mixed install | Upgrade `devt-tunnel` |
 | `ssh was not found` | Not on the daemon's PATH | `devt-tunnel tools set ssh /path/to/ssh` |
+| `tool "cloudflared" was not found` | cloudflared is not installed | `devt-tunnel tools download cloudflared`, or install it and run `devt-tunnel tools candidates cloudflared` |
+| `checksum_mismatch` from `tools download` | The file did not match the hash pinned in devt-tunnel; it was deleted | Retry; if it persists, a proxy or mirror is altering the download. Install cloudflared another way |
+| `network` from `tools download` | The transfer failed or the connection dropped | Check the connection or `HTTPS_PROXY`, then retry |
 
 ## Exit codes
 
@@ -17,7 +20,7 @@ Scripts can rely on these.
 | Code | Name | Meaning |
 |---|---|---|
 | 0 | | Success |
-| 1 | `failed` | The tunnel or operation failed, including a person stopping an MCP-opened tunnel (`tunnel_stopped`), a policy refusal (`policy_denied`) or disabled MCP access (`agent_disabled`). See the message and `devt-tunnel logs db` |
+| 1 | `failed` | The tunnel or operation failed, including a person stopping an MCP-opened tunnel (`tunnel_stopped`), a policy refusal (`policy_denied`), disabled MCP access (`agent_disabled`), or a tool download that failed its checksum (`checksum_mismatch`) or transfer (`network`). See the message and `devt-tunnel logs db` |
 | 2 | `usage` | Bad arguments or an invalid tunnel specification (`invalid_spec`), or an unknown or ambiguous tunnel |
 | 3 | `needs_secret` | A required secret is missing, or the keychain is unavailable |
 | 4 | `needs_user` | A prompt needs a person and no TTY is available (or `--no-input`). Includes `pending_approval`; poll the approval and retry after a person decides. |

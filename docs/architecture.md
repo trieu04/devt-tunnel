@@ -89,6 +89,7 @@ SSH remains responsible for detecting dead connections; new SSH drafts set `Serv
 ## Decisions
 
 - **System binaries over an embedded SSH library:** full `~/.ssh/config` and agent compatibility at the cost of depending on installed versions.
+- **Download on request, not bundling:** to shorten setup, the daemon can fetch a `cloudflared` release whose URL and SHA-256 are compiled into devt-tunnel, into a per-user tools directory, only when a person asks. Selecting it writes the usual `[tools]` override, so resolution has no new rule ([binaries design](design/binaries.md)).
 - **No `-f`:** background mode hides the PID and exit status the supervisor needs.
 - **Keychain-only secrets:** the definitions file can be committed or shared safely.
 - **`listen → target` for all forward kinds:** one reading direction; the badge carries the side.

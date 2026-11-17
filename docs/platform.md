@@ -37,7 +37,8 @@ Process records keep the start time as well as the PID, which protects orphan de
 
 ### Finding and launching binaries
 
-- **PATH:** apps opened from Finder or a desktop launcher do not inherit the terminal's PATH. Resolve in this order: per-tool path from settings, PATH from a login shell (`$SHELL -ilc`, with a timeout), known directories, then process PATH. On Windows, also check `%SystemRoot%\System32\OpenSSH`. The editor's checks show the resolved path.
+- **PATH:** apps opened from Finder or a desktop launcher do not inherit the terminal's PATH. Resolve in this order: per-tool path from settings, PATH from a login shell (`$SHELL -ilc`, with a timeout), known directories, then process PATH. On Windows, also check `%SystemRoot%\System32\OpenSSH`. The editor's checks show the resolved path. Settings → Binaries lists every match, not only the first, so a person can pick one.
+- **Downloaded tools:** a `cloudflared` downloaded on request lives in `tools/<tool>/<version>/` under `~/Library/Application Support/devt-tunnel` (macOS), `$XDG_DATA_HOME/devt-tunnel` (Linux) or `%LOCALAPPDATA%\devt-tunnel` (Windows). A Go HTTP download carries no quarantine attribute or Mark of the Web, so the pinned SHA-256 is the only verification. The uninstaller removes this directory; user definitions and settings stay. Details in the [binaries design](design/binaries.md).
 - **Environment:** spawn from a clean copy with app-bundle variables removed (`LD_LIBRARY_PATH`, `GTK_*`, `GIO_*` and so on), or host binaries may load the wrong libraries.
 - **Quoting:** the command preview and paste import use POSIX rules on Unix and Windows rules on Windows.
 - **SSH agent:** the daemon inherits `SSH_AUTH_SOCK` when launched and does not replace it. A session that disconnects leaves a stale path; restart the daemon from the intended session.
@@ -100,6 +101,7 @@ Test on real desktops. A container with Xvfb does not count.
 | 8 | Secret round trip; missing keyring handled | ☐ | ☐ | ☐ | | |
 | 9 | No console window flashes when spawning | | ☐ | | | |
 | 10 | Idle memory and installer size recorded | ☐ | ☐ | ☐ | | |
+| 11 | On a clean machine, Download cloudflared from the editor and start a quick tunnel with no terminal and no Gatekeeper or SmartScreen prompt | ☐ | ☐ | ☐ | | |
 
 Extended checks, on each OS: wake event delivery, OS-authenticated reveal, keyboard and IME input, multi-monitor quick launch focus, window restoration after monitor removal, Windows path quoting, 500-tunnel rendering in light and dark, second-instance focus, GNOME close behavior, installed helper discovery.
 
@@ -130,3 +132,4 @@ Remaining work is in the [roadmap](roadmap.md).
 | WebKitGTK rendering or GPU problems on Linux | Keep the UI simple; test on Nvidia |
 | Three-OS support exceeds a small team | Release in order: macOS, Windows, then Linux |
 | Differences across OpenSSH versions | Read `ssh -V`; keep flags conservative; test Windows inbox versions |
+| Pinned cloudflared becomes stale or an asset is renamed upstream | Refresh the manifest each release; a failed download falls back to the install hint |

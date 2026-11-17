@@ -59,6 +59,8 @@ Expose a local service publicly. `expose` always warns on stderr that the servic
 devt-tunnel expose 3000 --via cloudflared
 ```
 
+If `cloudflared` is not installed, `devt-tunnel tools download cloudflared` fetches a verified copy on request.
+
 Review agent requests and the audit trail:
 
 ```bash

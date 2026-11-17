@@ -29,6 +29,17 @@ Order is macOS, Windows, Linux.
 - **Port warning** in the editor's native window.
 - **OTP** through the askpass dialog, as an `internal/e2e` test if possible without root, otherwise manually.
 
+## Setup: binaries
+
+Goal: a fresh install runs its first tunnel without leaving the app, even when the tool is missing. Design: [binaries.md](design/binaries.md).
+
+Steps 1 to 3 (select, download cloudflared, user-facing text) are implemented for `cloudflared`. Open:
+
+- **Acceptance:** [validation check 11](platform.md#validation) on a real desktop per OS, including the editor's inline Download, Settings → Binaries states and the "⋯" menu, which were not exercised in a native window.
+- **ngrok** (B3): decide the source, see the design's open questions. Until then ngrok keeps an install hint.
+
+Exit test: [validation check 11](platform.md#validation) on macOS, Windows and Linux.
+
 ## Cross-platform validation
 
 Fill the [validation matrix](platform.md#validation) on real desktops, fix what fails, and apply the decision rule there.
@@ -84,7 +95,7 @@ Unsigned builds, the release workflow, deb/rpm contents, the update notice and b
 
 ## Later: headless servers
 
-Not part of the milestones above. Run `devt-tunnel` on a headless server and manage it through its daemon socket, similar to `docker context`. The API has no remote transport today, so this needs its own design for reaching the socket and for authorization.
+Not part of the milestones above. Run `devt-tunnel` on a headless server and manage it through its daemon socket, similar to `docker context`. The API has no remote transport today, so this needs its own design for reaching the socket and for authorization: proposed in [design/contexts.md](design/contexts.md).
 
 Groundwork when this starts:
 

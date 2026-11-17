@@ -51,7 +51,7 @@ devt-tunnel is a desktop app to define, find and run tunnels. It drives the bina
 
 ## Installation
 
-The app uses the binaries on your system and does not bundle `ssh`, `ngrok` or `cloudflared`.
+The app uses the binaries on your system and does not bundle `ssh`, `ngrok` or `cloudflared`. If `cloudflared` is missing, Settings → Binaries, the editor's binary check and `devt-tunnel tools download cloudflared` can download a pinned, checksum-verified release when you ask. Nothing is downloaded automatically.
 
 ### Packages
 
@@ -159,7 +159,7 @@ See the [agent guide](docs/cli/agents.md).
 
 **What gets logged** — Tunnel output stays in memory. The rotating application log excludes secret values.
 
-**What reaches the network** — The optional release update check is the app's only network request of its own. Tunnel processes make their normal connections.
+**What reaches the network** — The optional release update check, and a `cloudflared` download you start yourself (from GitHub, verified against a hash built into devt-tunnel; a mismatch deletes the file), are the only network requests the app makes of its own. Tunnel processes make their normal connections.
 
 **What agents cannot do** — Change policy, answer SSH prompts, approve their own requests, read or write secret values, or run arbitrary commands through MCP. Approval needs a person, in the app or in a terminal with the confirmation code. Requests and decisions are recorded in the audit log.
 
