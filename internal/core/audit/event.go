@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -65,6 +66,9 @@ const (
 	ProfileStart        Action = "profile.start"
 	ProfileStop         Action = "profile.stop"
 	ConfigReload        Action = "config.reload"
+	ToolSetPath         Action = "tool.setPath"
+	ToolDownload        Action = "tool.download"
+	ToolRemove          Action = "tool.removeDownloaded"
 	OrphanStop          Action = "orphan.stop"
 	DaemonShutdown      Action = "daemon.shutdown"
 )
@@ -123,10 +127,17 @@ type Event struct {
 	SecretNames   []string      `json:"secret_names,omitempty"`
 	Decision      Decision      `json:"decision,omitempty"`
 	ApprovalScope ApprovalScope `json:"approval_scope,omitempty"`
-	Result        Result        `json:"result"`
+	// Tool and ToolVersion identify which program tool.* actions affect. Tool is
+	// a closed vocabulary and ToolVersion a dotted number; paths are never
+	// recorded, since they are free-form text.
+	Tool        string `json:"tool,omitempty"`
+	ToolVersion string `json:"tool_version,omitempty"`
+	Result      Result `json:"result"`
 }
 
 var ErrInvalidEvent = errors.New("audit: invalid event")
+
+var toolVersion = regexp.MustCompile(`^[0-9]{1,9}(\.[0-9]{1,9}){1,3}$`)
 
 // Validate checks the closed vocabulary and bounds identifier metadata. Errors
 // name the invalid field but deliberately never repeat its value.
@@ -145,7 +156,7 @@ func (e Event) Validate() error {
 		TunnelImport, TunnelOpen, TunnelRelease,
 		ApprovalRequest, ApprovalTimeout, PolicyDeny, TunnelRunEphemeral, TunnelStopEphemeral, ApprovalDecide, SecretSet, SecretRename, SecretDelete, SecretForget,
 		PromptAnswer, SettingsUpdate, PolicyUpdate, ProfileSave, ProfileDelete,
-		ProfileActivate, ProfileStart, ProfileStop, ConfigReload, OrphanStop, DaemonShutdown:
+		ProfileActivate, ProfileStart, ProfileStop, ConfigReload, ToolSetPath, ToolDownload, ToolRemove, OrphanStop, DaemonShutdown:
 	default:
 		return invalid("action")
 	}
@@ -180,6 +191,14 @@ func (e Event) Validate() error {
 		if _, err := hex.DecodeString(e.Fingerprint); err != nil {
 			return invalid("fingerprint")
 		}
+	}
+	switch e.Tool {
+	case "", "ssh", "ngrok", "cloudflared":
+	default:
+		return invalid("tool")
+	}
+	if e.ToolVersion != "" && !toolVersion.MatchString(e.ToolVersion) {
+		return invalid("tool_version")
 	}
 	if len(e.SecretNames) > 64 {
 		return invalid("secret_names")

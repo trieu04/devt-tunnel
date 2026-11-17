@@ -55,6 +55,11 @@ type Options struct {
 }
 
 type Engine struct {
+	probeCache    sync.Map // probeKey -> version text
+	version       string
+	downloadMu    sync.Mutex
+	downloads     map[string]*toolDownload // by tool; at most one per tool
+	downloadHooks downloadHooks            // tests only
 	// Request serialization is outside configMu: execution reuses the normal
 	// lease/ephemeral admission methods, which acquire configMu themselves.
 	requestMu           sync.Mutex
@@ -233,6 +238,7 @@ func New(opts Options) (*Engine, error) {
 		prompts:      map[string]*waitingPrompt{},
 		subscribers:  map[uint64]func(api.Event){},
 		done:         done,
+		version:      opts.Version,
 	}
 	cachedSecrets.Used = s.markSecretUsed
 	cachedSecrets.Inner.(*lifetimeSecrets).observe = s.observeRedactionSecret

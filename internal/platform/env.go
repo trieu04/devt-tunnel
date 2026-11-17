@@ -72,13 +72,22 @@ func (t *Tools) Locate(tool string) (string, string, error) {
 	if filepath.IsAbs(tool) {
 		return tool, "absolute path", nil
 	}
+	p, err := t.Auto(tool)
+	if err != nil {
+		return "", "", err
+	}
+	return p, "search path", nil
+}
+
+// Auto returns what Locate would pick if no override were set.
+func (t *Tools) Auto(tool string) (string, error) {
 	for _, dir := range filepath.SplitList(t.PATH()) {
 		candidate := filepath.Join(dir, tool)
 		if p, err := exec.LookPath(candidate); err == nil {
-			return p, "search path", nil
+			return p, nil
 		}
 	}
-	return "", "", fmt.Errorf("%s was not found on this machine", tool)
+	return "", fmt.Errorf("%s was not found on this machine", tool)
 }
 
 func (t *Tools) SetOverrides(overrides map[string]string) {

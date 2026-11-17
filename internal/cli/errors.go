@@ -27,7 +27,7 @@ var ExitCodes = []struct {
 	Kinds []api.ErrorKind
 }{
 	{0, "", nil},
-	{1, "failed", []api.ErrorKind{api.Stopped, api.Internal, api.PolicyDenied, api.AgentDisabled}},
+	{1, "failed", []api.ErrorKind{api.Stopped, api.Internal, api.PolicyDenied, api.AgentDisabled, api.ChecksumMismatch, api.Network}},
 	{2, "usage", []api.ErrorKind{api.Unknown, api.InvalidSpec}},
 	{3, "needs_secret", []api.ErrorKind{api.NeedsSecret, api.KeyringUnavailable}},
 	{4, "needs_user", []api.ErrorKind{api.NeedsUser, api.PendingApproval}},

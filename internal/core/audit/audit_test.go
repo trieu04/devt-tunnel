@@ -439,6 +439,9 @@ func TestValidationRejectsFreeTextWithoutEchoingIt(t *testing.T) {
 		func(e *Event) { e.Fingerprint = private },
 		func(e *Event) { e.Actor.Name = strings.Repeat("x", 257) },
 		func(e *Event) { e.Actor.Name = string([]byte{0xff}) },
+		func(e *Event) { e.Tool = "/usr/bin/" + private },
+		func(e *Event) { e.ToolVersion = "../" + private },
+		func(e *Event) { e.ToolVersion = "1.2.3 " + private },
 	} {
 		event := testEvent()
 		mutate(&event)
@@ -455,7 +458,7 @@ func TestValidationRejectsFreeTextWithoutEchoingIt(t *testing.T) {
 	}
 	// This allowlist intentionally fails if Event gains an unreviewed field.
 	typ := reflect.TypeFor[Event]()
-	wantFields := []string{"Count", "Sequence", "Time", "Actor", "Action", "TunnelID", "RequestID", "ApprovalID", "Fingerprint", "SecretNames", "Decision", "ApprovalScope", "Result"}
+	wantFields := []string{"Count", "Sequence", "Time", "Actor", "Action", "TunnelID", "RequestID", "ApprovalID", "Fingerprint", "SecretNames", "Decision", "ApprovalScope", "Tool", "ToolVersion", "Result"}
 	var fields []string
 	for i := 0; i < typ.NumField(); i++ {
 		fields = append(fields, typ.Field(i).Name)

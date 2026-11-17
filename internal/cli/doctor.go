@@ -93,6 +93,9 @@ func doctorFindings(status api.DaemonStatus, overview api.Overview, tools []api.
 			if tool.Error == "" {
 				message = tool.Name + " was not found"
 			}
+			if tool.Path == "" && tool.Download != nil {
+				message += "; run devt-tunnel tools download " + tool.Name
+			}
 		}
 		findings = append(findings, checks.Finding{Severity: severity, Message: message, Field: "tools." + tool.Name})
 	}

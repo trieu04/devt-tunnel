@@ -47,6 +47,8 @@ const (
 	PortInUse          ErrorKind = "port_in_use"
 	AgentDisabled      ErrorKind = "agent_disabled"
 	PendingApproval    ErrorKind = "pending_approval"
+	ChecksumMismatch   ErrorKind = "checksum_mismatch" // a download did not match its pinned hash or size
+	Network            ErrorKind = "network"           // a download failed in transport
 )
 
 type ErrorData struct {
@@ -156,6 +158,17 @@ type ToolPathParams struct {
 	Tool string `json:"tool"`
 	Path string `json:"path"`
 }
+type ToolParams struct {
+	Tool string `json:"tool"`
+}
+type ToolDownloadParams struct {
+	Tool string `json:"tool"`
+	Use  bool   `json:"use"` // select the downloaded binary when done
+}
+type ToolVersionParams struct {
+	Tool    string `json:"tool"`
+	Version string `json:"version"`
+}
 type ShortcutParams struct {
 	Shortcut string `json:"shortcut"`
 }
@@ -190,7 +203,7 @@ var Methods = []string{
 	"logs.read", "logs.since", "profile.list", "profile.save", "profile.delete", "profile.duplicate",
 	"group.list", "group.save", "group.delete", "group.duplicate", "group.start", "group.stop",
 	"secret.list", "secret.set", "secret.delete", "secret.rename", "secret.forget", "prompt.list", "prompt.answer",
-	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.setPath", "settings.get", "settings.getAgent", "settings.setAgent", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
+	"ssh.hosts", "ssh.resolve", "ssh.reload", "tool.list", "tool.candidates", "tool.setPath", "tool.download", "tool.downloadCancel", "tool.removeDownloaded", "settings.get", "settings.getAgent", "settings.setAgent", "settings.setShortcut", "settings.setUpdateChecks", "orphan.list", "orphan.stop", "config.overview", "config.path", "config.reload", "system.wake", "system.focus",
 }
 
 type OpenSavedParams struct {

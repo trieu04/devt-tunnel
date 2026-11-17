@@ -114,7 +114,8 @@ func TestMethodContract(t *testing.T) {
 		{"secret.rename", api.RenameSecretParams{From: "disposable", To: "renamed"}}, {"secret.delete", api.SecretNameParams{Name: "renamed"}}, {"secret.forget", api.Empty{}},
 		{"prompt.list", api.Empty{}}, {"prompt.answer", api.AnswerPromptParams{ID: "absent", Cancelled: true}},
 		{"ssh.hosts", api.SSHParams{}}, {"ssh.resolve", api.SSHParams{Alias: ""}}, {"ssh.reload", api.Empty{}},
-		{"tool.list", api.Empty{}}, {"tool.setPath", api.ToolPathParams{Tool: "ssh", Path: ""}},
+		{"tool.list", api.Empty{}}, {"tool.candidates", api.ToolParams{Tool: "ssh"}}, {"tool.setPath", api.ToolPathParams{Tool: "ssh", Path: ""}},
+		{"tool.download", api.ToolDownloadParams{Tool: "ssh"}}, {"tool.downloadCancel", api.ToolParams{Tool: "cloudflared"}}, {"tool.removeDownloaded", api.ToolVersionParams{Tool: "cloudflared", Version: "1.2.3"}},
 		{"settings.getAgent", api.Empty{}}, {"settings.setAgent", api.AgentSettingsParams{Agent: settings.DefaultAgent()}},
 		{"settings.get", api.Empty{}}, {"settings.setShortcut", api.ShortcutParams{Shortcut: "Alt+Space"}}, {"settings.setUpdateChecks", api.UpdateChecksParams{Enabled: false}},
 		{"orphan.list", api.Empty{}}, {"orphan.stop", api.OrphanParams{PID: -1}},
@@ -127,7 +128,7 @@ func TestMethodContract(t *testing.T) {
 		if err != nil && (!errors.As(err, &rpc) || rpc.Code == -32601 || rpc.Code == -32602) {
 			t.Errorf("%s: %v", tc.method, err)
 		}
-		if err != nil && tc.method != "tunnel.openRequest" && tc.method != "tunnel.waitRequest" && tc.method != "approval.get" && tc.method != "approval.decide" && tc.method != "tunnel.promote" && tc.method != "tunnel.runEphemeral" && tc.method != "tunnel.open" && tc.method != "tunnel.release" && tc.method != "tunnel.start" && tc.method != "tunnel.stop" && tc.method != "tunnel.restart" && tc.method != "tunnel.waitReady" && tc.method != "ssh.resolve" && tc.method != "orphan.stop" {
+		if err != nil && tc.method != "tunnel.openRequest" && tc.method != "tunnel.waitRequest" && tc.method != "approval.get" && tc.method != "approval.decide" && tc.method != "tunnel.promote" && tc.method != "tunnel.runEphemeral" && tc.method != "tunnel.open" && tc.method != "tunnel.release" && tc.method != "tunnel.start" && tc.method != "tunnel.stop" && tc.method != "tunnel.restart" && tc.method != "tunnel.waitReady" && tc.method != "ssh.resolve" && tc.method != "orphan.stop" && tc.method != "tool.download" && tc.method != "tool.removeDownloaded" {
 			t.Errorf("%s unexpectedly failed: %v", tc.method, err)
 		}
 		seen[tc.method] = true
@@ -314,5 +315,13 @@ func TestWriterDeadline(t *testing.T) {
 	}
 	if time.Since(started) > 7*time.Second {
 		t.Fatal("writer deadline not bounded")
+	}
+}
+
+func TestToolMethodsAreNotMCPAllowed(t *testing.T) {
+	for _, method := range []string{"tool.candidates", "tool.setPath", "tool.download", "tool.downloadCancel", "tool.removeDownloaded"} {
+		if mcpMethodAllowed(method) {
+			t.Errorf("%s must stay GUI and CLI only", method)
+		}
 	}
 }

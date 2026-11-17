@@ -251,7 +251,7 @@ func (c *connection) enqueue(event api.Event) {
 		prompt.Prompt.Text = ""
 		event.Prompt = &prompt
 	}
-	if c.client.Kind == "mcp" && event.Type == api.EventApprovalAdded {
+	if c.client.Kind == "mcp" && (event.Type == api.EventApprovalAdded || event.Type == api.EventToolDownload) {
 		return
 	}
 	if !c.subscribed.Load() {

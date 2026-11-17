@@ -29,7 +29,11 @@ func (s *Engine) buildStartDraft(t model.Tunnel) (command.Spec, error) {
 		_, err = exec.LookPath(path)
 	}
 	if err != nil {
-		return command.Spec{}, api.NewError(api.NotFound, fmt.Sprintf("tool %q was not found on this machine", spec.Tool))
+		message := fmt.Sprintf("tool %q was not found on this machine", spec.Tool)
+		if _, ok := s.artifactFor(spec.Tool); ok {
+			message += fmt.Sprintf("; run devt-tunnel tools download %s, or download it in Settings → Binaries", spec.Tool)
+		}
+		return command.Spec{}, api.NewError(api.NotFound, message)
 	}
 	return spec, nil
 }

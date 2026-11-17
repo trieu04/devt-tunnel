@@ -75,7 +75,47 @@ type ToolInfo struct {
 	Path    string `json:"path"`
 	Version string `json:"version"`
 	Source  string `json:"source"`
+	Origin  string `json:"origin"`
 	Error   string `json:"error"`
+	// Download is set when devt-tunnel can download a pinned release of this
+	// tool for this platform and the selected binary is not that version.
+	Download *ToolDownloadOffer `json:"download,omitempty"`
+}
+
+// ToolDownloadOffer describes the compiled-in release a person may download.
+type ToolDownloadOffer struct {
+	Version string `json:"version"`
+	Size    int64  `json:"size"`
+}
+
+// Download progress states.
+const (
+	DownloadDownloading = "downloading"
+	DownloadVerifying   = "verifying"
+	DownloadDone        = "done"
+	DownloadFailed      = "failed"
+	DownloadCancelled   = "cancelled"
+)
+
+// ToolDownloadProgress is the payload of EventToolDownload.
+type ToolDownloadProgress struct {
+	Tool     string `json:"tool"`
+	Version  string `json:"version"`
+	State    string `json:"state"` // downloading | verifying | done | failed | cancelled
+	Received int64  `json:"received"`
+	Total    int64  `json:"total"`
+	Error    string `json:"error,omitempty"`
+}
+
+// ToolCandidate is one executable that could serve a tool.
+type ToolCandidate struct {
+	Path     string `json:"path"`     // absolute, as it will be stored
+	Resolved string `json:"resolved"` // after EvalSymlinks; used to merge duplicates
+	Version  string `json:"version"`  // first line of the version command; empty on error
+	Origin   string `json:"origin"`   // path | homebrew | scoop | winget | system | downloaded | custom
+	Auto     bool   `json:"auto"`     // what Auto would pick right now
+	Selected bool   `json:"selected"` // equals the settings override
+	Error    string `json:"error,omitempty"`
 }
 
 type SecretView struct {
@@ -90,10 +130,12 @@ const (
 	EventTunnelsChanged = "tunnels.changed"
 	EventPromptAdded    = "prompt.added"
 	EventApprovalAdded  = "approval.added"
+	EventToolDownload   = "tool.download" // never delivered to MCP clients
 )
 
 type Event struct {
-	Type       string         `json:"type"`
-	ApprovalID string         `json:"approvalId,omitempty"`
-	Prompt     *PendingPrompt `json:"prompt,omitempty"`
+	Type       string                `json:"type"`
+	ApprovalID string                `json:"approvalId,omitempty"`
+	Prompt     *PendingPrompt        `json:"prompt,omitempty"`
+	Download   *ToolDownloadProgress `json:"download,omitempty"`
 }

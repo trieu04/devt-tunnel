@@ -8,6 +8,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +30,8 @@ const (
 	eventTunnels  = "tunnels:changed"
 	eventPrompt   = "askpass:prompt"
 	eventSettings = "settings:changed"
+	// eventToolDownload carries api.ToolDownloadProgress.
+	eventToolDownload = "tool:download"
 )
 
 const (
@@ -264,6 +270,10 @@ func (s *Service) handleEvent(c daemonClient, event api.Event) {
 		if event.Prompt != nil {
 			desktop.app.Event.Emit(eventPrompt, *event.Prompt)
 			desktop.showMain()
+		}
+	case api.EventToolDownload:
+		if event.Download != nil {
+			desktop.app.Event.Emit(eventToolDownload, *event.Download)
 		}
 	}
 }
@@ -572,6 +582,71 @@ func (s *Service) Tools() []api.ToolInfo {
 
 func (s *Service) SetToolPath(tool, path string) ([]api.ToolInfo, error) {
 	return call[[]api.ToolInfo](s, "tool.setPath", api.ToolPathParams{Tool: tool, Path: path})
+}
+
+func (s *Service) ToolCandidates(tool string) ([]api.ToolCandidate, error) {
+	candidates, err := call[[]api.ToolCandidate](s, "tool.candidates", api.ToolParams{Tool: tool})
+	if candidates == nil {
+		candidates = []api.ToolCandidate{}
+	}
+	return candidates, err
+}
+
+// DownloadTool downloads the pinned release of tool and, when use is true,
+// selects it. It returns when the download finishes; progress arrives as
+// "tool:download" events carrying api.ToolDownloadProgress.
+func (s *Service) DownloadTool(tool string, use bool) ([]api.ToolInfo, error) {
+	// No overall deadline: large files on slow links must finish. Cancel with
+	// CancelToolDownload; quitting the app closes the connection, which cancels.
+	return callContext[[]api.ToolInfo](s.ctx, s, "tool.download", api.ToolDownloadParams{Tool: tool, Use: use})
+}
+
+func (s *Service) CancelToolDownload(tool string) error {
+	return action(s, "tool.downloadCancel", api.ToolParams{Tool: tool})
+}
+
+func (s *Service) RemoveDownloadedTool(tool, version string) ([]api.ToolInfo, error) {
+	return call[[]api.ToolInfo](s, "tool.removeDownloaded", api.ToolVersionParams{Tool: tool, Version: version})
+}
+
+// RevealPath shows path in Finder or Explorer. Only paths inside devt-tunnel's
+// managed tools directory are allowed.
+func (s *Service) RevealPath(path string) error {
+	if s.host == nil || s.host.app == nil {
+		return errors.New("the file manager is unavailable")
+	}
+	root, err := platform.ToolsDir()
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(path) || !insideDir(root, path) {
+		return errors.New("only paths inside the tools directory can be revealed")
+	}
+	if _, err := os.Lstat(path); err != nil {
+		return err
+	}
+	return s.host.app.Env.OpenFileManager(filepath.Clean(path), true)
+}
+
+func insideDir(dir, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// PickExecutable shows a native open-file dialog and returns the chosen path,
+// or "" when the person cancels.
+func (s *Service) PickExecutable(tool string) (string, error) {
+	if s.host == nil || s.host.app == nil {
+		return "", errors.New("file dialogs are unavailable")
+	}
+	dialog := s.host.app.Dialog.OpenFile().
+		CanChooseFiles(true).CanChooseDirectories(false).
+		SetTitle("Choose " + tool).
+		AllowsOtherFileTypes(true).ResolvesAliases(true)
+	if runtime.GOOS == "windows" {
+		dialog.AddFilter("Executables", "*.exe;*.cmd;*.bat").AddFilter("All files", "*.*")
+	}
+	return dialog.PromptForSingleSelection()
 }
 
 func (s *Service) ListSecrets() []api.SecretView {

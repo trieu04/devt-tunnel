@@ -238,8 +238,23 @@ func (s *Server) register() {
 	})
 	action(s, "ssh.reload", func(api.Empty) error { e.ReloadSSHHosts(); return nil })
 	query(s, "tool.list", func(api.Empty) []api.ToolInfo { return e.Tools() })
-	handle(s, "tool.setPath", func(_ context.Context, p api.ToolPathParams) ([]api.ToolInfo, error) {
-		return e.SetToolPath(p.Tool, p.Path)
+	read(s, "tool.candidates", func(_ context.Context, p api.ToolParams) ([]api.ToolCandidate, error) {
+		return e.ToolCandidates(p.Tool)
+	})
+	handle(s, "tool.setPath", func(ctx context.Context, p api.ToolPathParams) ([]api.ToolInfo, error) {
+		actor, _ := connectionActor(ctx)
+		return e.SetToolPathFor(actor, p.Tool, p.Path)
+	})
+	// Person-only (never in mcpMethodAllowed): the daemon fetches only URLs and
+	// hashes compiled into it, and only when a person asks.
+	handle(s, "tool.download", func(ctx context.Context, p api.ToolDownloadParams) ([]api.ToolInfo, error) {
+		actor, _ := connectionActor(ctx)
+		return e.DownloadTool(ctx, actor, p.Tool, p.Use)
+	})
+	action(s, "tool.downloadCancel", func(p api.ToolParams) error { return e.DownloadCancel(p.Tool) })
+	handle(s, "tool.removeDownloaded", func(ctx context.Context, p api.ToolVersionParams) ([]api.ToolInfo, error) {
+		actor, _ := connectionActor(ctx)
+		return e.RemoveDownloadedTool(actor, p.Tool, p.Version)
 	})
 	query(s, "settings.get", func(api.Empty) api.SettingsResult {
 		return api.SettingsResult{Shortcut: e.Shortcut(), UpdateChecks: e.UpdateChecksEnabled()}

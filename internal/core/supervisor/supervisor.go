@@ -101,6 +101,9 @@ type Status struct {
 	Attempt   int               `json:"attempt,omitempty"`
 	Stale     bool              `json:"stale,omitempty"`
 	Owner     model.TunnelOwner `json:"owner"`
+	// ToolPath is the executable this run was started with, so the UI can tell
+	// when a newer binary selection has not reached a running tunnel.
+	ToolPath string `json:"toolPath,omitempty"`
 }
 
 // Manager owns all tunnels.
@@ -697,7 +700,7 @@ func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec
 		if retrying {
 			state = StateReconnecting
 		}
-		*s = Status{ID: t.ID, State: state, PID: proc.PID(), Attempt: attempt}
+		*s = Status{ID: t.ID, State: state, PID: proc.PID(), Attempt: attempt, ToolPath: path}
 	})
 
 	exited := make(chan error, 1)
@@ -732,7 +735,7 @@ func (m *Manager) runOnce(ctx context.Context, t model.Tunnel, spec command.Spec
 				addr = defaultAddress(t)
 			}
 			m.update(e, func(s *Status) {
-				*s = Status{ID: t.ID, State: StateRunning, PID: proc.PID(), StartedAt: time.Now(), Address: addr}
+				*s = Status{ID: t.ID, State: StateRunning, PID: proc.PID(), StartedAt: time.Now(), Address: addr, ToolPath: path}
 			})
 		case <-readyTimedOut(readyCtx, ctx, wasRunning):
 			if ctx.Err() != nil {
