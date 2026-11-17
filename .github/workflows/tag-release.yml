@@ -1,0 +1,39 @@
+name: Tag release
+
+# When a push to main bumps the version in build/config.yml, create the matching
+# v* tag. The tag push starts release.yml, which builds and drafts the release.
+
+on:
+  push:
+    branches: [main]
+    paths: [build/config.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A tag pushed with the default GITHUB_TOKEN does not trigger other
+          # workflows, so GH_RELEASE_PAT (a PAT or app token with contents:write)
+          # is required for release.yml to start.
+          token: ${{ secrets.GH_RELEASE_PAT }}
+      - name: Create tag when version changed
+        run: |
+          version=$(awk '/^  version:/ {gsub(/"/, "", $2); print $2}' build/config.yml)
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag"
+          git push origin "refs/tags/${tag}"
