@@ -35,6 +35,8 @@ type Server struct {
 	listener    net.Listener
 	closed      bool
 	wg          sync.WaitGroup
+	// disconnects counts in-flight session cleanups; Close does not wait, tests do.
+	disconnects sync.WaitGroup
 	operations  sync.Mutex
 	mutations   int
 	stopping    atomic.Bool
@@ -195,7 +197,9 @@ func (c *connection) serve() {
 	c.logs = engine.NewMCPLogReader()
 	defer func() {
 		// OS work already in flight must not block server/connection shutdown.
+		c.server.disconnects.Add(1)
 		go func() {
+			defer c.server.disconnects.Done()
 			_ = c.server.engine.DisconnectSession(api.Actor{Kind: c.client.Kind, Name: c.client.Name}, c.session)
 		}()
 	}()

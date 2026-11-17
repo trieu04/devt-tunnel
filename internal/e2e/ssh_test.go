@@ -199,6 +199,18 @@ func waitState(t *testing.T, m *supervisor.Manager, want supervisor.State) super
 	return st
 }
 
+// echoThroughRetry retries because an open local port does not prove the SSH channel is up.
+func echoThroughRetry(addr string) (string, error) {
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got, err := echoThrough(addr)
+		if err == nil || time.Now().After(deadline) {
+			return got, err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func echoThrough(addr string) (string, error) {
 	c, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {

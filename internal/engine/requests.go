@@ -214,7 +214,12 @@ func (s *Engine) snapshotOpenRequestLocked(actor api.Actor, session string, r *o
 		case "needs_token", "keyring_unavailable":
 			r.result.Status, r.result.Message = "needs_user", "A person must provide the required secret or unlock the keychain in devt-tunnel."
 		case "stopped":
-			terminal("failed", "The tunnel was stopped; do not reopen without a person's consent.")
+			// A released tunnel is stopped before removal; report that as ended, not failed.
+			if !s.holdsTunnel(actor, session, r.result.TunnelID) {
+				terminal("expired", "Tunnel ended.")
+			} else {
+				terminal("failed", "The tunnel was stopped; do not reopen without a person's consent.")
+			}
 		default:
 			terminal("failed", "Tunnel did not become ready; inspect redacted logs.")
 		}

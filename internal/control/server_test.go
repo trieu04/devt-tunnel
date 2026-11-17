@@ -66,7 +66,11 @@ func testServerWithOptions(t *testing.T, prepare func(*engine.Options)) (*Server
 		t.Fatal(err)
 	}
 	go s.Serve(l)
-	t.Cleanup(s.Close)
+	t.Cleanup(func() {
+		s.Close()
+		// Async disconnect cleanup writes the state dir; let it finish before removal.
+		s.disconnects.Wait()
+	})
 	return s, socket
 }
 

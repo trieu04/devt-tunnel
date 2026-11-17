@@ -199,7 +199,7 @@ func TestCLISSHLifecycleAndPrompts(t *testing.T) {
 			t.Fatalf("ephemeral ID=%q", id)
 		}
 		// The launching CLI has exited: a detached holder still owns the forward.
-		if got, err := echoThrough(address); err != nil || got != "ping" {
+		if got, err := echoThroughRetry(address); err != nil || got != "ping" {
 			t.Fatalf("ephemeral connection=%q error=%v", got, err)
 		}
 		if code, out, diagnostics := invoke("", "stop", id, "--json"); code != 0 || !strings.Contains(out, `"state":"stopped"`) {
